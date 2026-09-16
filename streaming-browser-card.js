@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.50
+ * v0.4.51
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -74,7 +74,7 @@ class StreamingBrowserCard extends HTMLElement {
     this._sectionLoadLocks = new Set();
     this._rowScrollPositions = new Map();
     this._mode = "movie";
-    this._provider = null;
+    this._provider = "all";
     this._providers = { movie: [], tv: [] };
     this._matchedProviders = { movie: [], tv: [] };
     this._details = null;
@@ -570,6 +570,7 @@ class StreamingBrowserCard extends HTMLElement {
             "profile_update_failed": "Could not update {entity}: {error}",
             "tmdb_key_rejected": "TMDB rejected the API key. Use the short v3 API key, not the v4 token.",
             "trending": "Trending",
+            "all_sources": "All sources",
             "popular": "Popular",
             "now_playing": "Now Playing",
             "top_rated": "Top Rated",
@@ -651,6 +652,7 @@ class StreamingBrowserCard extends HTMLElement {
             "profile_update_failed": "No pude actualizar {entity}: {error}",
             "tmdb_key_rejected": "TMDB rechazó la API key. Usa la API key v3 corta, no el token v4.",
             "trending": "Tendencias",
+            "all_sources": "Todas las fuentes",
             "popular": "Populares",
             "now_playing": "En cartelera",
             "top_rated": "Mejor valoradas",
@@ -1174,6 +1176,20 @@ class StreamingBrowserCard extends HTMLElement {
     this._ensureSelectedProvider();
   }
 
+  _catalogProviderIds() {
+    return (
+      this._matchedProviders[
+        this._mode
+      ] || []
+    )
+      .map((provider) =>
+        String(
+          provider.provider_id
+        )
+      )
+      .filter(Boolean);
+  }
+
   _ensureSelectedProvider() {
     const providers =
       this._matchedProviders[
@@ -1185,6 +1201,12 @@ class StreamingBrowserCard extends HTMLElement {
       return;
     }
 
+    if (
+      this._provider === "all"
+    ) {
+      return;
+    }
+
     const selectedExists =
       providers.some(
         (provider) =>
@@ -1193,10 +1215,7 @@ class StreamingBrowserCard extends HTMLElement {
       );
 
     if (!selectedExists) {
-      this._provider =
-        String(
-          providers[0].provider_id
-        );
+      this._provider = "all";
     }
   }
 
@@ -1211,12 +1230,45 @@ class StreamingBrowserCard extends HTMLElement {
 
     this._ensureSelectedProvider();
 
-    const provider = this._matchedProviders[mode].find(
-      (item) =>
-        String(item.provider_id) === String(this._provider)
-    );
+    const providers =
+      this._matchedProviders[mode] || [];
 
-    if (!provider) {
+    const providerIds =
+      this._provider === "all"
+        ? providers
+            .map((item) =>
+              String(
+                item.provider_id
+              )
+            )
+            .filter(Boolean)
+        : [
+            String(
+              this._provider || ""
+            ),
+          ].filter(Boolean);
+
+    if (!providerIds.length) {
+      throw new Error(
+        this._t("provider_unavailable")
+      );
+    }
+
+    const provider =
+      this._provider === "all"
+        ? null
+        : providers.find(
+            (item) =>
+              String(
+                item.provider_id
+              ) ===
+              String(this._provider)
+          );
+
+    if (
+      this._provider !== "all" &&
+      !provider
+    ) {
       throw new Error(
         this._t("provider_unavailable")
       );
@@ -1224,8 +1276,15 @@ class StreamingBrowserCard extends HTMLElement {
 
     const base = {
       watch_region: region,
-      with_watch_providers: provider.provider_id,
-      with_watch_monetization_types: "flatrate",
+      /*
+       * TMDB treats pipe-separated provider IDs as OR logic.
+       * All sources therefore returns titles available on any
+       * of the selected/matched platforms.
+       */
+      with_watch_providers:
+        providerIds.join("|"),
+      with_watch_monetization_types:
+        "flatrate",
       include_adult: "false",
     };
 
@@ -4144,8 +4203,30 @@ class StreamingBrowserCard extends HTMLElement {
       Number(this._config.poster_width) || 145
     );
 
-    const providerChips = providers
-      .map(
+    const providerChips = [
+      `
+        <button
+          class="chip ${
+            this._provider === "all"
+              ? "active"
+              : ""
+          }"
+          data-provider="all"
+          title="${this._esc(
+            this._t("all_sources")
+          )}"
+        >
+          <ha-icon
+            icon="mdi:apps"
+          ></ha-icon>
+          <span>
+            ${this._t(
+              "all_sources"
+            )}
+          </span>
+        </button>
+      `,
+      ...providers.map(
         (provider) => `
           <button
             class="chip ${
@@ -4161,8 +4242,8 @@ class StreamingBrowserCard extends HTMLElement {
             <span>${this._esc(provider.provider_name)}</span>
           </button>
         `
-      )
-      .join("");
+      ),
+    ].join("");
 
     const sectionsHtml = this._sections.length
       ? this._sections
@@ -4805,7 +4886,7 @@ class StreamingBrowserCard extends HTMLElement {
       .forEach((element) =>
         element.addEventListener("click", async () => {
           this._mode = element.dataset.mode;
-          this._provider = null;
+          this._provider = "all";
           this._ensureSelectedProvider();
           this._query = "";
           await this._loadBrowse();
@@ -5757,7 +5838,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.50 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.51 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
