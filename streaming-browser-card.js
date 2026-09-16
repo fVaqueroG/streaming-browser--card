@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.41
+ * v0.4.42
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -438,6 +438,8 @@ class StreamingBrowserCard extends HTMLElement {
     if (!config.tv_entity) throw new Error("tv_entity is required");
     if (!config.tmdb_api_key) throw new Error("tmdb_api_key is required");
 
+    const previousLanguage = this._languageCode?.() || null;
+
     this._config = {
       platform: "webos",
       remote_entity: null,
@@ -469,6 +471,15 @@ class StreamingBrowserCard extends HTMLElement {
     this._selectedProfile = null;
     this._initialized = false;
     this._render();
+
+    const nextLanguage = this._languageCode();
+    if (
+      this._hass &&
+      previousLanguage &&
+      previousLanguage !== nextLanguage
+    ) {
+      queueMicrotask(() => this._initialize());
+    }
   }
 
   set hass(hass) {
@@ -530,14 +541,26 @@ class StreamingBrowserCard extends HTMLElement {
     return err?.message || String(err || "Unknown error");
   }
 
-  _locale() {
-    const language = String(
-      this._config?.language ||
+  _languageCode() {
+    const configured = this._config?.language;
+    const raw =
+      configured && typeof configured === "object"
+        ? configured.value || configured.label
+        : configured;
+
+    return String(
+      raw ||
       this._hass?.language ||
       "es-MX"
-    ).toLowerCase();
+    );
+  }
 
-    return language.startsWith("en") ? "en" : "es";
+  _locale() {
+    return this._languageCode()
+      .toLowerCase()
+      .startsWith("en")
+      ? "en"
+      : "es";
   }
 
   _t(key, vars = {}) {
@@ -553,6 +576,16 @@ class StreamingBrowserCard extends HTMLElement {
             "on_air": "On Air",
             "airing_today": "Airing Today",
             "recent_releases": "Recent Releases",
+            "search_results": "Results for “{query}”",
+            "scroll_left": "Scroll left",
+            "scroll_right": "Scroll right",
+            "reopening_app": "Reopening {source}…",
+            "opening_app": "Opening {source}…",
+            "play_in": "PLAY in {seconds}s…",
+            "play_sent_to": "▶ PLAY sent to {source}",
+            "app_opened": "{source} opened{profile}",
+            "play_sent": "▶ PLAY sent",
+            "opening_availability": "Opening availability in the TV browser…",
             "provider_unavailable": "That provider is not available for this type of content.",
             "load_more_failed": "Could not load more titles: {error}",
             "preparing_profile": "{source}: preparing profile {profile}…",
@@ -562,7 +595,7 @@ class StreamingBrowserCard extends HTMLElement {
             "command_missing": "Profile {profile} uses command for {source}, but has no command.",
             "applying_profile": "{source}: applying profile {profile}…",
             "unknown_profile_mode": "Unknown profile mode: {mode}",
-            "app_match_failed": "Could not match “{provider}” to an LG app.",
+            "app_match_failed": "Could not match “{provider}” to an app on the target device.",
             "profile_prefix": "profile {profile} · ",
             "profile_suffix": " · profile {profile}",
             "app_open_failed": "Could not open {source}: {error}",
@@ -582,7 +615,7 @@ class StreamingBrowserCard extends HTMLElement {
             "using_current_session": "{source} is already open; using the current session…",
             "opening_title": "Opening title in {provider}…",
             "title_opened_play": "Title opened · PLAY in {seconds}s…",
-            "title_link_sent": "Title link sent to LG",
+            "title_link_sent": "Title link sent to the TV",
             "title_open_failed": "Could not open the title: {error}",
             "title_fallback": "Could not open the exact title; opening {provider} as fallback…",
             "page_open_failed": "Could not open the page: {error}",
@@ -621,6 +654,16 @@ class StreamingBrowserCard extends HTMLElement {
             "on_air": "En emisión",
             "airing_today": "Episodios hoy",
             "recent_releases": "Estrenos recientes",
+            "search_results": "Resultados para “{query}”",
+            "scroll_left": "Desplazar a la izquierda",
+            "scroll_right": "Desplazar a la derecha",
+            "reopening_app": "Reabriendo {source}…",
+            "opening_app": "Abriendo {source}…",
+            "play_in": "PLAY en {seconds}s…",
+            "play_sent_to": "▶ PLAY enviado a {source}",
+            "app_opened": "{source} abierto{profile}",
+            "play_sent": "▶ PLAY enviado",
+            "opening_availability": "Abriendo disponibilidad en el navegador de la TV…",
             "provider_unavailable": "Ese proveedor no está disponible para este tipo de contenido.",
             "load_more_failed": "No pude cargar más títulos: {error}",
             "preparing_profile": "{source}: preparando perfil {profile}…",
@@ -800,7 +843,7 @@ class StreamingBrowserCard extends HTMLElement {
   _apiUrl(path, params = {}) {
     const q = new URLSearchParams({
       api_key: this._config.tmdb_api_key,
-      language: this._config.language,
+      language: this._languageCode(),
       ...params,
     });
 
@@ -1032,31 +1075,31 @@ class StreamingBrowserCard extends HTMLElement {
         return [
           {
             key: "trending",
-            label: this._t("trending"),
+            labelKey: "trending",
             path: "/trending/movie/week",
             params: {},
           },
           {
             key: "popular",
-            label: this._t("popular"),
+            labelKey: "popular",
             path: "/movie/popular",
             params: { region },
           },
           {
             key: "now-playing",
-            label: this._t("now_playing"),
+            labelKey: "now_playing",
             path: "/movie/now_playing",
             params: { region },
           },
           {
             key: "top-rated",
-            label: this._t("top_rated"),
+            labelKey: "top_rated",
             path: "/movie/top_rated",
             params: { region },
           },
           {
             key: "upcoming",
-            label: this._t("upcoming"),
+            labelKey: "upcoming",
             path: "/movie/upcoming",
             params: { region },
           },
@@ -1066,31 +1109,31 @@ class StreamingBrowserCard extends HTMLElement {
       return [
         {
           key: "trending",
-          label: this._t("trending"),
+          labelKey: "trending",
           path: "/trending/tv/week",
           params: {},
         },
         {
           key: "popular",
-          label: this._t("popular"),
+          labelKey: "popular",
           path: "/tv/popular",
           params: {},
         },
         {
           key: "on-air",
-          label: this._t("on_air"),
+          labelKey: "on_air",
           path: "/tv/on_the_air",
           params: {},
         },
         {
           key: "top-rated",
-          label: this._t("top_rated"),
+          labelKey: "top_rated",
           path: "/tv/top_rated",
           params: {},
         },
         {
           key: "airing-today",
-          label: this._t("airing_today"),
+          labelKey: "airing_today",
           path: "/tv/airing_today",
           params: {},
         },
@@ -1128,7 +1171,7 @@ class StreamingBrowserCard extends HTMLElement {
     return [
       {
         key: "provider-popular",
-        label: this._t("popular"),
+        labelKey: "popular",
         path: `/discover/${mode}`,
         params: {
           ...base,
@@ -1137,7 +1180,7 @@ class StreamingBrowserCard extends HTMLElement {
       },
       {
         key: "provider-top-rated",
-        label: this._t("top_rated"),
+        labelKey: "top_rated",
         path: `/discover/${mode}`,
         params: {
           ...base,
@@ -1147,7 +1190,7 @@ class StreamingBrowserCard extends HTMLElement {
       },
       {
         key: "provider-recent",
-        label: this._t("recent_releases"),
+        labelKey: "recent_releases",
         path: `/discover/${mode}`,
         params: {
           ...base,
@@ -1312,7 +1355,8 @@ class StreamingBrowserCard extends HTMLElement {
     try {
       const definition = {
         key: "search",
-        label: `Resultados para “${q}”`,
+        labelKey: "search_results",
+        labelVars: { query: q },
         path: "/search/multi",
         params: {
           query: q,
@@ -1877,7 +1921,7 @@ class StreamingBrowserCard extends HTMLElement {
         this._norm(currentSource) === this._norm(source);
 
       if (appAlreadyOpen) {
-        this._toast(`Reabriendo ${source}…`);
+        this._toast(this._t("reopening_app", { source }));
 
         await this._sendRemoteButton("HOME");
 
@@ -1885,7 +1929,7 @@ class StreamingBrowserCard extends HTMLElement {
           Number(this._config.relaunch_delay_ms) || 1200
         );
       } else {
-        this._toast(`Abriendo ${source}…`);
+        this._toast(this._t("opening_app", { source }));
       }
 
       await this._hass.callService(
@@ -1906,23 +1950,30 @@ class StreamingBrowserCard extends HTMLElement {
         this._toast(
           `${source} · ${
             this._selectedProfile
-              ? this._t("profile_prefix", { profile: this._selectedProfile })
+              ? this._t("profile_prefix", {
+                  profile: this._selectedProfile,
+                })
               : ""
-          }PLAY en ${Math.round(delay / 100) / 10}s…`
+          }${this._t("play_in", {
+            seconds: Math.round(delay / 100) / 10,
+          })}`
         );
 
         await this._sleep(delay);
 
         await this._sendRemoteButton("PLAY");
 
-        this._toast(`▶ PLAY enviado a ${source}`);
+        this._toast(this._t("play_sent_to", { source }));
       } else {
         this._toast(
-          `${source} abierto${
-            this._selectedProfile
-              ? this._t("profile_suffix", { profile: this._selectedProfile })
-              : ""
-          }`
+          this._t("app_opened", {
+            source,
+            profile: this._selectedProfile
+              ? this._t("profile_suffix", {
+                  profile: this._selectedProfile,
+                })
+              : "",
+          })
         );
       }
     } catch (err) {
@@ -2352,7 +2403,7 @@ class StreamingBrowserCard extends HTMLElement {
         );
 
         this._toast(
-          "▶ PLAY enviado"
+          this._t("play_sent")
         );
       } else {
         this._toast(
@@ -2402,7 +2453,7 @@ class StreamingBrowserCard extends HTMLElement {
       });
 
       this._toast(
-        "Abriendo disponibilidad en el navegador del LG"
+        this._t("opening_availability")
       );
     } catch (err) {
       this._toast(
@@ -3113,21 +3164,28 @@ class StreamingBrowserCard extends HTMLElement {
             return `
               <section class="catalog-section">
                 <div class="catalog-heading">
-                  <h3>${this._esc(section.label)}</h3>
+                  <h3>${this._esc(
+                    section.labelKey
+                      ? this._t(
+                          section.labelKey,
+                          section.labelVars || {}
+                        )
+                      : section.label || ""
+                  )}</h3>
 
                   <div class="catalog-controls">
                     <button
                       class="row-nav"
                       data-scroll-row="${this._esc(section.key)}"
                       data-direction="-1"
-                      aria-label="Desplazar a la izquierda"
+                      aria-label="${this._esc(this._t("scroll_left"))}"
                     >‹</button>
 
                     <button
                       class="row-nav"
                       data-scroll-row="${this._esc(section.key)}"
                       data-direction="1"
-                      aria-label="Desplazar a la derecha"
+                      aria-label="${this._esc(this._t("scroll_right"))}"
                     >›</button>
                   </div>
                 </div>
@@ -3874,7 +3932,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.41 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.42 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
