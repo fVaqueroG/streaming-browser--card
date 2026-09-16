@@ -1,11 +1,12 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.40
+ * v0.4.41
  *
  * Features:
  * - Browse/search TMDB movies and TV
  * - Categorized horizontal catalog rows with lazy pagination
  * - English (en-US) and Spanish (es-MX) card UI localization
+ * - Screensaver-aware wake handling for LG webOS and Android TV
  * - Region-specific watch providers
  * - Match providers to LG webOS source_list
  * - Open/reopen streaming apps
@@ -57,7 +58,9 @@ class StreamingBrowserCard extends HTMLElement {
   static getConfigForm() {
     const labels = {
       title: "Card title",
-      tv_entity: "LG webOS media player",
+      platform: "Platform",
+      tv_entity: "Media player",
+      remote_entity: "Android TV remote",
       tmdb_api_key: "TMDB API key (v3)",
       region: "Region",
       language: "Language",
@@ -66,7 +69,9 @@ class StreamingBrowserCard extends HTMLElement {
       include_rent_buy: "Include rental and purchase providers",
       watchmode_script: "Watchmode Home Assistant script",
       exact_title_fallback_to_app: "Fall back to opening the app",
-      wake_delay_ms: "TV wake delay",
+      wake_delay_ms: "TV power-on delay",
+      screensaver_wake_delay_ms: "Screensaver wake delay",
+      android_play_command: "Android play/select command",
       relaunch_delay_ms: "App relaunch delay",
       auto_play_delay_ms: "Automatic Play delay",
       exact_title_play_delay_ms: "Exact-title Play delay",
@@ -76,9 +81,14 @@ class StreamingBrowserCard extends HTMLElement {
       profile_navigation_delay_ms: "Profile navigation step delay",
       profiles: "Profiles and per-app behavior",
       provider_sources: "Provider source overrides",
+      android_app_links: "Android app/deep-link overrides",
     };
 
     const helpers = {
+      platform:
+        "Choose LG webOS or Android TV Remote.",
+      remote_entity:
+        "Required for Android TV. Use the remote entity from the Android TV Remote integration.",
       tmdb_api_key:
         "Use the short TMDB API key v3. It is stored in the dashboard card configuration.",
       region:
@@ -87,6 +97,10 @@ class StreamingBrowserCard extends HTMLElement {
         "TMDB language code, for example es-MX or en-US.",
       catalog_prefetch_threshold_px:
         "Distance from the end of a horizontal catalog row before the next TMDB page is loaded.",
+      screensaver_wake_delay_ms:
+        "How long to wait after dismissing a screensaver before launching the app or title.",
+      android_play_command:
+        "Android TV command used for Play. DPAD_CENTER works better than MEDIA_PLAY in many streaming apps.",
       include_rent_buy:
         "Also show rental and purchase providers in title availability.",
       watchmode_script:
@@ -100,7 +114,9 @@ class StreamingBrowserCard extends HTMLElement {
       profiles:
         "Advanced object containing profile names, app modes, PIN scripts and navigation sequences.",
       provider_sources:
-        "Advanced mapping used when automatic provider-to-webOS source matching needs an override.",
+        "Advanced mapping used when automatic provider-to-app matching needs an override.",
+      android_app_links:
+        "Optional Android provider-to-deep-link mapping. Built-in defaults cover common streaming apps.",
     };
 
     return {
@@ -116,11 +132,31 @@ class StreamingBrowserCard extends HTMLElement {
               selector: { text: {} },
             },
             {
+              name: "platform",
+              selector: {
+                select: {
+                  mode: "dropdown",
+                  options: [
+                    { value: "webos", label: "LG webOS" },
+                    { value: "android_tv", label: "Android TV Remote" },
+                  ],
+                },
+              },
+            },
+            {
               name: "tv_entity",
               required: true,
               selector: {
                 entity: {
                   filter: { domain: "media_player" },
+                },
+              },
+            },
+            {
+              name: "remote_entity",
+              selector: {
+                entity: {
+                  filter: { domain: "remote" },
                 },
               },
             },
@@ -232,6 +268,30 @@ class StreamingBrowserCard extends HTMLElement {
                   },
                 },
                 {
+                  name: "screensaver_wake_delay_ms",
+                  selector: {
+                    number: {
+                      min: 200,
+                      max: 5000,
+                      step: 100,
+                      unit_of_measurement: "ms",
+                    },
+                  },
+                },
+                {
+                  name: "android_play_command",
+                  selector: {
+                    select: {
+                      mode: "dropdown",
+                      options: [
+                        "DPAD_CENTER",
+                        "MEDIA_PLAY",
+                        "ENTER",
+                      ],
+                    },
+                  },
+                },
+                {
                   name: "relaunch_delay_ms",
                   selector: {
                     number: {
@@ -329,6 +389,10 @@ class StreamingBrowserCard extends HTMLElement {
               name: "provider_sources",
               selector: { object: {} },
             },
+            {
+              name: "android_app_links",
+              selector: { object: {} },
+            },
           ],
         },
       ],
@@ -339,7 +403,9 @@ class StreamingBrowserCard extends HTMLElement {
 
   static getStubConfig() {
     return {
+      platform: "webos",
       tv_entity: "media_player.lg_webos_tv",
+      remote_entity: null,
       tmdb_api_key: "YOUR_TMDB_V3_API_KEY",
       region: "MX",
       language: "es-MX",
@@ -348,6 +414,8 @@ class StreamingBrowserCard extends HTMLElement {
       max_items: 24,
       catalog_prefetch_threshold_px: 360,
       wake_delay_ms: 4500,
+      screensaver_wake_delay_ms: 1200,
+      android_play_command: "DPAD_CENTER",
       relaunch_delay_ms: 1200,
       auto_play_delay_ms: 4000,
       profile_launch_delay_ms: 3000,
@@ -371,6 +439,8 @@ class StreamingBrowserCard extends HTMLElement {
     if (!config.tmdb_api_key) throw new Error("tmdb_api_key is required");
 
     this._config = {
+      platform: "webos",
+      remote_entity: null,
       region: "MX",
       language: "es-MX",
       title: "Streaming",
@@ -379,6 +449,9 @@ class StreamingBrowserCard extends HTMLElement {
       catalog_prefetch_threshold_px: 360,
       include_rent_buy: false,
       wake_delay_ms: 4500,
+      screensaver_wake_delay_ms: 1200,
+      android_play_command: "DPAD_CENTER",
+      android_app_links: {},
       relaunch_delay_ms: 1200,
       auto_play_delay_ms: 4000,
       profile_launch_delay_ms: 3000,
@@ -497,6 +570,9 @@ class StreamingBrowserCard extends HTMLElement {
             "invalid_response_action": "Invalid response action: {entity}",
             "no_title_selected": "No title is selected.",
             "looking_up_exact_link": "Looking up exact title link…",
+            "waking_screensaver": "Waking TV from screensaver…",
+            "screensaver_fallback": "Screensaver is still active; sending HOME…",
+            "turning_on_tv": "Turning on TV…",
             "watchmode_http": "Watchmode returned HTTP {status}.",
             "watchmode_bad_response": "Watchmode returned a response I could not interpret.",
             "watchmode_not_list": "Watchmode did not return a source list.",
@@ -516,7 +592,7 @@ class StreamingBrowserCard extends HTMLElement {
             "open_title": "Open title",
             "title_play": "Title + Play",
             "no_providers": "No providers were reported for your region.",
-            "app_not_found": "App not found on LG",
+            "app_not_found": "App not found on the target device",
             "no_synopsis": "No synopsis available.",
             "active_profile": "Active profile:",
             "where_to_watch": "Where to watch in",
@@ -536,7 +612,7 @@ class StreamingBrowserCard extends HTMLElement {
       },
       "es": {
             "profile_update_failed": "No pude actualizar {entity}: {error}",
-            "tmdb_key_rejected": this._t("tmdb_key_rejected"),
+            "tmdb_key_rejected": "TMDB rechazó la API key. Usa la API key v3 corta, no el token v4.",
             "trending": "Tendencias",
             "popular": "Populares",
             "now_playing": "En cartelera",
@@ -545,7 +621,7 @@ class StreamingBrowserCard extends HTMLElement {
             "on_air": "En emisión",
             "airing_today": "Episodios hoy",
             "recent_releases": "Estrenos recientes",
-            "provider_unavailable": this._t("provider_unavailable"),
+            "provider_unavailable": "Ese proveedor no está disponible para este tipo de contenido.",
             "load_more_failed": "No pude cargar más títulos: {error}",
             "preparing_profile": "{source}: preparando perfil {profile}…",
             "navigation_missing": "El perfil {profile} usa navigation para {source}, pero no tiene sequence.",
@@ -558,13 +634,16 @@ class StreamingBrowserCard extends HTMLElement {
             "profile_prefix": "perfil {profile} · ",
             "profile_suffix": " · perfil {profile}",
             "app_open_failed": "No se pudo abrir {source}: {error}",
-            "callws_unavailable": this._t("callws_unavailable"),
+            "callws_unavailable": "Esta versión del frontend no expone hass.callWS.",
             "invalid_response_action": "Acción inválida para respuesta: {entity}",
-            "no_title_selected": this._t("no_title_selected"),
-            "looking_up_exact_link": this._t("looking_up_exact_link"),
+            "no_title_selected": "No hay un título seleccionado.",
+            "looking_up_exact_link": "Buscando enlace exacto del título…",
+            "waking_screensaver": "Activando TV desde el salvapantallas…",
+            "screensaver_fallback": "El salvapantallas sigue activo; enviando HOME…",
+            "turning_on_tv": "Encendiendo TV…",
             "watchmode_http": "Watchmode respondió HTTP {status}.",
-            "watchmode_bad_response": this._t("watchmode_bad_response"),
-            "watchmode_not_list": this._t("watchmode_not_list"),
+            "watchmode_bad_response": "Watchmode devolvió una respuesta que no pude interpretar.",
+            "watchmode_not_list": "Watchmode no devolvió una lista de fuentes.",
             "watchmode_no_provider_link": "Watchmode no encontró un enlace de {provider} para este título en {region}.",
             "opening_and_preparing": "Abriendo {source} y preparando perfil {profile}…",
             "waiting_profile_session": "{source}: esperando sesión del perfil…",
@@ -581,7 +660,7 @@ class StreamingBrowserCard extends HTMLElement {
             "open_title": "Abrir título",
             "title_play": "Título + Play",
             "no_providers": "No hay proveedores reportados para tu región.",
-            "app_not_found": this._t("app_not_found"),
+            "app_not_found": "App no encontrada en el dispositivo",
             "no_synopsis": "Sin sinopsis disponible.",
             "active_profile": "Perfil activo:",
             "where_to_watch": "Dónde verla en",
@@ -842,6 +921,40 @@ class StreamingBrowserCard extends HTMLElement {
 
   _sourceForProvider(providerName) {
     const overrides = this._config.provider_sources || {};
+
+    if (this._platform() === "android_tv") {
+      if (overrides[providerName]) {
+        return overrides[providerName];
+      }
+
+      const normalizedOverride = Object.entries(overrides).find(
+        ([key]) => this._norm(key) === this._norm(providerName)
+      );
+
+      if (normalizedOverride) {
+        return normalizedOverride[1];
+      }
+
+      const links = {
+        ...this._defaultAndroidAppLinks(),
+        ...(this._config.android_app_links || {}),
+      };
+
+      const aliases = this._providerAliases(providerName);
+
+      const match = Object.keys(links).find((name) => {
+        const key = this._norm(name);
+        return aliases.some(
+          (alias) =>
+            alias &&
+            (key === alias ||
+              key.includes(alias) ||
+              alias.includes(key))
+        );
+      });
+
+      return match || providerName;
+    }
 
     if (overrides[providerName]) {
       return overrides[providerName];
@@ -1357,7 +1470,75 @@ class StreamingBrowserCard extends HTMLElement {
   // webOS controls / profile execution
   // ---------------------------------------------------------------------------
 
+  _platform() {
+    return this._config?.platform === "android_tv"
+      ? "android_tv"
+      : "webos";
+  }
+
+  _remoteState() {
+    const entityId = this._config?.remote_entity;
+    return entityId ? this._hass?.states?.[entityId] : null;
+  }
+
+  _androidActivity() {
+    return String(
+      this._remoteState()?.attributes?.current_activity ||
+      this._tvState()?.attributes?.app_id ||
+      this._tvState()?.attributes?.source ||
+      ""
+    );
+  }
+
+  _isScreensaverActive(tv = this._tvState()) {
+    if (!tv) return false;
+
+    const values = [
+      tv?.attributes?.source,
+      tv?.attributes?.app_name,
+      tv?.attributes?.app_id,
+      tv?.attributes?.media_title,
+      tv?.attributes?.media_content_id,
+      this._androidActivity(),
+    ]
+      .filter((value) => value != null)
+      .map((value) => String(value).toLowerCase());
+
+    return values.some((value) =>
+      ["screensaver", "screen saver", "ambient", "dream"]
+        .some((needle) => value.includes(needle))
+    );
+  }
+
+  _androidCommand(button) {
+    const map = {
+      UP: "DPAD_UP",
+      DOWN: "DPAD_DOWN",
+      LEFT: "DPAD_LEFT",
+      RIGHT: "DPAD_RIGHT",
+      ENTER: "DPAD_CENTER",
+      CENTER: "DPAD_CENTER",
+      PLAY: this._config?.android_play_command || "DPAD_CENTER",
+      HOME: "HOME",
+      BACK: "BACK",
+    };
+
+    return map[String(button || "").toUpperCase()] || button;
+  }
+
   async _sendRemoteButton(button) {
+    if (this._platform() === "android_tv") {
+      if (!this._config.remote_entity) {
+        throw new Error("remote_entity is required for Android TV");
+      }
+
+      await this._hass.callService("remote", "send_command", {
+        entity_id: this._config.remote_entity,
+        command: this._androidCommand(button),
+      });
+      return;
+    }
+
     await this._hass.callService("webostv", "button", {
       entity_id: this._config.tv_entity,
       button,
@@ -1550,27 +1731,101 @@ class StreamingBrowserCard extends HTMLElement {
       "buffering",
     ]);
 
+    const android = this._platform() === "android_tv";
+
     if (!tv || !onStates.has(tv.state)) {
-      this._toast("Encendiendo TV…");
+      this._toast(this._t("turning_on_tv"));
 
-      await this._hass.callService(
-        "media_player",
-        "turn_on",
-        {
+      if (android && this._config.remote_entity) {
+        await this._hass.callService("remote", "turn_on", {
+          entity_id: this._config.remote_entity,
+        });
+      } else {
+        await this._hass.callService("media_player", "turn_on", {
           entity_id: this._config.tv_entity,
-        }
-      );
+        });
+      }
 
-      await this._sleep(
-        Number(this._config.wake_delay_ms) || 4500
-      );
-
+      await this._sleep(Number(this._config.wake_delay_ms) || 4500);
       tv = this._tvState();
+    } else if (android && this._config.remote_entity && tv.state === "idle") {
+      // Android TV can report idle while the screensaver is covering the UI.
+      await this._hass.callService("remote", "turn_on", {
+        entity_id: this._config.remote_entity,
+      });
+      await this._sleep(300);
+      tv = this._tvState();
+    }
+
+    if (this._isScreensaverActive(tv)) {
+      this._toast(this._t("waking_screensaver"));
+      await this._sendRemoteButton("ENTER");
+
+      const delay =
+        Number(this._config.screensaver_wake_delay_ms) || 1200;
+      await this._sleep(delay);
+      tv = this._tvState();
+
+      if (this._isScreensaverActive(tv)) {
+        this._toast(this._t("screensaver_fallback"));
+        await this._sendRemoteButton("HOME");
+        await this._sleep(delay);
+        tv = this._tvState();
+      }
     }
 
     return tv;
   }
 
+  _defaultAndroidAppLinks() {
+    return {
+      Netflix: "netflix://",
+      "Netflix Standard with Ads": "netflix://",
+      "Disney Plus": "https://www.disneyplus.com",
+      "Amazon Prime Video": "https://app.primevideo.com",
+      "Prime Video": "https://app.primevideo.com",
+      Max: "https://play.max.com",
+      "HBO Max": "https://play.max.com",
+      "Paramount Plus": "https://www.paramountplus.com",
+      "Apple TV Plus": "https://tv.apple.com",
+      Crunchyroll: "https://www.crunchyroll.com",
+      ViX: "https://vix.com",
+      "Claro Video": "https://www.clarovideo.com",
+    };
+  }
+
+  _androidAppLink(providerName, source) {
+    const links = {
+      ...this._defaultAndroidAppLinks(),
+      ...(this._config.android_app_links || {}),
+    };
+
+    const aliases = new Set([
+      ...this._providerAliases(providerName),
+      this._norm(source),
+    ]);
+
+    for (const [name, link] of Object.entries(links)) {
+      const key = this._norm(name);
+      if (aliases.has(key)) return link;
+      if ([...aliases].some(
+        (alias) => alias && (key.includes(alias) || alias.includes(key))
+      )) return link;
+    }
+
+    return null;
+  }
+
+  async _androidLaunchActivity(activity) {
+    if (!this._config.remote_entity) {
+      throw new Error("remote_entity is required for Android TV");
+    }
+
+    await this._hass.callService("remote", "turn_on", {
+      entity_id: this._config.remote_entity,
+      activity,
+    });
+  }
   async _launchProvider(providerName, autoPlay = false) {
     if (!this._hass) return;
 
@@ -1586,6 +1841,37 @@ class StreamingBrowserCard extends HTMLElement {
     try {
       const tv = await this._ensureTvOn();
       const currentSource = tv?.attributes?.source || "";
+
+      if (this._platform() === "android_tv") {
+        const activity = this._androidAppLink(providerName, source);
+
+        if (!activity) {
+          throw new Error(
+            "No Android TV app/deep link is configured for " + providerName
+          );
+        }
+
+        const currentActivity = this._norm(this._androidActivity());
+        const aliases = this._providerAliases(providerName);
+        const appAlreadyOpen = aliases.some(
+          (alias) => alias && currentActivity.includes(alias)
+        );
+
+        if (!appAlreadyOpen) {
+          await this._androidLaunchActivity(activity);
+        }
+
+        await this._applyProfile(providerName, source);
+
+        if (autoPlay) {
+          const delay =
+            Number(this._config.auto_play_delay_ms) || 4000;
+          await this._sleep(delay);
+          await this._sendRemoteButton("PLAY");
+        }
+
+        return;
+      }
 
       const appAlreadyOpen =
         this._norm(currentSource) === this._norm(source);
@@ -1957,26 +2243,43 @@ class StreamingBrowserCard extends HTMLElement {
         appConfig?.exact_title_profile_first === true
       ) {
         const currentSource =
-          tv?.attributes?.source || "";
+          this._platform() === "android_tv"
+            ? this._androidActivity()
+            : tv?.attributes?.source || "";
 
         const appAlreadyOpen =
-          this._norm(currentSource) ===
-          this._norm(source);
+          this._platform() === "android_tv"
+            ? this._providerAliases(providerName).some(
+                (alias) =>
+                  alias &&
+                  this._norm(currentSource).includes(alias)
+              )
+            : this._norm(currentSource) ===
+              this._norm(source);
 
         if (!appAlreadyOpen) {
           this._toast(
             this._t("opening_and_preparing", { source, profile: this._selectedProfile || "" })
           );
 
-          await this._hass.callService(
-            "media_player",
-            "select_source",
-            {
-              entity_id:
-                this._config.tv_entity,
-              source,
+          if (this._platform() === "android_tv") {
+            const activity =
+              this._androidAppLink(providerName, source);
+
+            if (activity) {
+              await this._androidLaunchActivity(activity);
             }
-          );
+          } else {
+            await this._hass.callService(
+              "media_player",
+              "select_source",
+              {
+                entity_id:
+                  this._config.tv_entity,
+                source,
+              }
+            );
+          }
 
           await this._applyProfile(
             providerName,
@@ -2010,22 +2313,26 @@ class StreamingBrowserCard extends HTMLElement {
         this._t("opening_title", { provider: match.name || providerName })
       );
 
-      await this._hass.callService(
-        "webostv",
-        "command",
-        {
-          entity_id:
-            this._config.tv_entity,
+      if (this._platform() === "android_tv") {
+        await this._androidLaunchActivity(match.web_url);
+      } else {
+        await this._hass.callService(
+          "webostv",
+          "command",
+          {
+            entity_id:
+              this._config.tv_entity,
 
-          command:
-            "system.launcher/open",
+            command:
+              "system.launcher/open",
 
-          payload: {
-            target:
-              match.web_url,
-          },
-        }
-      );
+            payload: {
+              target:
+                match.web_url,
+            },
+          }
+        );
+      }
 
       if (autoPlay) {
         const delay =
@@ -3298,6 +3605,7 @@ class StreamingBrowserCard extends HTMLElement {
           </div>
 
           ${
+            this._platform() !== "android_tv" &&
             !this._tvSources().length
               ? `
                 <div class="error">
@@ -3566,7 +3874,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.40 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.41 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
