@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.52
+ * v0.4.53
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -2383,6 +2383,215 @@ class StreamingBrowserCard extends HTMLElement {
     return true;
   }
 
+  _isPrimeProvider(providerName, source = "") {
+    const aliases = new Set([
+      ...this._providerAliases(
+        providerName
+      ),
+      ...this._providerAliases(
+        source
+      ),
+    ]);
+
+    return [...aliases].some(
+      (alias) =>
+        alias &&
+        (
+          alias.includes(
+            "amazonprimevideo"
+          ) ||
+          alias.includes(
+            "primevideo"
+          ) ||
+          alias === "prime" ||
+          alias === "amazon"
+        )
+    );
+  }
+
+  _primeContentTarget(webUrl) {
+    const raw =
+      String(webUrl || "").trim();
+
+    if (!raw) {
+      return "";
+    }
+
+    let decoded = raw;
+
+    try {
+      decoded =
+        decodeURIComponent(raw);
+    } catch (_) {}
+
+    const candidates =
+      [decoded, raw];
+
+    const patterns = [
+      /primevideo\.com\/(?:region\/[a-z]{2}\/)?detail\/([a-z0-9]+)/i,
+      /amazon\.[^/]+\/(?:[^/]+\/)?gp\/video\/detail\/([a-z0-9]+)/i,
+      /amazon\.[^/]+\/dp\/([a-z0-9]+)/i,
+    ];
+
+    for (
+      const candidate of candidates
+    ) {
+      for (const pattern of patterns) {
+        const match =
+          candidate.match(pattern);
+
+        if (match?.[1]) {
+          return (
+            "https://www.primevideo.com/detail/" +
+            match[1]
+          );
+        }
+      }
+    }
+
+    return raw;
+  }
+
+  async _openPrimeExactTitle(webUrl) {
+    const target =
+      this._primeContentTarget(
+        webUrl
+      );
+
+    if (!target) {
+      throw new Error(
+        "Prime Video title link is missing."
+      );
+    }
+
+    /*
+     * Do not use system.launcher/open here: that endpoint is
+     * explicitly the webOS browser URL opener. Prime Video's
+     * webOS app id is "amazon". Send the deep link through the
+     * app launcher as both contentId and contentTarget so both
+     * newer and older webOS launcher generations can deliver it.
+     */
+    await this._hass.callService(
+      "webostv",
+      "command",
+      {
+        entity_id:
+          this._config.tv_entity,
+
+        command:
+          "system.launcher/launch",
+
+        payload: {
+          id: "amazon",
+          contentId: target,
+          params: {
+            contentTarget:
+              target,
+          },
+        },
+      }
+    );
+  }
+
+  _netflixContentId(url) {
+    const raw = String(url || "");
+
+    let decoded = raw;
+
+    try {
+      decoded = decodeURIComponent(raw);
+    } catch (_) {}
+
+    const candidates = [
+      raw,
+      decoded,
+    ];
+
+    const patterns = [
+      /netflix\.com\/(?:watch|title)\/(\d+)/i,
+      /api\.netflix\.com\/catalog\/titles\/(?:movies|series|programs)\/(\d+)/i,
+      /(?:^|[?&])(?:movieid|contentid|titleid)=(\d+)/i,
+    ];
+
+    for (
+      const candidate of candidates
+    ) {
+      for (const pattern of patterns) {
+        const match =
+          String(candidate).match(
+            pattern
+          );
+
+        if (match?.[1]) {
+          return match[1];
+        }
+      }
+    }
+
+    return null;
+  }
+
+  async _openNetflixExactTitle(webUrl) {
+    const contentId =
+      this._netflixContentId(
+        webUrl
+      );
+
+    if (!contentId) {
+      throw new Error(
+        this._t(
+          "netflix_title_id_missing"
+        )
+      );
+    }
+
+    if (
+      this._platform() ===
+      "android_tv"
+    ) {
+      if (
+        this._androidAdbEntity()
+      ) {
+        await this._androidAdbCommand(
+          "am start -W -n com.netflix.ninja/.MainActivity " +
+          "-a android.intent.action.VIEW " +
+          "-d netflix://title/" +
+          contentId +
+          " -f 0x10000020 -e source 30"
+        );
+
+        return;
+      }
+
+      await this._androidLaunchActivity(
+        "netflix://title/" +
+          contentId
+      );
+
+      return;
+    }
+
+    await this._hass.callService(
+      "webostv",
+      "command",
+      {
+        entity_id:
+          this._config.tv_entity,
+
+        command:
+          "system.launcher/launch",
+
+        payload: {
+          id: "netflix",
+          contentId:
+            "m=http%3A%2F%2Fapi.netflix.com%2Fcatalog%2Ftitles%2Fmovies%2F" +
+            contentId +
+            "&source_type=4",
+        },
+      }
+    );
+  }
+
   async _sendProviderPlay(providerName, source = "") {
     if (
       this._platform() === "android_tv" &&
@@ -3496,6 +3705,16 @@ class StreamingBrowserCard extends HTMLElement {
         )
       ) {
         await this._openNetflixExactTitle(
+          match.web_url
+        );
+      } else if (
+        this._platform() === "webos" &&
+        this._isPrimeProvider(
+          providerName,
+          source || match.name || ""
+        )
+      ) {
+        await this._openPrimeExactTitle(
           match.web_url
         );
       } else if (this._platform() === "android_tv") {
@@ -5848,7 +6067,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.52 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.53 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
