@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.47
+ * v0.4.48
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -29,6 +29,41 @@
  * certified by either service.
  */
 
+const STREAMING_BROWSER_BACKEND = Object.freeze({
+  visibleApps: [
+    "Netflix",
+    "Disney Plus",
+    "Amazon Prime Video",
+  ],
+  fallbackProfiles: [
+    {
+      name: "Felipe",
+      icon: "mdi:account",
+    },
+    {
+      name: "Guest",
+      icon: "mdi:account-outline",
+    },
+  ],
+  profileRules: {
+    netflix: {
+      launchDelayMs: 5000,
+      stepDelayMs: 350,
+      afterSelectDelayMs: 1500,
+    },
+    disney: {
+      launchDelayMs: 5000,
+      stepDelayMs: 350,
+      afterSelectDelayMs: 2500,
+    },
+    prime: {
+      launchDelayMs: 5000,
+      stepDelayMs: 350,
+      afterSelectDelayMs: 2500,
+    },
+  },
+});
+
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
     super();
@@ -43,7 +78,7 @@ class StreamingBrowserCard extends HTMLElement {
     this._sectionLoadLocks = new Set();
     this._rowScrollPositions = new Map();
     this._mode = "movie";
-    this._provider = "trending";
+    this._provider = null;
     this._providers = { movie: [], tv: [] };
     this._matchedProviders = { movie: [], tv: [] };
     this._details = null;
@@ -80,15 +115,6 @@ class StreamingBrowserCard extends HTMLElement {
       exact_title_play_delay_ms: "Exact-title Play delay",
       profile_entity: "Profile helper",
       default_profile: "Default profile",
-      profile_launch_delay_ms: "Profile app launch delay",
-      profile_navigation_delay_ms: "Profile navigation step delay",
-      netflix_profile_autoselect: "Auto-select Netflix profile",
-      netflix_profile_launch_delay_ms: "Netflix profile picker delay",
-      netflix_profile_navigation_delay_ms: "Netflix profile navigation delay",
-      netflix_profile_after_select_delay_ms: "Netflix profile settle delay",
-      profiles: "Profiles and per-app behavior",
-      provider_sources: "Provider source overrides",
-      android_app_links: "Android app/deep-link overrides",
     };
 
     const helpers = {
@@ -120,20 +146,6 @@ class StreamingBrowserCard extends HTMLElement {
         "Optional input_select or select entity used to synchronize the active streaming profile.",
       default_profile:
         "Profile selected when no profile helper or saved choice is available.",
-      netflix_profile_autoselect:
-        "Automatically select the active Streaming Browser profile when Netflix shows its TV profile picker.",
-      netflix_profile_launch_delay_ms:
-        "How long to wait for Netflix to show its profile picker after a fresh launch.",
-      netflix_profile_navigation_delay_ms:
-        "Delay between Netflix profile-picker remote steps.",
-      netflix_profile_after_select_delay_ms:
-        "Delay after choosing the Netflix profile before sending a title deep link.",
-      profiles:
-        "Advanced object containing profile names, app modes, PIN scripts and navigation sequences.",
-      provider_sources:
-        "Advanced mapping used when automatic provider-to-app matching needs an override.",
-      android_app_links:
-        "Optional Android provider-to-deep-link mapping. Built-in defaults cover common streaming apps.",
     };
 
     return {
@@ -369,88 +381,6 @@ class StreamingBrowserCard extends HTMLElement {
             {
               name: "default_profile",
               selector: { text: {} },
-            },
-            {
-              name: "netflix_profile_autoselect",
-              selector: { boolean: {} },
-            },
-            {
-              type: "grid",
-              name: "",
-              flatten: true,
-              column_min_width: "170px",
-              schema: [
-                {
-                  name: "profile_launch_delay_ms",
-                  selector: {
-                    number: {
-                      min: 0,
-                      step: 100,
-                      unit_of_measurement: "ms",
-                    },
-                  },
-                },
-                {
-                  name: "profile_navigation_delay_ms",
-                  selector: {
-                    number: {
-                      min: 0,
-                      step: 50,
-                      unit_of_measurement: "ms",
-                    },
-                  },
-                },
-                {
-                  name: "netflix_profile_launch_delay_ms",
-                  selector: {
-                    number: {
-                      min: 0,
-                      step: 100,
-                      unit_of_measurement: "ms",
-                    },
-                  },
-                },
-                {
-                  name: "netflix_profile_navigation_delay_ms",
-                  selector: {
-                    number: {
-                      min: 0,
-                      step: 50,
-                      unit_of_measurement: "ms",
-                    },
-                  },
-                },
-                {
-                  name: "netflix_profile_after_select_delay_ms",
-                  selector: {
-                    number: {
-                      min: 0,
-                      step: 100,
-                      unit_of_measurement: "ms",
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        },
-        {
-          type: "expandable",
-          name: "",
-          title: "Advanced",
-          flatten: true,
-          schema: [
-            {
-              name: "profiles",
-              selector: { object: {} },
-            },
-            {
-              name: "provider_sources",
-              selector: { object: {} },
-            },
-            {
-              name: "android_app_links",
-              selector: { object: {} },
             },
           ],
         },
@@ -830,8 +760,49 @@ class StreamingBrowserCard extends HTMLElement {
   // Profiles
   // ---------------------------------------------------------------------------
 
+  _backendVisibleApps() {
+    return STREAMING_BROWSER_BACKEND.visibleApps;
+  }
+
+  _isBackendVisibleApp(providerName) {
+    const aliases =
+      this._providerAliases(providerName);
+
+    return this._backendVisibleApps().some(
+      (name) => {
+        const wanted =
+          this._norm(name);
+
+        return aliases.some(
+          (alias) =>
+            alias &&
+            (
+              alias === wanted ||
+              alias.includes(wanted) ||
+              wanted.includes(alias)
+            )
+        );
+      }
+    );
+  }
+
+  _fallbackProfiles() {
+    return STREAMING_BROWSER_BACKEND
+      .fallbackProfiles;
+  }
+
   _profileNames() {
-    return Object.keys(this._config?.profiles || {});
+    const configured =
+      Object.keys(
+        this._config?.profiles || {}
+      );
+
+    if (configured.length) {
+      return configured;
+    }
+
+    return this._fallbackProfiles()
+      .map((profile) => profile.name);
   }
 
   _profileStorageKey() {
@@ -906,9 +877,49 @@ class StreamingBrowserCard extends HTMLElement {
     this._render();
   }
 
+  _currentProfileConfigForName(name) {
+    const configured =
+      this._config?.profiles?.[name];
+
+    if (configured) {
+      return {
+        icon: configured.icon,
+        picture: configured.picture,
+      };
+    }
+
+    return (
+      this._fallbackProfiles().find(
+        (profile) =>
+          profile.name === name
+      ) || {}
+    );
+  }
+
   _currentProfileConfig() {
-    if (!this._selectedProfile) return null;
-    return this._config.profiles?.[this._selectedProfile] || null;
+    if (!this._selectedProfile) {
+      return null;
+    }
+
+    const configured =
+      this._config?.profiles?.[
+        this._selectedProfile
+      ];
+
+    if (configured) {
+      return {
+        icon: configured.icon,
+        picture: configured.picture,
+      };
+    }
+
+    return (
+      this._fallbackProfiles().find(
+        (profile) =>
+          profile.name ===
+          this._selectedProfile
+      ) || null
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1118,6 +1129,11 @@ class StreamingBrowserCard extends HTMLElement {
       const seen = new Set();
 
       this._matchedProviders[mode] = this._providers[mode]
+        .filter((provider) =>
+          this._isBackendVisibleApp(
+            provider.provider_name
+          )
+        )
         .map((provider) => ({
           ...provider,
           tv_source: this._sourceForProvider(provider.provider_name),
@@ -1134,6 +1150,34 @@ class StreamingBrowserCard extends HTMLElement {
         })
         .slice(0, 18);
     }
+
+    this._ensureSelectedProvider();
+  }
+
+  _ensureSelectedProvider() {
+    const providers =
+      this._matchedProviders[
+        this._mode
+      ] || [];
+
+    if (!providers.length) {
+      this._provider = null;
+      return;
+    }
+
+    const selectedExists =
+      providers.some(
+        (provider) =>
+          String(provider.provider_id) ===
+          String(this._provider)
+      );
+
+    if (!selectedExists) {
+      this._provider =
+        String(
+          providers[0].provider_id
+        );
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1145,75 +1189,7 @@ class StreamingBrowserCard extends HTMLElement {
     const region = this._config.region;
     const today = new Date().toISOString().slice(0, 10);
 
-    if (this._provider === "trending") {
-      if (mode === "movie") {
-        return [
-          {
-            key: "trending",
-            labelKey: "trending",
-            path: "/trending/movie/week",
-            params: {},
-          },
-          {
-            key: "popular",
-            labelKey: "popular",
-            path: "/movie/popular",
-            params: { region },
-          },
-          {
-            key: "now-playing",
-            labelKey: "now_playing",
-            path: "/movie/now_playing",
-            params: { region },
-          },
-          {
-            key: "top-rated",
-            labelKey: "top_rated",
-            path: "/movie/top_rated",
-            params: { region },
-          },
-          {
-            key: "upcoming",
-            labelKey: "upcoming",
-            path: "/movie/upcoming",
-            params: { region },
-          },
-        ];
-      }
-
-      return [
-        {
-          key: "trending",
-          labelKey: "trending",
-          path: "/trending/tv/week",
-          params: {},
-        },
-        {
-          key: "popular",
-          labelKey: "popular",
-          path: "/tv/popular",
-          params: {},
-        },
-        {
-          key: "on-air",
-          labelKey: "on_air",
-          path: "/tv/on_the_air",
-          params: {},
-        },
-        {
-          key: "top-rated",
-          labelKey: "top_rated",
-          path: "/tv/top_rated",
-          params: {},
-        },
-        {
-          key: "airing-today",
-          labelKey: "airing_today",
-          path: "/tv/airing_today",
-          params: {},
-        },
-      ];
-    }
+    this._ensureSelectedProvider();
 
     const provider = this._matchedProviders[mode].find(
       (item) =>
@@ -1547,35 +1523,175 @@ class StreamingBrowserCard extends HTMLElement {
   // Profile config lookup
   // ---------------------------------------------------------------------------
 
-  _findProfileAppConfig(providerName, source) {
-    const profile = this._currentProfileConfig();
+  _backendProfilePosition() {
+    const names = this._profileNames();
 
-    if (!profile?.apps) return null;
+    const index =
+      names.indexOf(
+        this._selectedProfile
+      );
 
-    const entries = Object.entries(profile.apps);
-    const providerNorm = this._norm(providerName);
-    const sourceNorm = this._norm(source);
+    return Math.max(1, index + 1);
+  }
 
-    const exact = entries.find(([key]) => {
-      const k = this._norm(key);
-      return k === providerNorm || k === sourceNorm;
+  _horizontalProfileSequence(
+    position,
+    afterSelectDelayMs
+  ) {
+    const sequence = [];
+
+    for (let i = 0; i < 6; i += 1) {
+      sequence.push({
+        button: "LEFT",
+        wait_ms: 250,
+      });
+    }
+
+    for (let i = 1; i < position; i += 1) {
+      sequence.push({
+        button: "RIGHT",
+        wait_ms: 300,
+      });
+    }
+
+    sequence.push({
+      button: "ENTER",
+      wait_ms: afterSelectDelayMs,
     });
 
-    if (exact) return exact[1];
+    return sequence;
+  }
 
-    const aliases = new Set(this._providerAliases(providerName));
-    aliases.add(sourceNorm);
+  _verticalProfileSequence(
+    position,
+    afterSelectDelayMs
+  ) {
+    const sequence = [];
 
-    const fuzzy = entries.find(([key]) => {
-      const k = this._norm(key);
-      return [...aliases].some(
+    for (let i = 0; i < 6; i += 1) {
+      sequence.push({
+        button: "UP",
+        wait_ms: 250,
+      });
+    }
+
+    for (let i = 1; i < position; i += 1) {
+      sequence.push({
+        button: "DOWN",
+        wait_ms: 300,
+      });
+    }
+
+    sequence.push({
+      button: "ENTER",
+      wait_ms: afterSelectDelayMs,
+    });
+
+    return sequence;
+  }
+
+  _findProfileAppConfig(providerName, source) {
+    const position =
+      this._backendProfilePosition();
+
+    if (
+      this._isNetflixProvider(
+        providerName,
+        source
+      )
+    ) {
+      const rule =
+        STREAMING_BROWSER_BACKEND
+          .profileRules.netflix;
+
+      return {
+        mode: "netflix",
+        profile_position: position,
+        launch_delay_ms:
+          rule.launchDelayMs,
+        step_delay_ms:
+          rule.stepDelayMs,
+        after_select_delay_ms:
+          rule.afterSelectDelayMs,
+      };
+    }
+
+    const aliases = new Set([
+      ...this._providerAliases(
+        providerName
+      ),
+      ...this._providerAliases(
+        source
+      ),
+    ]);
+
+    const isDisney =
+      [...aliases].some(
         (alias) =>
           alias &&
-          (k.includes(alias) || alias.includes(k))
+          alias.includes("disney")
       );
-    });
 
-    return fuzzy ? fuzzy[1] : null;
+    if (isDisney) {
+      const rule =
+        STREAMING_BROWSER_BACKEND
+          .profileRules.disney;
+
+      return {
+        mode: "navigation",
+        launch_delay_ms:
+          rule.launchDelayMs,
+        step_delay_ms:
+          rule.stepDelayMs,
+        exact_title_profile_first:
+          true,
+        exact_title_after_profile_delay_ms:
+          rule.afterSelectDelayMs,
+        sequence:
+          this._horizontalProfileSequence(
+            position,
+            rule.afterSelectDelayMs
+          ),
+      };
+    }
+
+    const isPrime =
+      [...aliases].some(
+        (alias) =>
+          alias &&
+          (
+            alias.includes("amazonprimevideo") ||
+            alias.includes("primevideo") ||
+            alias === "prime"
+          )
+      );
+
+    if (isPrime) {
+      const rule =
+        STREAMING_BROWSER_BACKEND
+          .profileRules.prime;
+
+      return {
+        mode: "navigation",
+        launch_delay_ms:
+          rule.launchDelayMs,
+        step_delay_ms:
+          rule.stepDelayMs,
+        exact_title_profile_first:
+          true,
+        exact_title_after_profile_delay_ms:
+          rule.afterSelectDelayMs,
+        sequence:
+          this._verticalProfileSequence(
+            position,
+            rule.afterSelectDelayMs
+          ),
+      };
+    }
+
+    return {
+      mode: "remember",
+    };
   }
 
   _isNetflixProvider(providerName, source = "") {
@@ -2255,10 +2371,14 @@ class StreamingBrowserCard extends HTMLElement {
     }
 
     const initialDelay =
-      Number(
-        appConfig?.launch_delay_ms ??
-          this._config.profile_launch_delay_ms
-      ) || 0;
+      options.appReadyWaited === true
+        ? 0
+        : (
+            Number(
+              appConfig?.launch_delay_ms ??
+                this._config.profile_launch_delay_ms
+            ) || 0
+          );
 
     if (initialDelay > 0) {
       this._toast(
@@ -3438,7 +3558,10 @@ class StreamingBrowserCard extends HTMLElement {
         <div class="profiles">
           ${names
             .map((name) => {
-              const cfg = this._config.profiles?.[name] || {};
+              const cfg =
+                this._currentProfileConfigForName(
+                  name
+                );
               const active = name === this._selectedProfile;
 
               const avatar = cfg.picture
@@ -4001,18 +4124,8 @@ class StreamingBrowserCard extends HTMLElement {
       Number(this._config.poster_width) || 145
     );
 
-    const providerChips = [
-      `
-        <button
-          class="chip ${
-            this._provider === "trending" ? "active" : ""
-          }"
-          data-provider="trending"
-        >
-          🔥 ${this._t("trending")}
-        </button>
-      `,
-      ...providers.map(
+    const providerChips = providers
+      .map(
         (provider) => `
           <button
             class="chip ${
@@ -4028,8 +4141,8 @@ class StreamingBrowserCard extends HTMLElement {
             <span>${this._esc(provider.provider_name)}</span>
           </button>
         `
-      ),
-    ].join("");
+      )
+      .join("");
 
     const sectionsHtml = this._sections.length
       ? this._sections
@@ -4672,7 +4785,8 @@ class StreamingBrowserCard extends HTMLElement {
       .forEach((element) =>
         element.addEventListener("click", async () => {
           this._mode = element.dataset.mode;
-          this._provider = "trending";
+          this._provider = null;
+          this._ensureSelectedProvider();
           this._query = "";
           await this._loadBrowse();
         })
@@ -4858,7 +4972,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.47 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.48 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
