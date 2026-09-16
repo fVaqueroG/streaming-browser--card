@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.42
+ * v0.4.43
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -15,8 +15,10 @@
  * - Optional HA input_select/select synchronization
  * - Per-profile, per-app profile handling:
  *     remember    = let the app keep its last profile
- *     navigation  = send configured webOS remote-button steps
+ *     netflix     = auto-select a Netflix profile by TV position
+ *     navigation  = send configured remote-button steps
  *     command     = send a configured webostv.command
+ * - Netflix default-profile automation for LG webOS and Android TV via ADB
  * - navigation sequences can call Home Assistant scripts, allowing
  *   profile PIN entry to stay outside Lovelace/JavaScript.
  * - Watchmode exact-title lookup through a Home Assistant backend script.
@@ -61,6 +63,7 @@ class StreamingBrowserCard extends HTMLElement {
       platform: "Platform",
       tv_entity: "Media player",
       remote_entity: "Android TV remote",
+      adb_entity: "Android TV ADB media player",
       tmdb_api_key: "TMDB API key (v3)",
       region: "Region",
       language: "Language",
@@ -79,6 +82,10 @@ class StreamingBrowserCard extends HTMLElement {
       default_profile: "Default profile",
       profile_launch_delay_ms: "Profile app launch delay",
       profile_navigation_delay_ms: "Profile navigation step delay",
+      netflix_profile_autoselect: "Auto-select Netflix profile",
+      netflix_profile_launch_delay_ms: "Netflix profile picker delay",
+      netflix_profile_navigation_delay_ms: "Netflix profile navigation delay",
+      netflix_profile_after_select_delay_ms: "Netflix profile settle delay",
       profiles: "Profiles and per-app behavior",
       provider_sources: "Provider source overrides",
       android_app_links: "Android app/deep-link overrides",
@@ -89,6 +96,8 @@ class StreamingBrowserCard extends HTMLElement {
         "Choose LG webOS or Android TV Remote.",
       remote_entity:
         "Required for Android TV. Use the remote entity from the Android TV Remote integration.",
+      adb_entity:
+        "Optional for Android TV generally, but required for Netflix profile auto-selection because Android TV Remote key commands do not work inside Netflix.",
       tmdb_api_key:
         "Use the short TMDB API key v3. It is stored in the dashboard card configuration.",
       region:
@@ -111,6 +120,14 @@ class StreamingBrowserCard extends HTMLElement {
         "Optional input_select or select entity used to synchronize the active streaming profile.",
       default_profile:
         "Profile selected when no profile helper or saved choice is available.",
+      netflix_profile_autoselect:
+        "Automatically select the active Streaming Browser profile when Netflix shows its TV profile picker.",
+      netflix_profile_launch_delay_ms:
+        "How long to wait for Netflix to show its profile picker after a fresh launch.",
+      netflix_profile_navigation_delay_ms:
+        "Delay between Netflix profile-picker remote steps.",
+      netflix_profile_after_select_delay_ms:
+        "Delay after choosing the Netflix profile before sending a title deep link.",
       profiles:
         "Advanced object containing profile names, app modes, PIN scripts and navigation sequences.",
       provider_sources:
@@ -157,6 +174,14 @@ class StreamingBrowserCard extends HTMLElement {
               selector: {
                 entity: {
                   filter: { domain: "remote" },
+                },
+              },
+            },
+            {
+              name: "adb_entity",
+              selector: {
+                entity: {
+                  filter: { domain: "media_player" },
                 },
               },
             },
@@ -346,6 +371,10 @@ class StreamingBrowserCard extends HTMLElement {
               selector: { text: {} },
             },
             {
+              name: "netflix_profile_autoselect",
+              selector: { boolean: {} },
+            },
+            {
               type: "grid",
               name: "",
               flatten: true,
@@ -367,6 +396,36 @@ class StreamingBrowserCard extends HTMLElement {
                     number: {
                       min: 0,
                       step: 50,
+                      unit_of_measurement: "ms",
+                    },
+                  },
+                },
+                {
+                  name: "netflix_profile_launch_delay_ms",
+                  selector: {
+                    number: {
+                      min: 0,
+                      step: 100,
+                      unit_of_measurement: "ms",
+                    },
+                  },
+                },
+                {
+                  name: "netflix_profile_navigation_delay_ms",
+                  selector: {
+                    number: {
+                      min: 0,
+                      step: 50,
+                      unit_of_measurement: "ms",
+                    },
+                  },
+                },
+                {
+                  name: "netflix_profile_after_select_delay_ms",
+                  selector: {
+                    number: {
+                      min: 0,
+                      step: 100,
                       unit_of_measurement: "ms",
                     },
                   },
@@ -406,6 +465,7 @@ class StreamingBrowserCard extends HTMLElement {
       platform: "webos",
       tv_entity: "media_player.lg_webos_tv",
       remote_entity: null,
+      adb_entity: null,
       tmdb_api_key: "YOUR_TMDB_V3_API_KEY",
       region: "MX",
       language: "es-MX",
@@ -420,6 +480,10 @@ class StreamingBrowserCard extends HTMLElement {
       auto_play_delay_ms: 4000,
       profile_launch_delay_ms: 3000,
       profile_navigation_delay_ms: 500,
+      netflix_profile_autoselect: true,
+      netflix_profile_launch_delay_ms: 4500,
+      netflix_profile_navigation_delay_ms: 350,
+      netflix_profile_after_select_delay_ms: 1500,
       exact_title_play_delay_ms: 5000,
       watchmode_script: "script.streaming_watchmode_sources",
       default_profile: "Felipe",
@@ -427,7 +491,7 @@ class StreamingBrowserCard extends HTMLElement {
         Felipe: {
           icon: "mdi:account",
           apps: {
-            Netflix: { mode: "remember" }
+            Netflix: { mode: "netflix", profile_position: 1 }
           }
         }
       }
@@ -443,6 +507,7 @@ class StreamingBrowserCard extends HTMLElement {
     this._config = {
       platform: "webos",
       remote_entity: null,
+      adb_entity: null,
       region: "MX",
       language: "es-MX",
       title: "Streaming",
@@ -458,6 +523,10 @@ class StreamingBrowserCard extends HTMLElement {
       auto_play_delay_ms: 4000,
       profile_launch_delay_ms: 3000,
       profile_navigation_delay_ms: 500,
+      netflix_profile_autoselect: true,
+      netflix_profile_launch_delay_ms: 4500,
+      netflix_profile_navigation_delay_ms: 350,
+      netflix_profile_after_select_delay_ms: 1500,
       exact_title_play_delay_ms: 5000,
       watchmode_script: "script.streaming_watchmode_sources",
       exact_title_fallback_to_app: true,
@@ -591,6 +660,8 @@ class StreamingBrowserCard extends HTMLElement {
             "preparing_profile": "{source}: preparing profile {profile}…",
             "navigation_missing": "Profile {profile} uses navigation for {source}, but has no sequence.",
             "selecting_profile": "{source}: selecting profile {profile}…",
+            "netflix_adb_required": "Netflix profile auto-selection on Android TV requires an Android Debug Bridge media_player entity.",
+            "netflix_profile_position_invalid": "Netflix profile position for {profile} must be between 1 and 5.",
             "unlocking_profile": "{source}: unlocking profile {profile}…",
             "command_missing": "Profile {profile} uses command for {source}, but has no command.",
             "applying_profile": "{source}: applying profile {profile}…",
@@ -669,6 +740,8 @@ class StreamingBrowserCard extends HTMLElement {
             "preparing_profile": "{source}: preparando perfil {profile}…",
             "navigation_missing": "El perfil {profile} usa navigation para {source}, pero no tiene sequence.",
             "selecting_profile": "{source}: seleccionando perfil {profile}…",
+            "netflix_adb_required": "La selección automática de perfil de Netflix en Android TV requiere una entidad media_player de Android Debug Bridge.",
+            "netflix_profile_position_invalid": "La posición del perfil de Netflix para {profile} debe estar entre 1 y 5.",
             "unlocking_profile": "{source}: desbloqueando perfil {profile}…",
             "command_missing": "El perfil {profile} usa command para {source}, pero no tiene command.",
             "applying_profile": "{source}: aplicando perfil {profile}…",
@@ -1503,11 +1576,35 @@ class StreamingBrowserCard extends HTMLElement {
     return fuzzy ? fuzzy[1] : null;
   }
 
-  _profileModeFor(providerName, source) {
-    return (
-      this._findProfileAppConfig(providerName, source)?.mode ||
-      "remember"
+  _isNetflixProvider(providerName, source = "") {
+    const aliases = new Set([
+      ...this._providerAliases(providerName),
+      ...this._providerAliases(source),
+    ]);
+
+    return [...aliases].some(
+      (alias) => alias && alias.includes("netflix")
     );
+  }
+
+  _profileModeFor(providerName, source) {
+    const configured =
+      this._findProfileAppConfig(providerName, source)?.mode ||
+      "remember";
+
+    if (configured === "netflix") {
+      return "netflix";
+    }
+
+    if (
+      configured === "remember" &&
+      this._config?.netflix_profile_autoselect !== false &&
+      this._isNetflixProvider(providerName, source)
+    ) {
+      return "netflix";
+    }
+
+    return configured;
   }
 
   // ---------------------------------------------------------------------------
@@ -1570,6 +1667,309 @@ class StreamingBrowserCard extends HTMLElement {
     return map[String(button || "").toUpperCase()] || button;
   }
 
+  _androidAdbEntity() {
+    if (this._config?.adb_entity) {
+      return this._config.adb_entity;
+    }
+
+    const tv = this._tvState();
+
+    if (
+      tv?.attributes &&
+      Object.prototype.hasOwnProperty.call(
+        tv.attributes,
+        "adb_response"
+      )
+    ) {
+      return this._config?.tv_entity || null;
+    }
+
+    return null;
+  }
+
+  _androidAdbState() {
+    const entityId = this._androidAdbEntity();
+    return entityId ? this._hass?.states?.[entityId] : null;
+  }
+
+  async _androidAdbCommand(command) {
+    const entityId = this._androidAdbEntity();
+
+    if (!entityId) {
+      throw new Error(this._t("netflix_adb_required"));
+    }
+
+    await this._hass.callService(
+      "androidtv",
+      "adb_command",
+      {
+        entity_id: entityId,
+        command,
+      }
+    );
+  }
+
+  async _androidNetflixPickerVisible() {
+    try {
+      await this._androidAdbCommand(
+        "uiautomator dump /sdcard/window.xml >/dev/null 2>&1 && cat /sdcard/window.xml"
+      );
+
+      await this._sleep(350);
+
+      const response = String(
+        this._androidAdbState()?.attributes?.adb_response || ""
+      );
+
+      if (!response || !response.includes("<hierarchy")) {
+        return null;
+      }
+
+      const normalized = this._norm(response);
+
+      const pickerMarkers = [
+        "whoswatching",
+        "whoiswatching",
+        "quienestaviendo",
+        "manageprofiles",
+        "administrarperfiles",
+        "addprofile",
+        "agregarperfil",
+      ];
+
+      const profileMarkers = this._profileNames()
+        .map((name) => this._norm(name))
+        .filter(Boolean);
+
+      if (
+        [...pickerMarkers, ...profileMarkers].some(
+          (marker) => normalized.includes(marker)
+        )
+      ) {
+        return true;
+      }
+
+      const homeMarkers = [
+        "mynetflix",
+        "home",
+        "inicio",
+        "search",
+        "buscar",
+        "tvshows",
+        "series",
+        "movies",
+        "peliculas",
+      ];
+
+      if (
+        homeMarkers.some(
+          (marker) => normalized.includes(marker)
+        )
+      ) {
+        return false;
+      }
+
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _netflixProfilePosition(appConfig) {
+    const profileName = this._selectedProfile;
+    const profileConfig = this._currentProfileConfig();
+
+    const fallback =
+      Math.max(
+        0,
+        this._profileNames().indexOf(profileName)
+      ) + 1;
+
+    const raw =
+      appConfig?.profile_position ??
+      appConfig?.netflix_profile_position ??
+      profileConfig?.netflix_profile_position ??
+      fallback;
+
+    const position = Number(raw);
+
+    if (
+      !Number.isInteger(position) ||
+      position < 1 ||
+      position > 5
+    ) {
+      throw new Error(
+        this._t("netflix_profile_position_invalid", {
+          profile: profileName,
+        })
+      );
+    }
+
+    return position;
+  }
+
+  async _sendNetflixProfileButton(button) {
+    if (this._platform() !== "android_tv") {
+      await this._sendRemoteButton(button);
+      return;
+    }
+
+    const key = String(button || "").toUpperCase();
+    const map = {
+      UP: "UP",
+      DOWN: "DOWN",
+      LEFT: "LEFT",
+      RIGHT: "RIGHT",
+      ENTER: "CENTER",
+      CENTER: "CENTER",
+      BACK: "BACK",
+      HOME: "HOME",
+    };
+
+    await this._androidAdbCommand(map[key] || key);
+  }
+
+  async _selectNetflixProfile(
+    providerName,
+    source,
+    appConfig,
+    options = {}
+  ) {
+    const appJustOpened =
+      options.appJustOpened === true;
+
+    const alwaysSelect =
+      appConfig?.always_select === true;
+
+    if (
+      this._platform() === "webos" &&
+      !appJustOpened &&
+      !alwaysSelect
+    ) {
+      return false;
+    }
+
+    const initialDelay =
+      Number(
+        appConfig?.launch_delay_ms ??
+          this._config.netflix_profile_launch_delay_ms ??
+          this._config.profile_launch_delay_ms
+      ) || 0;
+
+    if (initialDelay > 0) {
+      this._toast(
+        this._t("preparing_profile", {
+          source,
+          profile: this._selectedProfile,
+        })
+      );
+
+      await this._sleep(initialDelay);
+    }
+
+    if (this._platform() === "android_tv") {
+      if (!this._androidAdbEntity()) {
+        throw new Error(this._t("netflix_adb_required"));
+      }
+
+      const pickerVisible =
+        await this._androidNetflixPickerVisible();
+
+      if (pickerVisible === false) {
+        return false;
+      }
+
+      if (
+        pickerVisible == null &&
+        !appJustOpened &&
+        !alwaysSelect
+      ) {
+        return false;
+      }
+    }
+
+    const position =
+      this._netflixProfilePosition(appConfig);
+
+    const stepDelay =
+      Number(
+        appConfig?.step_delay_ms ??
+          this._config.netflix_profile_navigation_delay_ms ??
+          this._config.profile_navigation_delay_ms
+      ) || 300;
+
+    const anchorPresses = Math.min(
+      10,
+      Math.max(
+        1,
+        Number(appConfig?.anchor_left_presses ?? 6) || 6
+      )
+    );
+
+    this._toast(
+      this._t("selecting_profile", {
+        source,
+        profile: this._selectedProfile,
+      })
+    );
+
+    for (let i = 0; i < anchorPresses; i += 1) {
+      await this._sendNetflixProfileButton("LEFT");
+
+      if (stepDelay > 0) {
+        await this._sleep(stepDelay);
+      }
+    }
+
+    for (let i = 1; i < position; i += 1) {
+      await this._sendNetflixProfileButton("RIGHT");
+
+      if (stepDelay > 0) {
+        await this._sleep(stepDelay);
+      }
+    }
+
+    await this._sendNetflixProfileButton("ENTER");
+
+    const afterSelectDelay =
+      Number(
+        appConfig?.after_select_delay_ms ??
+          this._config.netflix_profile_after_select_delay_ms
+      ) || 0;
+
+    if (afterSelectDelay > 0) {
+      await this._sleep(afterSelectDelay);
+    }
+
+    return true;
+  }
+
+  async _sendProviderPlay(providerName, source = "") {
+    if (
+      this._platform() === "android_tv" &&
+      this._isNetflixProvider(providerName, source) &&
+      this._androidAdbEntity()
+    ) {
+      const command =
+        String(
+          this._config?.android_play_command ||
+          "DPAD_CENTER"
+        ).toUpperCase();
+
+      if (command === "MEDIA_PLAY") {
+        await this._androidAdbCommand(
+          "input keyevent 126"
+        );
+      } else {
+        await this._androidAdbCommand("CENTER");
+      }
+
+      return;
+    }
+
+    await this._sendRemoteButton("PLAY");
+  }
+
   async _sendRemoteButton(button) {
     if (this._platform() === "android_tv") {
       if (!this._config.remote_entity) {
@@ -1589,7 +1989,11 @@ class StreamingBrowserCard extends HTMLElement {
     });
   }
 
-  async _applyProfile(providerName, source) {
+  async _applyProfile(
+    providerName,
+    source,
+    options = {}
+  ) {
     const profileName = this._selectedProfile;
 
     if (!profileName) return;
@@ -1599,9 +2003,20 @@ class StreamingBrowserCard extends HTMLElement {
       source
     );
 
-    const mode = appConfig?.mode || "remember";
+    const mode =
+      this._profileModeFor(providerName, source);
 
     if (mode === "remember") {
+      return;
+    }
+
+    if (mode === "netflix") {
+      await this._selectNetflixProfile(
+        providerName,
+        source,
+        appConfig || {},
+        options
+      );
       return;
     }
 
@@ -1905,13 +2320,20 @@ class StreamingBrowserCard extends HTMLElement {
           await this._androidLaunchActivity(activity);
         }
 
-        await this._applyProfile(providerName, source);
+        await this._applyProfile(
+          providerName,
+          source,
+          { appJustOpened: !appAlreadyOpen }
+        );
 
         if (autoPlay) {
           const delay =
             Number(this._config.auto_play_delay_ms) || 4000;
           await this._sleep(delay);
-          await this._sendRemoteButton("PLAY");
+          await this._sendProviderPlay(
+            providerName,
+            source
+          );
         }
 
         return;
@@ -1941,7 +2363,11 @@ class StreamingBrowserCard extends HTMLElement {
         }
       );
 
-      await this._applyProfile(providerName, source);
+      await this._applyProfile(
+        providerName,
+        source,
+        { appJustOpened: !appAlreadyOpen }
+      );
 
       if (autoPlay) {
         const delay =
@@ -1961,7 +2387,10 @@ class StreamingBrowserCard extends HTMLElement {
 
         await this._sleep(delay);
 
-        await this._sendRemoteButton("PLAY");
+        await this._sendProviderPlay(
+          providerName,
+          source
+        );
 
         this._toast(this._t("play_sent_to", { source }));
       } else {
@@ -2283,6 +2712,12 @@ class StreamingBrowserCard extends HTMLElement {
           source || providerName
         );
 
+      const profileMode =
+        this._profileModeFor(
+          providerName,
+          source || providerName
+        );
+
       /*
        * Some webOS apps (notably Disney+) discard the original
        * title launch target while the profile picker is active.
@@ -2291,7 +2726,10 @@ class StreamingBrowserCard extends HTMLElement {
        */
       if (
         source &&
-        appConfig?.exact_title_profile_first === true
+        (
+          appConfig?.exact_title_profile_first === true ||
+          profileMode === "netflix"
+        )
       ) {
         const currentSource =
           this._platform() === "android_tv"
@@ -2334,7 +2772,8 @@ class StreamingBrowserCard extends HTMLElement {
 
           await this._applyProfile(
             providerName,
-            source
+            source,
+            { appJustOpened: true }
           );
 
           const afterProfileDelay =
@@ -2354,6 +2793,17 @@ class StreamingBrowserCard extends HTMLElement {
             );
           }
         } else {
+          if (
+            profileMode === "netflix" &&
+            this._platform() === "android_tv"
+          ) {
+            await this._applyProfile(
+              providerName,
+              source,
+              { appJustOpened: false }
+            );
+          }
+
           this._toast(
             this._t("using_current_session", { source })
           );
@@ -2398,8 +2848,9 @@ class StreamingBrowserCard extends HTMLElement {
 
         await this._sleep(delay);
 
-        await this._sendRemoteButton(
-          "PLAY"
+        await this._sendProviderPlay(
+          providerName,
+          source || providerName
         );
 
         this._toast(
@@ -3932,7 +4383,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.42 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.43 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
