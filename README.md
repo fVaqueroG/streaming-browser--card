@@ -2,7 +2,16 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.54**
+Current version: **v0.4.55**
+
+## Longer post-active webOS load wait
+
+v0.4.55 moves the full webOS load delay to after the target app becomes active.
+
+- Netflix: 6 seconds after the app becomes active, then a 1 second settle window.
+- Disney+: 6 seconds after the app becomes active, then a 1 second settle window.
+- Prime Video: 7 seconds after the app becomes active, then a 1 second settle window.
+- Profile-session delays were also increased before exact-title/play actions continue.
 
 ## App startup wait before profile selection
 
