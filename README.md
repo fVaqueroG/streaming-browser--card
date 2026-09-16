@@ -2,7 +2,7 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.40**
+Current version: **v0.4.41**
 
 ## Features
 
@@ -29,6 +29,25 @@ Current version: **v0.4.40**
 6. Reload the Home Assistant frontend if prompted.
 
 HACS installs `streaming-browser-card.js` from the repository root.
+
+## Screensaver wake handling
+
+v0.4.41 adds screensaver-aware wake handling for both **LG webOS** and **Android TV Remote**.
+
+- LG webOS: if the TV is on but the active source/app looks like a screensaver, the card sends **ENTER**, waits, and falls back to **HOME** before launching the requested app or title.
+- Android TV: the card uses the configured `remote_entity`, calls `remote.turn_on` when the device is idle/off, then sends **DPAD_CENTER** and falls back to **HOME** if a screensaver/ambient/dream activity is still detected.
+- Android exact-title launches use `remote.turn_on` with the title deep link/activity.
+- Android Play defaults to `DPAD_CENTER`, which works better than a media PLAY key in many streaming apps.
+
+For Android TV use:
+
+```yaml
+platform: android_tv
+tv_entity: media_player.mitv_aesp0
+remote_entity: remote.mitv_aesp0
+screensaver_wake_delay_ms: 1200
+android_play_command: DPAD_CENTER
+```
 
 ## Languages
 
