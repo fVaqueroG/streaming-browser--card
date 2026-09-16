@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.46
+ * v0.4.47
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -2080,11 +2080,15 @@ class StreamingBrowserCard extends HTMLElement {
     }
 
     const initialDelay =
-      Number(
-        appConfig?.launch_delay_ms ??
-          this._config.netflix_profile_launch_delay_ms ??
-          this._config.profile_launch_delay_ms
-      ) || 0;
+      options.appReadyWaited === true
+        ? 0
+        : (
+            Number(
+              appConfig?.launch_delay_ms ??
+                this._config.netflix_profile_launch_delay_ms ??
+                this._config.profile_launch_delay_ms
+            ) || 0
+          );
 
     if (initialDelay > 0) {
       this._toast(
@@ -2586,6 +2590,125 @@ class StreamingBrowserCard extends HTMLElement {
     return null;
   }
 
+  _androidAppIsActive(providerName, source = "") {
+    const current =
+      this._norm(this._androidActivity());
+
+    if (!current) {
+      return false;
+    }
+
+    const aliases = new Set([
+      ...this._providerAliases(providerName),
+      ...this._providerAliases(source),
+    ]);
+
+    if (
+      this._isNetflixProvider(
+        providerName,
+        source
+      )
+    ) {
+      aliases.add("netflix");
+      aliases.add("comnetflixninja");
+    }
+
+    return [...aliases].some(
+      (alias) =>
+        alias &&
+        (
+          current.includes(alias) ||
+          alias.includes(current)
+        )
+    );
+  }
+
+  async _waitForAndroidAppReady(
+    providerName,
+    source,
+    appConfig = {}
+  ) {
+    const minimumWait =
+      Number(
+        appConfig?.launch_delay_ms ??
+          (
+            this._isNetflixProvider(
+              providerName,
+              source
+            )
+              ? this._config
+                  .netflix_profile_launch_delay_ms
+              : this._config
+                  .profile_launch_delay_ms
+          )
+      ) || 0;
+
+    const timeout =
+      Math.max(
+        minimumWait,
+        Number(
+          appConfig?.launch_timeout_ms ??
+            this._config
+              .android_app_launch_timeout_ms ??
+            8000
+        ) || 8000
+      );
+
+    const startedAt = Date.now();
+    let active = false;
+
+    while (
+      Date.now() - startedAt <
+      timeout
+    ) {
+      if (
+        this._androidAppIsActive(
+          providerName,
+          source
+        )
+      ) {
+        active = true;
+        break;
+      }
+
+      await this._sleep(250);
+    }
+
+    const elapsed =
+      Date.now() - startedAt;
+
+    const remaining =
+      Math.max(
+        0,
+        minimumWait - elapsed
+      );
+
+    if (remaining > 0) {
+      await this._sleep(remaining);
+    }
+
+    /*
+     * Home Assistant can report current_activity slightly before the
+     * Android TV app is ready to accept DPAD input. Give the app a
+     * short settle window after it becomes foreground.
+     */
+    if (active) {
+      const settleDelay =
+        Number(
+          appConfig?.settle_delay_ms ??
+            this._config
+              .android_app_settle_delay_ms ??
+            750
+        ) || 0;
+
+      if (settleDelay > 0) {
+        await this._sleep(
+          settleDelay
+        );
+      }
+    }
+  }
+
   async _androidLaunchActivity(activity) {
     if (!this._config.remote_entity) {
       throw new Error("remote_entity is required for Android TV");
@@ -2628,13 +2751,32 @@ class StreamingBrowserCard extends HTMLElement {
         );
 
         if (!appAlreadyOpen) {
-          await this._androidLaunchActivity(activity);
+          await this._androidLaunchActivity(
+            activity
+          );
+
+          const appConfig =
+            this._findProfileAppConfig(
+              providerName,
+              source
+            ) || {};
+
+          await this._waitForAndroidAppReady(
+            providerName,
+            source,
+            appConfig
+          );
         }
 
         await this._applyProfile(
           providerName,
           source,
-          { appJustOpened: !appAlreadyOpen }
+          {
+            appJustOpened:
+              !appAlreadyOpen,
+            appReadyWaited:
+              !appAlreadyOpen,
+          }
         );
 
         if (autoPlay) {
@@ -3067,7 +3209,15 @@ class StreamingBrowserCard extends HTMLElement {
               this._androidAppLink(providerName, source);
 
             if (activity) {
-              await this._androidLaunchActivity(activity);
+              await this._androidLaunchActivity(
+                activity
+              );
+
+              await this._waitForAndroidAppReady(
+                providerName,
+                source,
+                appConfig || {}
+              );
             }
           } else {
             await this._hass.callService(
@@ -3084,7 +3234,12 @@ class StreamingBrowserCard extends HTMLElement {
           await this._applyProfile(
             providerName,
             source,
-            { appJustOpened: true }
+            {
+              appJustOpened: true,
+              appReadyWaited:
+                this._platform() ===
+                "android_tv",
+            }
           );
 
           const afterProfileDelay =
@@ -4703,7 +4858,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.46 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.47 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
