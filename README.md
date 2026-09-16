@@ -2,11 +2,13 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.37**
+Current version: **v0.4.38**
 
 ## Features
 
 - Browse and search TMDB movies and TV series
+- Categorized horizontal catalog rows (Trending, Popular, Top Rated, releases/airing)
+- Infinite/lazy catalog pagination as you scroll each row
 - Region-specific streaming providers
 - LG webOS source matching and app launching
 - Android TV Remote support
