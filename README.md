@@ -2,7 +2,18 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.47**
+Current version: **v0.4.49**
+
+## Backend-managed apps and profiles
+
+v0.4.49 moves app visibility and profile-navigation rules into the card backend.
+
+- The Trending provider chip is removed.
+- Only Netflix, Disney+, and Prime Video are shown.
+- Netflix, Disney+, and Prime profile-selection steps are internal card rules.
+- The visual editor no longer exposes advanced `profiles`, `provider_sources`, `android_app_links`, or profile-navigation timing objects.
+- Profile names come from the configured `profile_entity` options when available; otherwise the built-in fallback profiles are Felipe and Guest.
+- Existing legacy YAML is still read for compatibility, but app-navigation behavior is controlled by the backend policy.
 
 ## Features
 
