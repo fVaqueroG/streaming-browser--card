@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.49
+ * v0.4.50
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -30,11 +30,7 @@
  */
 
 const STREAMING_BROWSER_BACKEND = Object.freeze({
-  visibleApps: [
-    "Netflix",
-    "Disney Plus",
-    "Amazon Prime Video",
-  ],
+  defaultProviderIds: [8, 337, 119],
   fallbackProfiles: [
     {
       name: "Felipe",
@@ -90,6 +86,12 @@ class StreamingBrowserCard extends HTMLElement {
     this._lastTvSourcesKey = "";
     this._selectedProfile = null;
     this._watchmodeCache = new Map();
+  }
+
+  static async getConfigElement() {
+    return document.createElement(
+      "streaming-browser-card-editor"
+    );
   }
 
   static getConfigForm() {
@@ -416,7 +418,11 @@ class StreamingBrowserCard extends HTMLElement {
       netflix_profile_after_select_delay_ms: 1500,
       exact_title_play_delay_ms: 5000,
       watchmode_script: "script.streaming_watchmode_sources",
-      default_profile: "Felipe"
+      default_profile: "Felipe",
+      selected_provider_ids: [
+        ...STREAMING_BROWSER_BACKEND
+          .defaultProviderIds,
+      ]
     };
   }
 
@@ -456,6 +462,10 @@ class StreamingBrowserCard extends HTMLElement {
       profiles: {},
       default_profile: null,
       profile_entity: null,
+      selected_provider_ids: [
+        ...STREAMING_BROWSER_BACKEND
+          .defaultProviderIds,
+      ],
       ...config,
     };
 
@@ -752,29 +762,28 @@ class StreamingBrowserCard extends HTMLElement {
   // Profiles
   // ---------------------------------------------------------------------------
 
-  _backendVisibleApps() {
-    return STREAMING_BROWSER_BACKEND.visibleApps;
+  _selectedProviderIds() {
+    const values =
+      this._config?.selected_provider_ids;
+
+    if (!Array.isArray(values)) {
+      return new Set(
+        STREAMING_BROWSER_BACKEND
+          .defaultProviderIds
+          .map((id) => String(id))
+      );
+    }
+
+    return new Set(
+      values
+        .map((id) => String(id))
+        .filter(Boolean)
+    );
   }
 
-  _isBackendVisibleApp(providerName) {
-    const aliases =
-      this._providerAliases(providerName);
-
-    return this._backendVisibleApps().some(
-      (name) => {
-        const wanted =
-          this._norm(name);
-
-        return aliases.some(
-          (alias) =>
-            alias &&
-            (
-              alias === wanted ||
-              alias.includes(wanted) ||
-              wanted.includes(alias)
-            )
-        );
-      }
+  _isSelectedTmdbProvider(provider) {
+    return this._selectedProviderIds().has(
+      String(provider?.provider_id)
     );
   }
 
@@ -1141,8 +1150,8 @@ class StreamingBrowserCard extends HTMLElement {
 
       this._matchedProviders[mode] = this._providers[mode]
         .filter((provider) =>
-          this._isBackendVisibleApp(
-            provider.provider_name
+          this._isSelectedTmdbProvider(
+            provider
           )
         )
         .map((provider) => ({
@@ -4956,6 +4965,771 @@ class StreamingBrowserCard extends HTMLElement {
   }
 }
 
+
+class StreamingBrowserCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._hass = null;
+    this._config = null;
+    this._providers = [];
+    this._providersLoading = false;
+    this._providersError = "";
+    this._providerQuery = "";
+    this._providerLoadToken = 0;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  setConfig(config) {
+    this._config = {
+      selected_provider_ids: [
+        ...STREAMING_BROWSER_BACKEND
+          .defaultProviderIds,
+      ],
+      ...config,
+    };
+
+    this._render();
+    this._loadProviders();
+  }
+
+  connectedCallback() {
+    this._render();
+
+    if (this._config) {
+      this._loadProviders();
+    }
+  }
+
+  _emitConfig(config) {
+    this._config = config;
+
+    this.dispatchEvent(
+      new CustomEvent(
+        "config-changed",
+        {
+          detail: { config },
+          bubbles: true,
+          composed: true,
+        }
+      )
+    );
+  }
+
+  _selectedIds() {
+    const values =
+      this._config?.selected_provider_ids;
+
+    return new Set(
+      (
+        Array.isArray(values)
+          ? values
+          : STREAMING_BROWSER_BACKEND
+              .defaultProviderIds
+      ).map((id) => String(id))
+    );
+  }
+
+  async _tmdb(path, params = {}) {
+    const key =
+      this._config?.tmdb_api_key;
+
+    if (
+      !key ||
+      key === "YOUR_TMDB_V3_API_KEY"
+    ) {
+      throw new Error(
+        "Enter the TMDB API key first."
+      );
+    }
+
+    const url = new URL(
+      "https://api.themoviedb.org/3" +
+        path
+    );
+
+    url.searchParams.set(
+      "api_key",
+      key
+    );
+
+    Object.entries(params)
+      .filter(
+        ([, value]) =>
+          value !== undefined &&
+          value !== null &&
+          value !== ""
+      )
+      .forEach(([name, value]) =>
+        url.searchParams.set(
+          name,
+          String(value)
+        )
+      );
+
+    const response =
+      await fetch(url.toString());
+
+    if (!response.ok) {
+      throw new Error(
+        "TMDB provider request failed (" +
+          response.status +
+          ")."
+      );
+    }
+
+    return response.json();
+  }
+
+  async _loadProviders() {
+    if (!this._config) {
+      return;
+    }
+
+    const token =
+      ++this._providerLoadToken;
+
+    this._providersLoading = true;
+    this._providersError = "";
+    this._renderProviders();
+
+    try {
+      const region =
+        String(
+          this._config.region || "MX"
+        ).toUpperCase();
+
+      const language =
+        this._config.language ||
+        "en-US";
+
+      const [movieData, tvData] =
+        await Promise.all([
+          this._tmdb(
+            "/watch/providers/movie",
+            {
+              watch_region: region,
+              language,
+            }
+          ),
+          this._tmdb(
+            "/watch/providers/tv",
+            {
+              watch_region: region,
+              language,
+            }
+          ),
+        ]);
+
+      if (
+        token !==
+        this._providerLoadToken
+      ) {
+        return;
+      }
+
+      const map = new Map();
+
+      for (
+        const provider of [
+          ...(movieData.results || []),
+          ...(tvData.results || []),
+        ]
+      ) {
+        const key =
+          String(
+            provider.provider_id
+          );
+
+        const existing =
+          map.get(key);
+
+        if (!existing) {
+          map.set(
+            key,
+            {
+              ...provider,
+              movie: (
+                movieData.results || []
+              ).some(
+                (item) =>
+                  String(
+                    item.provider_id
+                  ) === key
+              ),
+              tv: (
+                tvData.results || []
+              ).some(
+                (item) =>
+                  String(
+                    item.provider_id
+                  ) === key
+              ),
+            }
+          );
+        } else {
+          existing.movie =
+            existing.movie ||
+            (
+              movieData.results || []
+            ).some(
+              (item) =>
+                String(
+                  item.provider_id
+                ) === key
+            );
+
+          existing.tv =
+            existing.tv ||
+            (
+              tvData.results || []
+            ).some(
+              (item) =>
+                String(
+                  item.provider_id
+                ) === key
+            );
+        }
+      }
+
+      this._providers =
+        [...map.values()].sort(
+          (a, b) =>
+            (
+              a.display_priority ??
+              999
+            ) -
+              (
+                b.display_priority ??
+                999
+              ) ||
+            String(
+              a.provider_name
+            ).localeCompare(
+              String(
+                b.provider_name
+              )
+            )
+        );
+    } catch (err) {
+      if (
+        token !==
+        this._providerLoadToken
+      ) {
+        return;
+      }
+
+      this._providers = [];
+      this._providersError =
+        err?.message ||
+        String(err);
+    } finally {
+      if (
+        token ===
+        this._providerLoadToken
+      ) {
+        this._providersLoading =
+          false;
+        this._renderProviders();
+      }
+    }
+  }
+
+  _toggleProvider(
+    providerId,
+    checked
+  ) {
+    const selected =
+      this._selectedIds();
+
+    const key =
+      String(providerId);
+
+    if (checked) {
+      selected.add(key);
+    } else {
+      selected.delete(key);
+    }
+
+    const ids =
+      [...selected]
+        .map((id) => Number(id))
+        .filter(Number.isFinite);
+
+    this._emitConfig({
+      ...this._config,
+      selected_provider_ids: ids,
+    });
+
+    this._renderProviders();
+  }
+
+  _setAllProviders(selected) {
+    const ids =
+      selected
+        ? this._providers.map(
+            (provider) =>
+              Number(
+                provider.provider_id
+              )
+          )
+        : [];
+
+    this._emitConfig({
+      ...this._config,
+      selected_provider_ids: ids,
+    });
+
+    this._renderProviders();
+  }
+
+  _render() {
+    if (
+      !this.shadowRoot ||
+      !this._config
+    ) {
+      return;
+    }
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host {
+          display: block;
+        }
+
+        .providers {
+          margin-top: 18px;
+          padding-top: 16px;
+          border-top:
+            1px solid
+            var(--divider-color);
+        }
+
+        .providers h3 {
+          margin: 0 0 4px;
+          font-size: 16px;
+        }
+
+        .help {
+          margin: 0 0 12px;
+          opacity: .7;
+          font-size: 13px;
+          line-height: 1.4;
+        }
+
+        .provider-toolbar {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          flex-wrap: wrap;
+          margin-bottom: 10px;
+        }
+
+        .provider-search {
+          flex: 1 1 220px;
+          border:
+            1px solid
+            var(--divider-color);
+          background:
+            var(
+              --secondary-background-color
+            );
+          color:
+            var(--primary-text-color);
+          border-radius: 10px;
+          padding: 9px 10px;
+          font: inherit;
+        }
+
+        button {
+          border:
+            1px solid
+            var(--divider-color);
+          background:
+            var(
+              --secondary-background-color
+            );
+          color:
+            var(--primary-text-color);
+          border-radius: 10px;
+          padding: 8px 10px;
+          cursor: pointer;
+          font: inherit;
+        }
+
+        .provider-list {
+          display: grid;
+          grid-template-columns:
+            repeat(
+              auto-fill,
+              minmax(220px, 1fr)
+            );
+          gap: 8px;
+          max-height: 390px;
+          overflow: auto;
+          padding: 2px;
+        }
+
+        .provider-item {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          min-width: 0;
+          padding: 8px 9px;
+          border:
+            1px solid
+            var(--divider-color);
+          border-radius: 10px;
+          background:
+            var(
+              --secondary-background-color
+            );
+          cursor: pointer;
+        }
+
+        .provider-item img {
+          width: 34px;
+          height: 34px;
+          border-radius: 7px;
+          object-fit: contain;
+          background: white;
+          flex: 0 0 auto;
+        }
+
+        .provider-name {
+          min-width: 0;
+          flex: 1;
+        }
+
+        .provider-name strong {
+          display: block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .provider-name small {
+          opacity: .65;
+        }
+
+        .status {
+          padding: 12px 0;
+          opacity: .7;
+          font-size: 13px;
+        }
+
+        .error {
+          color:
+            var(
+              --error-color,
+              #db4437
+            );
+        }
+      </style>
+
+      <div id="base"></div>
+
+      <section class="providers">
+        <h3>TMDB Providers</h3>
+        <p class="help">
+          Choose which TMDB watch providers are shown as app tabs.
+          The list is loaded for the configured region.
+          App/profile navigation remains managed internally by the card.
+        </p>
+
+        <div class="provider-toolbar">
+          <input
+            id="provider-search"
+            class="provider-search"
+            type="search"
+            placeholder="Search providers"
+            value="${this._escape(
+              this._providerQuery
+            )}"
+          >
+
+          <button
+            type="button"
+            data-provider-all
+          >
+            Select all
+          </button>
+
+          <button
+            type="button"
+            data-provider-none
+          >
+            Clear
+          </button>
+        </div>
+
+        <div
+          id="provider-list"
+          class="provider-list"
+        ></div>
+      </section>
+    `;
+
+    const base =
+      this.shadowRoot
+        .querySelector("#base");
+
+    const form =
+      document.createElement(
+        "ha-form"
+      );
+
+    const formConfig =
+      StreamingBrowserCard
+        .getConfigForm();
+
+    form.hass = this._hass;
+    form.data = this._config;
+    form.schema =
+      formConfig.schema;
+    form.computeLabel =
+      formConfig.computeLabel;
+    form.computeHelper =
+      formConfig.computeHelper;
+
+    form.addEventListener(
+      "value-changed",
+      (event) => {
+        const oldRegion =
+          this._config?.region;
+        const oldKey =
+          this._config
+            ?.tmdb_api_key;
+        const oldLanguage =
+          this._config
+            ?.language;
+
+        const next = {
+          ...this._config,
+          ...(event.detail?.value ||
+            {}),
+        };
+
+        this._emitConfig(next);
+
+        if (
+          oldRegion !==
+            next.region ||
+          oldKey !==
+            next.tmdb_api_key ||
+          oldLanguage !==
+            next.language
+        ) {
+          this._loadProviders();
+        }
+      }
+    );
+
+    base.appendChild(form);
+
+    this.shadowRoot
+      .querySelector(
+        "#provider-search"
+      )
+      ?.addEventListener(
+        "input",
+        (event) => {
+          this._providerQuery =
+            event.target.value || "";
+
+          this._renderProviders();
+        }
+      );
+
+    this.shadowRoot
+      .querySelector(
+        "[data-provider-all]"
+      )
+      ?.addEventListener(
+        "click",
+        () =>
+          this._setAllProviders(true)
+      );
+
+    this.shadowRoot
+      .querySelector(
+        "[data-provider-none]"
+      )
+      ?.addEventListener(
+        "click",
+        () =>
+          this._setAllProviders(false)
+      );
+
+    this._renderProviders();
+  }
+
+  _escape(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
+
+  _renderProviders() {
+    const root =
+      this.shadowRoot?.querySelector(
+        "#provider-list"
+      );
+
+    if (!root) {
+      return;
+    }
+
+    if (this._providersLoading) {
+      root.innerHTML =
+        '<div class="status">Loading TMDB providers…</div>';
+      return;
+    }
+
+    if (this._providersError) {
+      root.innerHTML =
+        '<div class="status error">' +
+        this._escape(
+          this._providersError
+        ) +
+        "</div>";
+      return;
+    }
+
+    const query =
+      String(
+        this._providerQuery || ""
+      ).trim().toLowerCase();
+
+    const selected =
+      this._selectedIds();
+
+    const providers =
+      this._providers.filter(
+        (provider) =>
+          !query ||
+          String(
+            provider.provider_name
+          )
+            .toLowerCase()
+            .includes(query)
+      );
+
+    if (!providers.length) {
+      root.innerHTML =
+        '<div class="status">No providers found.</div>';
+      return;
+    }
+
+    root.innerHTML =
+      providers
+        .map((provider) => {
+          const id =
+            String(
+              provider.provider_id
+            );
+
+          const checked =
+            selected.has(id)
+              ? "checked"
+              : "";
+
+          const types = [
+            provider.movie
+              ? "Movies"
+              : "",
+            provider.tv
+              ? "TV"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" · ");
+
+          const logo =
+            provider.logo_path
+              ? "https://image.tmdb.org/t/p/w92" +
+                provider.logo_path
+              : "";
+
+          return `
+            <label
+              class="provider-item"
+            >
+              <input
+                type="checkbox"
+                data-provider-id="${this._escape(
+                  id
+                )}"
+                ${checked}
+              >
+
+              ${
+                logo
+                  ? `
+                    <img
+                      src="${this._escape(
+                        logo
+                      )}"
+                      alt=""
+                    >
+                  `
+                  : ""
+              }
+
+              <span
+                class="provider-name"
+              >
+                <strong>
+                  ${this._escape(
+                    provider.provider_name
+                  )}
+                </strong>
+                <small>
+                  ${this._escape(
+                    types
+                  )}
+                </small>
+              </span>
+            </label>
+          `;
+        })
+        .join("");
+
+    root
+      .querySelectorAll(
+        "[data-provider-id]"
+      )
+      .forEach((input) =>
+        input.addEventListener(
+          "change",
+          () =>
+            this._toggleProvider(
+              input.dataset
+                .providerId,
+              input.checked
+            )
+        )
+      );
+  }
+}
+
+if (
+  !customElements.get(
+    "streaming-browser-card-editor"
+  )
+) {
+  customElements.define(
+    "streaming-browser-card-editor",
+    StreamingBrowserCardEditor
+  );
+}
+
 if (!customElements.get("streaming-browser-card")) {
   customElements.define(
     "streaming-browser-card",
@@ -4983,7 +5757,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.49 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.50 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
