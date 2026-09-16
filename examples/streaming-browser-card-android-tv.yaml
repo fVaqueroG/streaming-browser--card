@@ -2,12 +2,15 @@ type: custom:streaming-browser-card
 
 title: Streaming
 
-# Android TV Remote integration — NO ADB.
+# Android TV Remote launches apps and deep links.
+# Android Debug Bridge is used only for Netflix profile navigation,
+# because Android TV Remote key commands do not work inside Netflix.
 platform: android_tv
 
-# CHANGE BOTH to your Android TV Remote integration entities.
+# CHANGE these to your entities.
 tv_entity: media_player.android_tv
 remote_entity: remote.android_tv
+adb_entity: media_player.android_tv_adb
 
 # Your TMDB v3 API key.
 tmdb_api_key: YOUR_TMDB_V3_API_KEY
@@ -30,6 +33,12 @@ exact_title_fallback_to_app: true
 # Optional profile helper.
 profile_entity: input_select.streaming_profile
 default_profile: Felipe
+
+# Netflix default-profile behavior.
+netflix_profile_autoselect: true
+netflix_profile_launch_delay_ms: 4500
+netflix_profile_navigation_delay_ms: 350
+netflix_profile_after_select_delay_ms: 1500
 
 # Android TV app/deep links.
 # Netflix / Prime Video / Disney+ are documented Android TV Remote
@@ -78,12 +87,11 @@ profiles:
 
     apps:
 
-      # IMPORTANT:
-      # Android TV Remote commands do not work inside Netflix.
-      # Leave Netflix in "remember" mode. The card can still launch
-      # Netflix and exact Netflix title links.
+      # Netflix D-pad input is sent through adb_entity.
+      # Positions are counted left-to-right starting at 1.
       Netflix:
-        mode: remember
+        mode: netflix
+        profile_position: 1
 
       # Start other Android TV apps in remember mode initially.
       # If remote.send_command works inside a given app, you can change
@@ -117,7 +125,8 @@ profiles:
 
     apps:
       Netflix:
-        mode: remember
+        mode: netflix
+        profile_position: 2
       Disney Plus:
         mode: remember
       Max:
