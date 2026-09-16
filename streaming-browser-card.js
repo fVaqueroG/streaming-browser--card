@@ -1,9 +1,10 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.37
+ * v0.4.38
  *
  * Features:
  * - Browse/search TMDB movies and TV
+ * - Categorized horizontal catalog rows with lazy pagination
  * - Region-specific watch providers
  * - Match providers to LG webOS source_list
  * - Open/reopen streaming apps
@@ -34,6 +35,9 @@ class StreamingBrowserCard extends HTMLElement {
     this._loading = false;
     this._error = "";
     this._items = [];
+    this._sections = [];
+    this._sectionLoadLocks = new Set();
+    this._rowScrollPositions = new Map();
     this._mode = "movie";
     this._provider = "trending";
     this._providers = { movie: [], tv: [] };
@@ -58,6 +62,7 @@ class StreamingBrowserCard extends HTMLElement {
       title: "Streaming",
       poster_width: 145,
       max_items: 24,
+      catalog_prefetch_threshold_px: 360,
       wake_delay_ms: 4500,
       relaunch_delay_ms: 1200,
       auto_play_delay_ms: 4000,
@@ -87,6 +92,7 @@ class StreamingBrowserCard extends HTMLElement {
       title: "Streaming",
       poster_width: 145,
       max_items: 24,
+      catalog_prefetch_threshold_px: 360,
       include_rent_buy: false,
       wake_delay_ms: 4500,
       relaunch_delay_ms: 1200,
@@ -460,48 +466,275 @@ class StreamingBrowserCard extends HTMLElement {
   // Browse / search
   // ---------------------------------------------------------------------------
 
+  _catalogDefinitions() {
+    const mode = this._mode;
+    const region = this._config.region;
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (this._provider === "trending") {
+      if (mode === "movie") {
+        return [
+          {
+            key: "trending",
+            label: "Tendencias",
+            path: "/trending/movie/week",
+            params: {},
+          },
+          {
+            key: "popular",
+            label: "Populares",
+            path: "/movie/popular",
+            params: { region },
+          },
+          {
+            key: "now-playing",
+            label: "En cartelera",
+            path: "/movie/now_playing",
+            params: { region },
+          },
+          {
+            key: "top-rated",
+            label: "Mejor valoradas",
+            path: "/movie/top_rated",
+            params: { region },
+          },
+          {
+            key: "upcoming",
+            label: "Próximamente",
+            path: "/movie/upcoming",
+            params: { region },
+          },
+        ];
+      }
+
+      return [
+        {
+          key: "trending",
+          label: "Tendencias",
+          path: "/trending/tv/week",
+          params: {},
+        },
+        {
+          key: "popular",
+          label: "Populares",
+          path: "/tv/popular",
+          params: {},
+        },
+        {
+          key: "on-air",
+          label: "En emisión",
+          path: "/tv/on_the_air",
+          params: {},
+        },
+        {
+          key: "top-rated",
+          label: "Mejor valoradas",
+          path: "/tv/top_rated",
+          params: {},
+        },
+        {
+          key: "airing-today",
+          label: "Episodios hoy",
+          path: "/tv/airing_today",
+          params: {},
+        },
+      ];
+    }
+
+    const provider = this._matchedProviders[mode].find(
+      (item) =>
+        String(item.provider_id) === String(this._provider)
+    );
+
+    if (!provider) {
+      throw new Error(
+        "Ese proveedor no está disponible para este tipo de contenido."
+      );
+    }
+
+    const base = {
+      watch_region: region,
+      with_watch_providers: provider.provider_id,
+      with_watch_monetization_types: "flatrate",
+      include_adult: "false",
+    };
+
+    const recentDateField =
+      mode === "movie"
+        ? "primary_release_date.lte"
+        : "first_air_date.lte";
+
+    const recentSort =
+      mode === "movie"
+        ? "primary_release_date.desc"
+        : "first_air_date.desc";
+
+    return [
+      {
+        key: "provider-popular",
+        label: "Populares",
+        path: `/discover/${mode}`,
+        params: {
+          ...base,
+          sort_by: "popularity.desc",
+        },
+      },
+      {
+        key: "provider-top-rated",
+        label: "Mejor valoradas",
+        path: `/discover/${mode}`,
+        params: {
+          ...base,
+          sort_by: "vote_average.desc",
+          "vote_count.gte": "50",
+        },
+      },
+      {
+        key: "provider-recent",
+        label: "Estrenos recientes",
+        path: `/discover/${mode}`,
+        params: {
+          ...base,
+          sort_by: recentSort,
+          [recentDateField]: today,
+        },
+      },
+    ];
+  }
+
+  _sectionItems(section, results) {
+    const items = (results || [])
+      .filter((item) => {
+        if (!item?.poster_path) return false;
+
+        if (section.search) {
+          return ["movie", "tv"].includes(item.media_type);
+        }
+
+        return true;
+      })
+      .map((item) => ({
+        ...item,
+        media_type: item.media_type || section.mediaType || this._mode,
+      }));
+
+    const seen = new Set();
+
+    return items.filter((item) => {
+      const key = `${item.media_type}:${item.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  async _fetchSection(definition, page = 1) {
+    const data = await this._api(definition.path, {
+      ...(definition.params || {}),
+      page: String(page),
+    });
+
+    return {
+      ...definition,
+      mediaType: definition.mediaType || this._mode,
+      page: Number(data.page || page),
+      totalPages: Number(data.total_pages || 1),
+      items: this._sectionItems(definition, data.results),
+      loadingMore: false,
+    };
+  }
+
   async _loadBrowse() {
     if (!this._config || !this._hass) return;
 
     this._loading = true;
     this._error = "";
     this._details = null;
+    this._sections = [];
+    this._items = [];
     this._render();
 
     try {
-      let data;
+      const definitions = this._catalogDefinitions().map((definition) => ({
+        ...definition,
+        mediaType: this._mode,
+      }));
 
-      if (this._provider === "trending") {
-        data = await this._api(`/trending/${this._mode}/week`);
-      } else {
-        const provider = this._matchedProviders[this._mode].find(
-          (item) =>
-            String(item.provider_id) === String(this._provider)
-        );
+      const results = await Promise.allSettled(
+        definitions.map((definition) =>
+          this._fetchSection(definition, 1)
+        )
+      );
 
-        if (!provider) {
-          throw new Error(
-            "Ese proveedor no está disponible para este tipo de contenido."
-          );
-        }
+      this._sections = results
+        .filter((result) => result.status === "fulfilled")
+        .map((result) => result.value)
+        .filter((section) => section.items.length);
 
-        data = await this._api(`/discover/${this._mode}`, {
-          watch_region: this._config.region,
-          with_watch_providers: provider.provider_id,
-          with_watch_monetization_types: "flatrate",
-          sort_by: "popularity.desc",
-          include_adult: "false",
-        });
+      const failed = results.filter(
+        (result) => result.status === "rejected"
+      );
+
+      if (!this._sections.length && failed.length) {
+        throw failed[0].reason;
       }
-
-      this._items = (data.results || [])
-        .filter((item) => item.poster_path)
-        .slice(0, Number(this._config.max_items) || 24);
     } catch (err) {
       this._error = this._formatError(err);
-      this._items = [];
+      this._sections = [];
     } finally {
       this._loading = false;
+      this._render();
+    }
+  }
+
+  async _loadMoreSection(key) {
+    const section = this._sections.find((item) => item.key === key);
+
+    if (
+      !section ||
+      section.loadingMore ||
+      this._sectionLoadLocks.has(key) ||
+      section.page >= section.totalPages
+    ) {
+      return;
+    }
+
+    this._sectionLoadLocks.add(key);
+    section.loadingMore = true;
+
+    try {
+      const nextPage = section.page + 1;
+      const data = await this._api(section.path, {
+        ...(section.params || {}),
+        page: String(nextPage),
+      });
+
+      const incoming = this._sectionItems(section, data.results);
+      const existing = new Set(
+        section.items.map(
+          (item) => `${item.media_type}:${item.id}`
+        )
+      );
+
+      for (const item of incoming) {
+        const itemKey = `${item.media_type}:${item.id}`;
+        if (!existing.has(itemKey)) {
+          existing.add(itemKey);
+          section.items.push(item);
+        }
+      }
+
+      section.page = Number(data.page || nextPage);
+      section.totalPages = Number(
+        data.total_pages || section.totalPages || 1
+      );
+    } catch (err) {
+      this._toast(
+        `No pude cargar más títulos: ${this._formatError(err)}`
+      );
+    } finally {
+      section.loadingMore = false;
+      this._sectionLoadLocks.delete(key);
       this._render();
     }
   }
@@ -517,25 +750,28 @@ class StreamingBrowserCard extends HTMLElement {
 
     this._loading = true;
     this._error = "";
+    this._sections = [];
     this._render();
 
     try {
-      const data = await this._api("/search/multi", {
-        query: q,
-        include_adult: "false",
-        region: this._config.region,
-      });
+      const definition = {
+        key: "search",
+        label: `Resultados para “${q}”`,
+        path: "/search/multi",
+        params: {
+          query: q,
+          include_adult: "false",
+          region: this._config.region,
+        },
+        mediaType: this._mode,
+        search: true,
+      };
 
-      this._items = (data.results || [])
-        .filter(
-          (item) =>
-            ["movie", "tv"].includes(item.media_type) &&
-            item.poster_path
-        )
-        .slice(0, Number(this._config.max_items) || 24);
+      const section = await this._fetchSection(definition, 1);
+      this._sections = section.items.length ? [section] : [];
     } catch (err) {
       this._error = this._formatError(err);
-      this._items = [];
+      this._sections = [];
     } finally {
       this._loading = false;
       this._render();
@@ -561,8 +797,11 @@ class StreamingBrowserCard extends HTMLElement {
       : "";
   }
 
-  async _openDetails(index) {
-    const item = this._items[index];
+  async _openDetails(sectionKey, index) {
+    const section = this._sections.find(
+      (item) => item.key === sectionKey
+    );
+    const item = section?.items?.[index];
     if (!item) return;
 
     const type = this._mediaType(item);
@@ -2070,55 +2309,101 @@ class StreamingBrowserCard extends HTMLElement {
       ),
     ].join("");
 
-    const itemsHtml = this._items.length
-      ? this._items
-          .map((item, index) => {
-            const title = this._title(item);
-            const year = this._year(item);
-            const rating = Number(item.vote_average || 0);
+    const sectionsHtml = this._sections.length
+      ? this._sections
+          .map((section) => {
+            const posters = section.items
+              .map((item, index) => {
+                const title = this._title(item);
+                const year = this._year(item);
+                const rating = Number(item.vote_average || 0);
+
+                return `
+                  <button
+                    class="poster"
+                    data-section="${this._esc(section.key)}"
+                    data-index="${index}"
+                    title="${this._esc(title)}"
+                  >
+                    <div class="poster-img-wrap">
+                      <img
+                        class="poster-img"
+                        loading="lazy"
+                        src="${this._img(item.poster_path)}"
+                        alt="${this._esc(title)}"
+                      >
+
+                      ${
+                        rating
+                          ? `
+                            <span class="rating">
+                              ★ ${rating.toFixed(1)}
+                            </span>
+                          `
+                          : ""
+                      }
+                    </div>
+
+                    <div class="poster-title">
+                      ${this._esc(title)}
+                    </div>
+
+                    <div class="poster-meta">
+                      ${this._esc(year)}
+                      ${
+                        item.media_type
+                          ? ` · ${
+                              item.media_type === "movie"
+                                ? "Película"
+                                : "Serie"
+                            }`
+                          : ""
+                      }
+                    </div>
+                  </button>
+                `;
+              })
+              .join("");
 
             return `
-              <button
-                class="poster"
-                data-index="${index}"
-                title="${this._esc(title)}"
-              >
-                <div class="poster-img-wrap">
-                  <img
-                    class="poster-img"
-                    loading="lazy"
-                    src="${this._img(item.poster_path)}"
-                    alt="${this._esc(title)}"
-                  >
+              <section class="catalog-section">
+                <div class="catalog-heading">
+                  <h3>${this._esc(section.label)}</h3>
+
+                  <div class="catalog-controls">
+                    <button
+                      class="row-nav"
+                      data-scroll-row="${this._esc(section.key)}"
+                      data-direction="-1"
+                      aria-label="Desplazar a la izquierda"
+                    >‹</button>
+
+                    <button
+                      class="row-nav"
+                      data-scroll-row="${this._esc(section.key)}"
+                      data-direction="1"
+                      aria-label="Desplazar a la derecha"
+                    >›</button>
+                  </div>
+                </div>
+
+                <div
+                  class="catalog-row"
+                  data-section="${this._esc(section.key)}"
+                >
+                  ${posters}
 
                   ${
-                    rating
+                    section.loadingMore
                       ? `
-                        <span class="rating">
-                          ★ ${rating.toFixed(1)}
-                        </span>
+                        <div class="row-loading">
+                          Cargando…
+                        </div>
                       `
                       : ""
                   }
                 </div>
-
-                <div class="poster-title">
-                  ${this._esc(title)}
-                </div>
-
-                <div class="poster-meta">
-                  ${this._esc(year)}
-                  ${
-                    item.media_type
-                      ? ` · ${
-                          item.media_type === "movie"
-                            ? "Película"
-                            : "Serie"
-                        }`
-                      : ""
-                  }
-                </div>
-              </button>
+              </section>
             `;
           })
           .join("")
@@ -2319,18 +2604,59 @@ class StreamingBrowserCard extends HTMLElement {
           background: white;
         }
 
-        .grid {
+        .catalog-section {
+          margin: 4px 0 22px;
+        }
+
+        .catalog-heading {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin: 0 0 10px;
+        }
+
+        .catalog-heading h3 {
+          margin: 0;
+          font-size: 18px;
+          font-weight: 700;
+        }
+
+        .catalog-controls {
+          display: flex;
+          gap: 6px;
+        }
+
+        .row-nav {
+          width: 34px;
+          height: 34px;
+          border: 1px solid var(--divider-color);
+          border-radius: 50%;
+          background: var(--secondary-background-color);
+          color: var(--primary-text-color);
+          cursor: pointer;
+          font: inherit;
+          font-size: 22px;
+          line-height: 1;
+        }
+
+        .catalog-row {
           display: grid;
-          grid-template-columns:
-            repeat(
-              auto-fill,
-              minmax(${posterWidth}px,1fr)
-            );
-          gap: 16px 12px;
+          grid-auto-flow: column;
+          grid-auto-columns: ${posterWidth}px;
+          gap: 12px;
+          overflow-x: auto;
+          overflow-y: hidden;
+          overscroll-behavior-inline: contain;
+          scroll-snap-type: x proximity;
+          scrollbar-width: thin;
+          padding: 2px 2px 10px;
         }
 
         .poster {
           min-width: 0;
+          width: ${posterWidth}px;
+          scroll-snap-align: start;
           padding: 0;
           border: 0;
           background: transparent;
@@ -2387,6 +2713,16 @@ class StreamingBrowserCard extends HTMLElement {
           font-size: 12px;
         }
 
+        .row-loading {
+          width: 86px;
+          min-height: 180px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          opacity: .65;
+          font-size: 12px;
+        }
+
         .loading {
           padding: 28px 0;
           text-align: center;
@@ -2394,7 +2730,6 @@ class StreamingBrowserCard extends HTMLElement {
         }
 
         .empty {
-          grid-column: 1/-1;
           padding: 30px;
           text-align: center;
           opacity: .65;
@@ -2451,8 +2786,17 @@ class StreamingBrowserCard extends HTMLElement {
             font-size: 21px;
           }
 
-          .grid {
-            gap: 13px 9px;
+          .catalog-row {
+            gap: 9px;
+            grid-auto-columns: min(${posterWidth}px, 38vw);
+          }
+
+          .poster {
+            width: min(${posterWidth}px, 38vw);
+          }
+
+          .catalog-controls {
+            display: none;
           }
         }
       </style>
@@ -2544,8 +2888,8 @@ class StreamingBrowserCard extends HTMLElement {
                 </div>
               `
               : `
-                <div class="grid">
-                  ${itemsHtml}
+                <div class="catalog">
+                  ${sectionsHtml}
                 </div>
               `
           }
@@ -2618,13 +2962,67 @@ class StreamingBrowserCard extends HTMLElement {
       );
 
     root
-      .querySelectorAll(".poster[data-index]")
+      .querySelectorAll(".poster[data-index][data-section]")
       .forEach((element) =>
         element.addEventListener("click", () =>
           this._openDetails(
+            element.dataset.section,
             Number(element.dataset.index)
           )
         )
+      );
+
+    root
+      .querySelectorAll(".catalog-row[data-section]")
+      .forEach((row) => {
+        const key = row.dataset.section;
+
+        const saved = this._rowScrollPositions.get(key);
+        if (Number.isFinite(saved)) {
+          row.scrollLeft = saved;
+        }
+
+        row.addEventListener(
+          "scroll",
+          () => {
+            this._rowScrollPositions.set(key, row.scrollLeft);
+
+            const threshold = Number(
+              this._config.catalog_prefetch_threshold_px || 360
+            );
+
+            if (
+              row.scrollWidth -
+                row.scrollLeft -
+                row.clientWidth <=
+              threshold
+            ) {
+              this._loadMoreSection(key);
+            }
+          },
+          { passive: true }
+        );
+      });
+
+    root
+      .querySelectorAll("[data-scroll-row]")
+      .forEach((button) =>
+        button.addEventListener("click", () => {
+          const key = button.dataset.scrollRow;
+          const row = root.querySelector(
+            `.catalog-row[data-section="${key}"]`
+          );
+
+          if (!row) return;
+
+          const direction =
+            Number(button.dataset.direction || 1) || 1;
+
+          row.scrollBy({
+            left: direction * Math.max(320, row.clientWidth * 0.82),
+            behavior: "smooth",
+          });
+        })
       );
 
     const search = root.querySelector(".search");
@@ -2725,7 +3123,7 @@ if (
     type: "streaming-browser-card",
     name: "Streaming Browser Card",
     description:
-      "Browse TMDB/JustWatch catalogs, select a profile, run secure PIN scripts, and launch LG webOS streaming apps.",
+      "Browse categorized TMDB catalogs in scrollable rows, select a profile, run secure PIN scripts, and launch streaming apps.",
     preview: false,
     documentationURL:
       "https://developer.themoviedb.org/",
@@ -2733,7 +3131,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.37 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.38 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
