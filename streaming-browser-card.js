@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.44
+ * v0.4.45
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -1711,6 +1711,121 @@ class StreamingBrowserCard extends HTMLElement {
     );
   }
 
+  async _androidDreamState() {
+    if (!this._androidAdbEntity()) {
+      return null;
+    }
+
+    try {
+      await this._androidAdbCommand(
+        "sh -c \"dumpsys power | grep -E 'mWakefulness=|mWakefulnessRaw='; dumpsys dream | grep -E 'mIsDreaming|mDreaming|mCurrentDreamComponent'\""
+      );
+
+      await this._sleep(300);
+
+      const response = String(
+        this._androidAdbState()?.attributes?.adb_response || ""
+      );
+
+      if (!response) {
+        return null;
+      }
+
+      const normalized =
+        response.toLowerCase();
+
+      if (
+        normalized.includes("wakefulness=dreaming") ||
+        normalized.includes("wakefulnessraw=dreaming") ||
+        /misdreaming\s*[=:]\s*true/i.test(response) ||
+        /mdreaming\s*[=:]\s*true/i.test(response)
+      ) {
+        return true;
+      }
+
+      if (
+        normalized.includes("wakefulness=awake") ||
+        normalized.includes("wakefulnessraw=awake") ||
+        /misdreaming\s*[=:]\s*false/i.test(response) ||
+        /mdreaming\s*[=:]\s*false/i.test(response)
+      ) {
+        return false;
+      }
+
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async _wakeAndroidFromScreensaver() {
+    const delay =
+      Number(
+        this._config.screensaver_wake_delay_ms
+      ) || 1200;
+
+    this._toast(
+      this._t("waking_screensaver")
+    );
+
+    if (this._androidAdbEntity()) {
+      // KEYCODE_WAKEUP
+      await this._androidAdbCommand(
+        "input keyevent 224"
+      );
+
+      await this._sleep(250);
+
+      // DPAD_CENTER dismisses Android TV dreams/ambient mode.
+      await this._androidAdbCommand(
+        "input keyevent 23"
+      );
+
+      await this._sleep(delay);
+
+      const stillDreaming =
+        await this._androidDreamState();
+
+      if (stillDreaming === true) {
+        this._toast(
+          this._t("screensaver_fallback")
+        );
+
+        // HOME reliably exits a stubborn dream/screen saver.
+        await this._androidAdbCommand(
+          "input keyevent 3"
+        );
+
+        await this._sleep(delay);
+      }
+
+      return;
+    }
+
+    /*
+     * Fallback for Android TV Remote-only setups. remote.turn_on wakes
+     * the device, then CENTER attempts to dismiss ambient/screensaver.
+     */
+    if (this._config.remote_entity) {
+      await this._hass.callService(
+        "remote",
+        "turn_on",
+        {
+          entity_id:
+            this._config.remote_entity,
+        }
+      );
+
+      await this._sleep(250);
+    }
+
+    await this._sendRemoteButton(
+      "ENTER"
+    );
+
+    await this._sleep(delay);
+  }
+
   async _androidNetflixPickerVisible() {
     try {
       await this._androidAdbCommand(
@@ -2288,44 +2403,125 @@ class StreamingBrowserCard extends HTMLElement {
       "buffering",
     ]);
 
-    const android = this._platform() === "android_tv";
+    const android =
+      this._platform() === "android_tv";
 
     if (!tv || !onStates.has(tv.state)) {
-      this._toast(this._t("turning_on_tv"));
+      this._toast(
+        this._t("turning_on_tv")
+      );
 
-      if (android && this._config.remote_entity) {
-        await this._hass.callService("remote", "turn_on", {
-          entity_id: this._config.remote_entity,
-        });
+      if (
+        android &&
+        this._config.remote_entity
+      ) {
+        await this._hass.callService(
+          "remote",
+          "turn_on",
+          {
+            entity_id:
+              this._config.remote_entity,
+          }
+        );
       } else {
-        await this._hass.callService("media_player", "turn_on", {
-          entity_id: this._config.tv_entity,
-        });
+        await this._hass.callService(
+          "media_player",
+          "turn_on",
+          {
+            entity_id:
+              this._config.tv_entity,
+          }
+        );
       }
 
-      await this._sleep(Number(this._config.wake_delay_ms) || 4500);
-      tv = this._tvState();
-    } else if (android && this._config.remote_entity && tv.state === "idle") {
-      // Android TV can report idle while the screensaver is covering the UI.
-      await this._hass.callService("remote", "turn_on", {
-        entity_id: this._config.remote_entity,
-      });
-      await this._sleep(300);
+      await this._sleep(
+        Number(
+          this._config.wake_delay_ms
+        ) || 4500
+      );
+
       tv = this._tvState();
     }
 
+    if (android) {
+      /*
+       * Android TV often keeps the media player/source attributes from
+       * the app underneath the screensaver. Query Android's actual
+       * Dreaming/Awake state over ADB when available.
+       */
+      const dreamState =
+        await this._androidDreamState();
+
+      const attributeScreensaver =
+        this._isScreensaverActive(tv);
+
+      const likelyRemoteOnlyScreensaver =
+        dreamState == null &&
+        !this._androidAdbEntity() &&
+        tv?.state === "idle";
+
+      if (
+        dreamState === true ||
+        attributeScreensaver ||
+        likelyRemoteOnlyScreensaver
+      ) {
+        await this._wakeAndroidFromScreensaver();
+        tv = this._tvState();
+      } else if (
+        this._config.remote_entity &&
+        tv?.state === "idle"
+      ) {
+        /*
+         * Keep the Android TV Remote entity awake without injecting
+         * CENTER unless we actually detected/strongly suspect a dream.
+         */
+        await this._hass.callService(
+          "remote",
+          "turn_on",
+          {
+            entity_id:
+              this._config.remote_entity,
+          }
+        );
+
+        await this._sleep(250);
+        tv = this._tvState();
+      }
+
+      return tv;
+    }
+
     if (this._isScreensaverActive(tv)) {
-      this._toast(this._t("waking_screensaver"));
-      await this._sendRemoteButton("ENTER");
+      this._toast(
+        this._t("waking_screensaver")
+      );
+
+      await this._sendRemoteButton(
+        "ENTER"
+      );
 
       const delay =
-        Number(this._config.screensaver_wake_delay_ms) || 1200;
+        Number(
+          this._config
+            .screensaver_wake_delay_ms
+        ) || 1200;
+
       await this._sleep(delay);
       tv = this._tvState();
 
-      if (this._isScreensaverActive(tv)) {
-        this._toast(this._t("screensaver_fallback"));
-        await this._sendRemoteButton("HOME");
+      if (
+        this._isScreensaverActive(tv)
+      ) {
+        this._toast(
+          this._t(
+            "screensaver_fallback"
+          )
+        );
+
+        await this._sendRemoteButton(
+          "HOME"
+        );
+
         await this._sleep(delay);
         tv = this._tvState();
       }
@@ -4490,7 +4686,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.44 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.45 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
