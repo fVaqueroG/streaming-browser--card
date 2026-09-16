@@ -55,6 +55,27 @@ The card UI supports **Spanish (es-MX)** and **English (en-US)**.
 
 Choose the language from the visual editor. The same setting is also sent to TMDB, so catalog titles and metadata use the selected locale when available.
 
+## Home Assistant dashboard resource
+
+When the card is installed with HACS, use the **HACS-managed resource only**:
+
+```text
+/hacsfiles/streaming-browser--card/streaming-browser-card.js
+```
+
+Resource type: **JavaScript Module**.
+
+Do **not** keep an older manual resource such as:
+
+```text
+/local/streaming-browser-card.js
+/local/streaming-browser-card.js?v=0437
+```
+
+If both the old `/local/` resource and the HACS `/hacsfiles/` resource are configured, Home Assistant can load the older card first. Remove the manual `/local/` entry completely.
+
+HACS downloads dashboard plugins to `www/community/`; the `/hacsfiles/` endpoint serves that HACS-managed copy and is designed to avoid stale browser caching. Once the dashboard resource points to `/hacsfiles/`, future HACS updates replace the file used by the dashboard automatically.
+
 ## Visual editor
 
 v0.4.39 adds a native Home Assistant visual editor using the built-in card form API.
