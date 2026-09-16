@@ -2,7 +2,7 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.41**
+Current version: **v0.4.43**
 
 ## Features
 
@@ -12,6 +12,8 @@ Current version: **v0.4.41**
 - Region-specific streaming providers
 - LG webOS source matching and app launching
 - Android TV Remote support
+- Netflix default-profile auto-selection on Android TV through the Android Debug Bridge integration
+- Netflix default-profile auto-selection on LG webOS through TV remote navigation
 - Streaming profile selector
 - Per-profile app behavior
 - Optional Home Assistant scripts for secure profile PIN entry
@@ -48,6 +50,50 @@ remote_entity: remote.mitv_aesp0
 screensaver_wake_delay_ms: 1200
 android_play_command: DPAD_CENTER
 ```
+
+## Netflix default profile
+
+v0.4.43 adds Netflix profile auto-selection for both **Android TV** and **LG webOS**.
+
+Android TV needs two integrations for the full experience:
+
+- **Android TV Remote** for app/deep-link launching.
+- **Android Debug Bridge** for Netflix D-pad input. Home Assistant documents that Android TV Remote key commands do not work inside Netflix, so the card uses `androidtv.adb_command` only for Netflix profile selection and Netflix Play actions.
+
+Configure the ADB media-player entity and enable Netflix profile selection:
+
+```yaml
+platform: android_tv
+tv_entity: media_player.android_tv
+remote_entity: remote.android_tv
+adb_entity: media_player.android_tv_adb
+
+netflix_profile_autoselect: true
+netflix_profile_launch_delay_ms: 4500
+netflix_profile_navigation_delay_ms: 350
+netflix_profile_after_select_delay_ms: 1500
+```
+
+Each Streaming Browser profile can map to its Netflix position from left to right:
+
+```yaml
+profiles:
+  Felipe:
+    apps:
+      Netflix:
+        mode: netflix
+        profile_position: 1
+
+  Guest:
+    apps:
+      Netflix:
+        mode: netflix
+        profile_position: 2
+```
+
+Netflix supports up to five profiles, so `profile_position` is 1 through 5. If it is omitted, the card uses the order of profiles in the `profiles` object.
+
+On Android TV, the card first tries to detect the Netflix profile picker through ADB UI automation. On LG webOS, Netflix does not expose the internal picker state through Home Assistant, so automatic positional selection is performed on a fresh Netflix launch. Existing explicit `navigation` or `command` profile modes are preserved; use those instead if a profile needs a custom PIN sequence.
 
 ## Languages
 
@@ -88,6 +134,8 @@ From the dashboard editor you can configure:
 - Rental/purchase provider visibility
 - Watchmode script and playback timing
 - Profile helper, default profile and profile timing
+- Android TV ADB entity for Netflix profile control
+- Netflix auto-select toggle and profile-picker timing
 - Advanced `profiles` and `provider_sources` objects
 
 Existing YAML configuration remains supported.
