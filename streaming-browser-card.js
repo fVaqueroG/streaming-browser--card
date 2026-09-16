@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.54
+ * v0.4.55
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -43,19 +43,19 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   ],
   profileRules: {
     netflix: {
-      launchDelayMs: 5000,
+      launchDelayMs: 6000,
       stepDelayMs: 350,
-      afterSelectDelayMs: 1500,
+      afterSelectDelayMs: 2000,
     },
     disney: {
-      launchDelayMs: 5000,
+      launchDelayMs: 6000,
       stepDelayMs: 350,
-      afterSelectDelayMs: 2500,
+      afterSelectDelayMs: 3000,
     },
     prime: {
-      launchDelayMs: 5000,
+      launchDelayMs: 7000,
       stepDelayMs: 350,
-      afterSelectDelayMs: 2500,
+      afterSelectDelayMs: 3000,
     },
   },
 });
@@ -3198,29 +3198,24 @@ class StreamingBrowserCard extends HTMLElement {
       await this._sleep(250);
     }
 
-    const elapsed =
-      Date.now() - startedAt;
-
-    const remaining =
-      Math.max(
-        0,
-        minimumWait - elapsed
-      );
-
-    if (remaining > 0) {
-      await this._sleep(
-        remaining
-      );
-    }
+    /*
+     * The app becoming the reported source only means webOS has
+     * switched foreground ownership. It does not mean the app's
+     * profile UI is ready. Start the full app-loading delay AFTER
+     * the target source becomes active (or after the readiness
+     * timeout if webOS never reports it).
+     */
+    await this._sleep(
+      minimumWait
+    );
 
     /*
-     * webOS can update source before the app's profile UI is actually
-     * ready for remote input. Always allow a short settle window after
-     * the source becomes active.
+     * Give the rendered profile picker one additional settle window
+     * before the first navigation key is injected.
      */
-    if (active) {
-      await this._sleep(750);
-    }
+    await this._sleep(
+      active ? 1000 : 1500
+    );
   }
 
   async _androidLaunchActivity(activity) {
@@ -6205,7 +6200,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.54 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.55 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
