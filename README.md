@@ -2,7 +2,7 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.44**
+Current version: **v0.4.45**
 
 ## Features
 
@@ -33,6 +33,8 @@ Current version: **v0.4.44**
 HACS installs `streaming-browser-card.js` from the repository root.
 
 ## Screensaver wake handling
+
+v0.4.45 fixes Android TV screensaver wake by checking Android's real Dreaming/Awake state over the configured ADB media-player entity. When a dream/screensaver is active, the card sends Android KEYCODE_WAKEUP, then DPAD_CENTER, and falls back to HOME if the dream is still active.
 
 v0.4.41 adds screensaver-aware wake handling for both **LG webOS** and **Android TV Remote**.
 
