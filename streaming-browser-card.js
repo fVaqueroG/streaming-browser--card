@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.45
+ * v0.4.46
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -1931,19 +1931,132 @@ class StreamingBrowserCard extends HTMLElement {
       return;
     }
 
+    /*
+     * Send raw Android keyevents for Netflix. This bypasses any
+     * integration-level key-name translation and is more reliable
+     * inside com.netflix.ninja.
+     */
     const key = String(button || "").toUpperCase();
     const map = {
-      UP: "UP",
-      DOWN: "DOWN",
-      LEFT: "LEFT",
-      RIGHT: "RIGHT",
-      ENTER: "CENTER",
-      CENTER: "CENTER",
-      BACK: "BACK",
-      HOME: "HOME",
+      UP: 19,
+      DOWN: 20,
+      LEFT: 21,
+      RIGHT: 22,
+      ENTER: 23,
+      CENTER: 23,
+      BACK: 4,
+      HOME: 3,
     };
 
-    await this._androidAdbCommand(map[key] || key);
+    if (map[key] != null) {
+      await this._androidAdbCommand(
+        "input keyevent " + map[key]
+      );
+      return;
+    }
+
+    await this._androidAdbCommand(button);
+  }
+
+  async _openNetflixProfilePickerFromHome(
+    appConfig = {}
+  ) {
+    const stepDelay =
+      Number(
+        appConfig?.step_delay_ms ??
+          this._config.netflix_profile_navigation_delay_ms ??
+          350
+      ) || 350;
+
+    const pickerDelay =
+      Number(
+        appConfig?.picker_open_delay_ms ??
+          1200
+      ) || 1200;
+
+    await this._sendNetflixProfileButton(
+      "BACK"
+    );
+
+    await this._sleep(
+      Math.max(500, stepDelay)
+    );
+
+    const upPresses = Math.min(
+      12,
+      Math.max(
+        4,
+        Number(
+          appConfig?.menu_up_presses ?? 8
+        ) || 8
+      )
+    );
+
+    for (let i = 0; i < upPresses; i += 1) {
+      await this._sendNetflixProfileButton(
+        "UP"
+      );
+
+      await this._sleep(
+        Math.min(stepDelay, 250)
+      );
+    }
+
+    await this._sendNetflixProfileButton(
+      "ENTER"
+    );
+
+    await this._sleep(pickerDelay);
+  }
+
+  async _runNetflixProfilePosition(
+    appConfig = {}
+  ) {
+    const position =
+      this._netflixProfilePosition(
+        appConfig
+      );
+
+    const stepDelay =
+      Number(
+        appConfig?.step_delay_ms ??
+          this._config.netflix_profile_navigation_delay_ms ??
+          this._config.profile_navigation_delay_ms
+      ) || 300;
+
+    const anchorPresses = Math.min(
+      10,
+      Math.max(
+        1,
+        Number(
+          appConfig?.anchor_left_presses ?? 6
+        ) || 6
+      )
+    );
+
+    for (let i = 0; i < anchorPresses; i += 1) {
+      await this._sendNetflixProfileButton(
+        "LEFT"
+      );
+
+      if (stepDelay > 0) {
+        await this._sleep(stepDelay);
+      }
+    }
+
+    for (let i = 1; i < position; i += 1) {
+      await this._sendNetflixProfileButton(
+        "RIGHT"
+      );
+
+      if (stepDelay > 0) {
+        await this._sleep(stepDelay);
+      }
+    }
+
+    await this._sendNetflixProfileButton(
+      "ENTER"
+    );
   }
 
   async _selectNetflixProfile(
@@ -1986,42 +2099,35 @@ class StreamingBrowserCard extends HTMLElement {
 
     if (this._platform() === "android_tv") {
       if (!this._androidAdbEntity()) {
-        throw new Error(this._t("netflix_adb_required"));
+        throw new Error(
+          this._t("netflix_adb_required")
+        );
       }
 
       const pickerVisible =
         await this._androidNetflixPickerVisible();
 
-      if (pickerVisible === false) {
-        return false;
-      }
-
+      /*
+       * Netflix frequently hides its UI hierarchy from uiautomator.
+       * Previously, an "unknown" result while Netflix was already
+       * running caused profile selection to be skipped entirely.
+       *
+       * If the picker is definitely not visible, or its state is
+       * unknown while Netflix was already running, explicitly open
+       * Netflix's profile selector through its TV menu first.
+       */
       if (
-        pickerVisible == null &&
-        !appJustOpened &&
-        !alwaysSelect
+        pickerVisible === false ||
+        (
+          pickerVisible == null &&
+          !appJustOpened
+        )
       ) {
-        return false;
+        await this._openNetflixProfilePickerFromHome(
+          appConfig
+        );
       }
     }
-
-    const position =
-      this._netflixProfilePosition(appConfig);
-
-    const stepDelay =
-      Number(
-        appConfig?.step_delay_ms ??
-          this._config.netflix_profile_navigation_delay_ms ??
-          this._config.profile_navigation_delay_ms
-      ) || 300;
-
-    const anchorPresses = Math.min(
-      10,
-      Math.max(
-        1,
-        Number(appConfig?.anchor_left_presses ?? 6) || 6
-      )
-    );
 
     this._toast(
       this._t("selecting_profile", {
@@ -2030,23 +2136,9 @@ class StreamingBrowserCard extends HTMLElement {
       })
     );
 
-    for (let i = 0; i < anchorPresses; i += 1) {
-      await this._sendNetflixProfileButton("LEFT");
-
-      if (stepDelay > 0) {
-        await this._sleep(stepDelay);
-      }
-    }
-
-    for (let i = 1; i < position; i += 1) {
-      await this._sendNetflixProfileButton("RIGHT");
-
-      if (stepDelay > 0) {
-        await this._sleep(stepDelay);
-      }
-    }
-
-    await this._sendNetflixProfileButton("ENTER");
+    await this._runNetflixProfilePosition(
+      appConfig
+    );
 
     const afterSelectDelay =
       Number(
@@ -2058,103 +2150,28 @@ class StreamingBrowserCard extends HTMLElement {
       await this._sleep(afterSelectDelay);
     }
 
-    return true;
-  }
+    if (
+      this._platform() === "android_tv"
+    ) {
+      const stillOnPicker =
+        await this._androidNetflixPickerVisible();
 
-  _netflixContentId(url) {
-    const raw = String(url || "");
+      if (stillOnPicker === true) {
+        await this._sleep(700);
 
-    let decoded = raw;
+        await this._runNetflixProfilePosition(
+          appConfig
+        );
 
-    try {
-      decoded = decodeURIComponent(raw);
-    } catch (_) {}
-
-    const candidates = [raw, decoded];
-
-    const patterns = [
-      /netflix\.com\/(?:watch|title)\/(\d+)/i,
-      /api\.netflix\.com\/catalog\/titles\/(?:movies|series|programs)\/(\d+)/i,
-      /(?:^|[?&])(?:movieid|contentid|titleid)=(\d+)/i,
-    ];
-
-    for (const candidate of candidates) {
-      for (const pattern of patterns) {
-        const match = String(candidate).match(pattern);
-
-        if (match?.[1]) {
-          return match[1];
+        if (afterSelectDelay > 0) {
+          await this._sleep(
+            afterSelectDelay
+          );
         }
       }
     }
 
-    return null;
-  }
-
-  async _openNetflixExactTitle(webUrl) {
-    const contentId =
-      this._netflixContentId(webUrl);
-
-    if (!contentId) {
-      throw new Error(
-        this._t("netflix_title_id_missing")
-      );
-    }
-
-    if (this._platform() === "android_tv") {
-      /*
-       * Android TV Remote can launch Netflix, but Netflix does not accept
-       * its remote key commands. When ADB is available, explicitly target
-       * com.netflix.ninja so Android cannot hand the HTTPS URL to a browser.
-       */
-      if (this._androidAdbEntity()) {
-        await this._androidAdbCommand(
-          "am start -W -n com.netflix.ninja/.MainActivity " +
-          "-a android.intent.action.VIEW " +
-          "-d netflix://title/" +
-          contentId +
-          " -f 0x10000020 -e source 30"
-        );
-
-        return;
-      }
-
-      /*
-       * ADB is optional when Netflix profile automation is disabled.
-       * Keep the fallback app-specific as well; never send the Watchmode
-       * HTTPS URL to the Android browser.
-       */
-      await this._androidLaunchActivity(
-        "netflix://title/" + contentId
-      );
-
-      return;
-    }
-
-    /*
-     * system.launcher/open is the webOS URL/browser endpoint.
-     * Netflix deep links use system.launcher/launch with Netflix's
-     * contentId payload instead.
-     */
-    await this._hass.callService(
-      "webostv",
-      "command",
-      {
-        entity_id:
-          this._config.tv_entity,
-
-        command:
-          "system.launcher/launch",
-
-        payload: {
-          id: "netflix",
-          contentId:
-            "m=http%3A%2F%2Fapi.netflix.com%2Fcatalog%2Ftitles%2Fmovies%2F" +
-            contentId +
-            "&source_type=4",
-        },
-      }
-    );
+    return true;
   }
 
   async _sendProviderPlay(providerName, source = "") {
@@ -4686,7 +4703,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.45 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.46 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
