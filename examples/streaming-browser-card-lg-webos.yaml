@@ -11,6 +11,10 @@ tv_entity: media_player.lg_webos_tv_ur7800psb
 tmdb_api_key: YOUR_TMDB_V3_API_KEY
 
 region: MX
+selected_provider_ids:
+  - 8    # Netflix
+  - 337  # Disney Plus
+  - 119  # Amazon Prime Video
 language: es-MX
 
 poster_width: 145
