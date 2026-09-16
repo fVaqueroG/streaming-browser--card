@@ -2,7 +2,7 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.39**
+Current version: **v0.4.40**
 
 ## Features
 
@@ -29,6 +29,12 @@ Current version: **v0.4.39**
 6. Reload the Home Assistant frontend if prompted.
 
 HACS installs `streaming-browser-card.js` from the repository root.
+
+## Languages
+
+The card UI supports **Spanish (es-MX)** and **English (en-US)**.
+
+Choose the language from the visual editor. The same setting is also sent to TMDB, so catalog titles and metadata use the selected locale when available.
 
 ## Visual editor
 
