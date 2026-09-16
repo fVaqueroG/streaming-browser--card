@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.55
+ * v0.4.56
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -43,17 +43,17 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   ],
   profileRules: {
     netflix: {
-      launchDelayMs: 6000,
+      launchDelayMs: 10000,
       stepDelayMs: 350,
       afterSelectDelayMs: 2000,
     },
     disney: {
-      launchDelayMs: 6000,
+      launchDelayMs: 10000,
       stepDelayMs: 350,
       afterSelectDelayMs: 3000,
     },
     prime: {
-      launchDelayMs: 7000,
+      launchDelayMs: 10000,
       stepDelayMs: 350,
       afterSelectDelayMs: 3000,
     },
@@ -6200,7 +6200,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.55 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.56 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
