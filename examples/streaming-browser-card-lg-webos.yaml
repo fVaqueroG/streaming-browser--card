@@ -1,0 +1,235 @@
+type: custom:streaming-browser-card
+
+title: Streaming
+
+platform: webos
+
+# CHANGE THIS to your LG webOS media_player entity.
+tv_entity: media_player.lg_webos_tv_ur7800psb
+
+# CHANGE THIS to your TMDB v3 API key.
+tmdb_api_key: YOUR_TMDB_V3_API_KEY
+
+region: MX
+language: es-MX
+
+poster_width: 145
+max_items: 24
+include_rent_buy: false
+
+# -------------------------------------------------------------------
+# LG webOS timing
+# -------------------------------------------------------------------
+
+wake_delay_ms: 4500
+relaunch_delay_ms: 1200
+auto_play_delay_ms: 4000
+
+profile_launch_delay_ms: 4000
+profile_navigation_delay_ms: 400
+
+# Wait after sending an exact-title Watchmode link before PLAY.
+exact_title_play_delay_ms: 5000
+
+# Prepare/open the app and run profile/PIN before exact-title URL.
+exact_title_prepare_profile: true
+
+# Backend HA script that queries Watchmode securely.
+watchmode_script: script.streaming_watchmode_sources
+
+# If Watchmode cannot find/open an exact title, fall back to opening
+# the normal streaming app.
+exact_title_fallback_to_app: true
+
+# -------------------------------------------------------------------
+# Optional Home Assistant profile helper
+# -------------------------------------------------------------------
+#
+# Remove this line if you do not use the helper.
+#
+profile_entity: input_select.streaming_profile
+
+default_profile: Felipe
+
+# -------------------------------------------------------------------
+# TMDB provider -> LG source mapping
+# -------------------------------------------------------------------
+
+provider_sources:
+  Netflix: Netflix
+  Netflix Standard with Ads: Netflix
+
+  Disney Plus: Disney+
+
+  Amazon Prime Video: Prime Video
+
+  Max: HBO Max
+  HBO Max: HBO Max
+
+  Paramount Plus: Paramount+
+
+  Apple TV Plus: Apple TV
+
+  Crunchyroll: Crunchyroll
+
+  ViX: ViX
+
+  Claro Video: Claro video
+
+# -------------------------------------------------------------------
+# Profiles
+#
+# IMPORTANT:
+# Only add the streaming_pin_felipe script step to apps where Felipe
+# actually has a PIN. The examples below intentionally show Netflix
+# with a PIN and the other apps without one. Adjust to match your apps.
+# -------------------------------------------------------------------
+
+profiles:
+
+  Felipe:
+    icon: mdi:account
+
+    apps:
+
+      # Example: APP WITH PIN
+      Netflix:
+        mode: navigation
+        launch_delay_ms: 5000
+        step_delay_ms: 400
+
+        sequence:
+          # Force focus toward the first profile.
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 500
+
+          # Felipe is first profile.
+          - button: ENTER
+            wait_ms: 2000
+
+          # REMOVE this script step if Netflix does not use a PIN.
+          - script: script.streaming_pin_felipe
+            wait_ms: 1000
+
+      # Example: APP WITHOUT PIN
+      Disney Plus:
+        mode: navigation
+        launch_delay_ms: 4500
+        step_delay_ms: 400
+
+        # Disney+ discards a title deep link while its profile picker
+        # is open. Launch/select the profile first, then resend the
+        # exact-title link into the active Disney+ session.
+        exact_title_profile_first: true
+        exact_title_after_profile_delay_ms: 4000
+
+        sequence:
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 500
+
+          - button: ENTER
+            wait_ms: 3000
+
+      # Example: APP WITHOUT PIN
+      Max:
+        mode: navigation
+        launch_delay_ms: 4000
+        step_delay_ms: 400
+
+        sequence:
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 500
+
+          - button: ENTER
+            wait_ms: 3000
+
+      # Example: APP WITHOUT PIN
+      Amazon Prime Video:
+        mode: navigation
+        launch_delay_ms: 4500
+        step_delay_ms: 400
+
+        sequence:
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 300
+          - button: LEFT
+            wait_ms: 500
+
+          - button: ENTER
+            wait_ms: 3500
+
+      Paramount Plus:
+        mode: remember
+
+      Apple TV Plus:
+        mode: remember
+
+      Crunchyroll:
+        mode: remember
+
+      ViX:
+        mode: remember
+
+      Claro Video:
+        mode: remember
+
+  Guest:
+    icon: mdi:account-outline
+
+    apps:
+      Netflix:
+        mode: remember
+
+      Disney Plus:
+        mode: remember
+
+      Max:
+        mode: remember
+
+      Amazon Prime Video:
+        mode: remember
+
+      Paramount Plus:
+        mode: remember
+
+      Apple TV Plus:
+        mode: remember
+
+      Crunchyroll:
+        mode: remember
+
+      ViX:
+        mode: remember
+
+      Claro Video:
+        mode: remember
