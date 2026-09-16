@@ -1,10 +1,11 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.39
+ * v0.4.40
  *
  * Features:
  * - Browse/search TMDB movies and TV
  * - Categorized horizontal catalog rows with lazy pagination
+ * - English (en-US) and Spanish (es-MX) card UI localization
  * - Region-specific watch providers
  * - Match providers to LG webOS source_list
  * - Open/reopen streaming apps
@@ -151,7 +152,12 @@ class StreamingBrowserCard extends HTMLElement {
                 },
                 {
                   name: "language",
-                  selector: { text: {} },
+                  selector: {
+                    select: {
+                      mode: "dropdown",
+                      options: ["es-MX", "en-US"],
+                    },
+                  },
                 },
               ],
             },
@@ -451,6 +457,163 @@ class StreamingBrowserCard extends HTMLElement {
     return err?.message || String(err || "Unknown error");
   }
 
+  _locale() {
+    const language = String(
+      this._config?.language ||
+      this._hass?.language ||
+      "es-MX"
+    ).toLowerCase();
+
+    return language.startsWith("en") ? "en" : "es";
+  }
+
+  _t(key, vars = {}) {
+    const strings = {
+      "en": {
+            "profile_update_failed": "Could not update {entity}: {error}",
+            "tmdb_key_rejected": "TMDB rejected the API key. Use the short v3 API key, not the v4 token.",
+            "trending": "Trending",
+            "popular": "Popular",
+            "now_playing": "Now Playing",
+            "top_rated": "Top Rated",
+            "upcoming": "Upcoming",
+            "on_air": "On Air",
+            "airing_today": "Airing Today",
+            "recent_releases": "Recent Releases",
+            "provider_unavailable": "That provider is not available for this type of content.",
+            "load_more_failed": "Could not load more titles: {error}",
+            "preparing_profile": "{source}: preparing profile {profile}…",
+            "navigation_missing": "Profile {profile} uses navigation for {source}, but has no sequence.",
+            "selecting_profile": "{source}: selecting profile {profile}…",
+            "unlocking_profile": "{source}: unlocking profile {profile}…",
+            "command_missing": "Profile {profile} uses command for {source}, but has no command.",
+            "applying_profile": "{source}: applying profile {profile}…",
+            "unknown_profile_mode": "Unknown profile mode: {mode}",
+            "app_match_failed": "Could not match “{provider}” to an LG app.",
+            "profile_prefix": "profile {profile} · ",
+            "profile_suffix": " · profile {profile}",
+            "app_open_failed": "Could not open {source}: {error}",
+            "callws_unavailable": "This frontend version does not expose hass.callWS.",
+            "invalid_response_action": "Invalid response action: {entity}",
+            "no_title_selected": "No title is selected.",
+            "looking_up_exact_link": "Looking up exact title link…",
+            "watchmode_http": "Watchmode returned HTTP {status}.",
+            "watchmode_bad_response": "Watchmode returned a response I could not interpret.",
+            "watchmode_not_list": "Watchmode did not return a source list.",
+            "watchmode_no_provider_link": "Watchmode did not find a {provider} link for this title in {region}.",
+            "opening_and_preparing": "Opening {source} and preparing profile {profile}…",
+            "waiting_profile_session": "{source}: waiting for the profile session…",
+            "using_current_session": "{source} is already open; using the current session…",
+            "opening_title": "Opening title in {provider}…",
+            "title_opened_play": "Title opened · PLAY in {seconds}s…",
+            "title_link_sent": "Title link sent to LG",
+            "title_open_failed": "Could not open the title: {error}",
+            "title_fallback": "Could not open the exact title; opening {provider} as fallback…",
+            "page_open_failed": "Could not open the page: {error}",
+            "who_is_watching": "Who’s watching?",
+            "loading_details": "Loading details…",
+            "open_app": "Open app",
+            "open_title": "Open title",
+            "title_play": "Title + Play",
+            "no_providers": "No providers were reported for your region.",
+            "no_synopsis": "No synopsis available.",
+            "active_profile": "Active profile:",
+            "where_to_watch": "Where to watch in",
+            "open_availability": "Open availability in LG browser",
+            "detail_note": "<b>Open app</b> uses the standard LG webOS integration. <b>Open title</b> uses Watchmode with the TMDB ID and sends the exact provider link to the LG. <b>Title + Play</b> does the same and then sends PLAY. If webOS or the app rejects the link, the card opens the app as a fallback.",
+            "movie": "Movie",
+            "series": "Series",
+            "loading": "Loading…",
+            "empty_selection": "No titles found for this selection.",
+            "search_placeholder": "Search movies or series…",
+            "movies": "Movies",
+            "tv_series": "Series",
+            "no_source_list": "I can’t see <code>source_list</code> on your TV entity. Turn on the TV and verify the Sources exposed by the LG webOS integration.",
+            "loading_catalog": "Loading catalog…",
+            "none": "none",
+            "footer_note": "“Open app” keeps the profile/PIN flow. “Open title” and “Title + Play” use Watchmode to find the exact title link and send it to the LG."
+      },
+      "es": {
+            "profile_update_failed": "No pude actualizar {entity}: {error}",
+            "tmdb_key_rejected": this._t("tmdb_key_rejected"),
+            "trending": "Tendencias",
+            "popular": "Populares",
+            "now_playing": "En cartelera",
+            "top_rated": "Mejor valoradas",
+            "upcoming": "Próximamente",
+            "on_air": "En emisión",
+            "airing_today": "Episodios hoy",
+            "recent_releases": "Estrenos recientes",
+            "provider_unavailable": this._t("provider_unavailable"),
+            "load_more_failed": "No pude cargar más títulos: {error}",
+            "preparing_profile": "{source}: preparando perfil {profile}…",
+            "navigation_missing": "El perfil {profile} usa navigation para {source}, pero no tiene sequence.",
+            "selecting_profile": "{source}: seleccionando perfil {profile}…",
+            "unlocking_profile": "{source}: desbloqueando perfil {profile}…",
+            "command_missing": "El perfil {profile} usa command para {source}, pero no tiene command.",
+            "applying_profile": "{source}: aplicando perfil {profile}…",
+            "unknown_profile_mode": "profile mode desconocido: {mode}",
+            "app_match_failed": "No pude relacionar “{provider}” con una app del LG.",
+            "profile_prefix": "perfil {profile} · ",
+            "profile_suffix": " · perfil {profile}",
+            "app_open_failed": "No se pudo abrir {source}: {error}",
+            "callws_unavailable": this._t("callws_unavailable"),
+            "invalid_response_action": "Acción inválida para respuesta: {entity}",
+            "no_title_selected": this._t("no_title_selected"),
+            "looking_up_exact_link": this._t("looking_up_exact_link"),
+            "watchmode_http": "Watchmode respondió HTTP {status}.",
+            "watchmode_bad_response": this._t("watchmode_bad_response"),
+            "watchmode_not_list": this._t("watchmode_not_list"),
+            "watchmode_no_provider_link": "Watchmode no encontró un enlace de {provider} para este título en {region}.",
+            "opening_and_preparing": "Abriendo {source} y preparando perfil {profile}…",
+            "waiting_profile_session": "{source}: esperando sesión del perfil…",
+            "using_current_session": "{source} ya está abierto; usando la sesión actual…",
+            "opening_title": "Abriendo título en {provider}…",
+            "title_opened_play": "Título abierto · PLAY en {seconds}s…",
+            "title_link_sent": "Enlace del título enviado al LG",
+            "title_open_failed": "No se pudo abrir el título: {error}",
+            "title_fallback": "No pude abrir el título exacto; abriendo {provider} como respaldo…",
+            "page_open_failed": "No se pudo abrir la página: {error}",
+            "who_is_watching": "¿Quién está viendo?",
+            "loading_details": "Cargando detalles…",
+            "open_app": "Abrir app",
+            "open_title": "Abrir título",
+            "title_play": "Título + Play",
+            "no_providers": "No hay proveedores reportados para tu región.",
+            "no_synopsis": "Sin sinopsis disponible.",
+            "active_profile": "Perfil activo:",
+            "where_to_watch": "Dónde verla en",
+            "open_availability": "Abrir disponibilidad en navegador del LG",
+            "detail_note": "<b>Abrir app</b> usa la integración LG webOS normal. <b>Abrir título</b> consulta Watchmode usando el TMDB ID y envía el enlace exacto del proveedor al LG. <b>Título + Play</b> hace lo mismo y después envía PLAY. Si webOS o la app no aceptan el enlace, el card vuelve a abrir la app como respaldo.",
+            "movie": "Película",
+            "series": "Serie",
+            "loading": "Cargando…",
+            "empty_selection": "No encontré títulos para esta selección.",
+            "search_placeholder": "Buscar película o serie…",
+            "movies": "Películas",
+            "tv_series": "Series",
+            "no_source_list": "No veo <code>source_list</code> en la entidad de tu TV. Enciende la TV y verifica las Sources de la integración LG webOS.",
+            "loading_catalog": "Cargando catálogo…",
+            "none": "ninguno",
+            "footer_note": "“Abrir app” conserva el flujo de perfil/PIN. “Abrir título” y “Título + Play” usan Watchmode para buscar el enlace exacto del título y enviarlo al LG."
+      }
+};
+
+    let value =
+      strings[this._locale()]?.[key] ??
+      strings.es[key] ??
+      key;
+
+    for (const [name, replacement] of Object.entries(vars)) {
+      value = value.replaceAll(
+        "{" + name + "}",
+        String(replacement ?? "")
+      );
+    }
+
+    return value;
+  }
+
   _sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -536,7 +699,7 @@ class StreamingBrowserCard extends HTMLElement {
         });
       } catch (err) {
         this._toast(
-          `No pude actualizar ${entityId}: ${this._formatError(err)}`
+          this._t("profile_update_failed", { entity: entityId, error: this._formatError(err) })
         );
       }
     }
@@ -569,7 +732,7 @@ class StreamingBrowserCard extends HTMLElement {
     if (!res.ok) {
       if (res.status === 401) {
         throw new Error(
-          "TMDB rechazó la API key. Usa la API key v3 corta, no el token v4."
+          this._t("tmdb_key_rejected")
         );
       }
 
@@ -754,31 +917,31 @@ class StreamingBrowserCard extends HTMLElement {
         return [
           {
             key: "trending",
-            label: "Tendencias",
+            label: this._t("trending"),
             path: "/trending/movie/week",
             params: {},
           },
           {
             key: "popular",
-            label: "Populares",
+            label: this._t("popular"),
             path: "/movie/popular",
             params: { region },
           },
           {
             key: "now-playing",
-            label: "En cartelera",
+            label: this._t("now_playing"),
             path: "/movie/now_playing",
             params: { region },
           },
           {
             key: "top-rated",
-            label: "Mejor valoradas",
+            label: this._t("top_rated"),
             path: "/movie/top_rated",
             params: { region },
           },
           {
             key: "upcoming",
-            label: "Próximamente",
+            label: this._t("upcoming"),
             path: "/movie/upcoming",
             params: { region },
           },
@@ -788,31 +951,31 @@ class StreamingBrowserCard extends HTMLElement {
       return [
         {
           key: "trending",
-          label: "Tendencias",
+          label: this._t("trending"),
           path: "/trending/tv/week",
           params: {},
         },
         {
           key: "popular",
-          label: "Populares",
+          label: this._t("popular"),
           path: "/tv/popular",
           params: {},
         },
         {
           key: "on-air",
-          label: "En emisión",
+          label: this._t("on_air"),
           path: "/tv/on_the_air",
           params: {},
         },
         {
           key: "top-rated",
-          label: "Mejor valoradas",
+          label: this._t("top_rated"),
           path: "/tv/top_rated",
           params: {},
         },
         {
           key: "airing-today",
-          label: "Episodios hoy",
+          label: this._t("airing_today"),
           path: "/tv/airing_today",
           params: {},
         },
@@ -826,7 +989,7 @@ class StreamingBrowserCard extends HTMLElement {
 
     if (!provider) {
       throw new Error(
-        "Ese proveedor no está disponible para este tipo de contenido."
+        this._t("provider_unavailable")
       );
     }
 
@@ -850,7 +1013,7 @@ class StreamingBrowserCard extends HTMLElement {
     return [
       {
         key: "provider-popular",
-        label: "Populares",
+        label: this._t("popular"),
         path: `/discover/${mode}`,
         params: {
           ...base,
@@ -859,7 +1022,7 @@ class StreamingBrowserCard extends HTMLElement {
       },
       {
         key: "provider-top-rated",
-        label: "Mejor valoradas",
+        label: this._t("top_rated"),
         path: `/discover/${mode}`,
         params: {
           ...base,
@@ -869,7 +1032,7 @@ class StreamingBrowserCard extends HTMLElement {
       },
       {
         key: "provider-recent",
-        label: "Estrenos recientes",
+        label: this._t("recent_releases"),
         path: `/discover/${mode}`,
         params: {
           ...base,
@@ -1008,7 +1171,7 @@ class StreamingBrowserCard extends HTMLElement {
       );
     } catch (err) {
       this._toast(
-        `No pude cargar más títulos: ${this._formatError(err)}`
+        this._t("load_more_failed", { error: this._formatError(err) })
       );
     } finally {
       section.loadingMore = false;
@@ -1223,7 +1386,7 @@ class StreamingBrowserCard extends HTMLElement {
 
     if (initialDelay > 0) {
       this._toast(
-        `${source}: preparando perfil ${profileName}…`
+        this._t("preparing_profile", { source, profile: profileName })
       );
 
       await this._sleep(initialDelay);
@@ -1234,7 +1397,7 @@ class StreamingBrowserCard extends HTMLElement {
 
       if (!Array.isArray(sequence) || !sequence.length) {
         throw new Error(
-          `El perfil ${profileName} usa navigation para ${source}, pero no tiene sequence.`
+          this._t("navigation_missing", { profile: profileName, source })
         );
       }
 
@@ -1245,7 +1408,7 @@ class StreamingBrowserCard extends HTMLElement {
         ) || 450;
 
       this._toast(
-        `${source}: seleccionando perfil ${profileName}…`
+        this._t("selecting_profile", { source, profile: profileName })
       );
 
       for (const step of sequence) {
@@ -1280,7 +1443,7 @@ class StreamingBrowserCard extends HTMLElement {
           }
 
           this._toast(
-            `${source}: desbloqueando perfil ${profileName}…`
+            this._t("unlocking_profile", { source, profile: profileName })
           );
 
           const scriptData = {
@@ -1345,12 +1508,12 @@ class StreamingBrowserCard extends HTMLElement {
     if (mode === "command") {
       if (!appConfig?.command) {
         throw new Error(
-          `El perfil ${profileName} usa command para ${source}, pero no tiene command.`
+          this._t("command_missing", { profile: profileName, source })
         );
       }
 
       this._toast(
-        `${source}: aplicando perfil ${profileName}…`
+        this._t("applying_profile", { source, profile: profileName })
       );
 
       await this._hass.callService("webostv", "command", {
@@ -1371,7 +1534,7 @@ class StreamingBrowserCard extends HTMLElement {
       return;
     }
 
-    throw new Error(`profile mode desconocido: ${mode}`);
+    throw new Error(this._t("unknown_profile_mode", { mode }));
   }
 
   async _ensureTvOn() {
@@ -1413,7 +1576,7 @@ class StreamingBrowserCard extends HTMLElement {
 
     if (!source) {
       this._toast(
-        `No pude relacionar “${providerName}” con una app del LG.`
+        this._t("app_match_failed", { provider: providerName })
       );
       return;
     }
@@ -1455,7 +1618,7 @@ class StreamingBrowserCard extends HTMLElement {
         this._toast(
           `${source} · ${
             this._selectedProfile
-              ? `perfil ${this._selectedProfile} · `
+              ? this._t("profile_prefix", { profile: this._selectedProfile })
               : ""
           }PLAY en ${Math.round(delay / 100) / 10}s…`
         );
@@ -1469,14 +1632,14 @@ class StreamingBrowserCard extends HTMLElement {
         this._toast(
           `${source} abierto${
             this._selectedProfile
-              ? ` · perfil ${this._selectedProfile}`
+              ? this._t("profile_suffix", { profile: this._selectedProfile })
               : ""
           }`
         );
       }
     } catch (err) {
       this._toast(
-        `No se pudo abrir ${source}: ${this._formatError(err)}`
+        this._t("app_open_failed", { source, error: this._formatError(err) })
       );
     }
   }
@@ -1489,7 +1652,7 @@ class StreamingBrowserCard extends HTMLElement {
   async _callServiceWithResponse(entityId, serviceData = {}) {
     if (!this._hass?.callWS) {
       throw new Error(
-        "Esta versión del frontend no expone hass.callWS."
+        this._t("callws_unavailable")
       );
     }
 
@@ -1497,7 +1660,7 @@ class StreamingBrowserCard extends HTMLElement {
 
     if (parts.length !== 2) {
       throw new Error(
-        `Acción inválida para respuesta: ${entityId}`
+        this._t("invalid_response_action", { entity: entityId })
       );
     }
 
@@ -1519,7 +1682,7 @@ class StreamingBrowserCard extends HTMLElement {
 
     if (!detail?.item?.id) {
       throw new Error(
-        "No hay un título seleccionado."
+        this._t("no_title_selected")
       );
     }
 
@@ -1547,7 +1710,7 @@ class StreamingBrowserCard extends HTMLElement {
       "script.streaming_watchmode_sources";
 
     this._toast(
-      "Buscando enlace exacto del título…"
+      this._t("looking_up_exact_link")
     );
 
     const response =
@@ -1564,7 +1727,7 @@ class StreamingBrowserCard extends HTMLElement {
 
     if (status && status !== 200) {
       throw new Error(
-        `Watchmode respondió HTTP ${status}.`
+        this._t("watchmode_http", { status })
       );
     }
 
@@ -1577,14 +1740,14 @@ class StreamingBrowserCard extends HTMLElement {
         content = JSON.parse(content);
       } catch (_) {
         throw new Error(
-          "Watchmode devolvió una respuesta que no pude interpretar."
+          this._t("watchmode_bad_response")
         );
       }
     }
 
     if (!Array.isArray(content)) {
       throw new Error(
-        "Watchmode no devolvió una lista de fuentes."
+        this._t("watchmode_not_list")
       );
     }
 
@@ -1768,7 +1931,7 @@ class StreamingBrowserCard extends HTMLElement {
 
       if (!match?.web_url) {
         throw new Error(
-          `Watchmode no encontró un enlace de ${providerName} para este título en ${this._config.region}.`
+          this._t("watchmode_no_provider_link", { provider: providerName, region: this._config.region })
         );
       }
 
@@ -1800,7 +1963,7 @@ class StreamingBrowserCard extends HTMLElement {
 
         if (!appAlreadyOpen) {
           this._toast(
-            `Abriendo ${source} y preparando perfil ${this._selectedProfile || ""}…`
+            this._t("opening_and_preparing", { source, profile: this._selectedProfile || "" })
           );
 
           await this._hass.callService(
@@ -1827,7 +1990,7 @@ class StreamingBrowserCard extends HTMLElement {
 
           if (afterProfileDelay > 0) {
             this._toast(
-              `${source}: esperando sesión del perfil…`
+              this._t("waiting_profile_session", { source })
             );
 
             await this._sleep(
@@ -1836,13 +1999,13 @@ class StreamingBrowserCard extends HTMLElement {
           }
         } else {
           this._toast(
-            `${source} ya está abierto; usando la sesión actual…`
+            this._t("using_current_session", { source })
           );
         }
       }
 
       this._toast(
-        `Abriendo título en ${match.name || providerName}…`
+        this._t("opening_title", { provider: match.name || providerName })
       );
 
       await this._hass.callService(
@@ -1870,7 +2033,7 @@ class StreamingBrowserCard extends HTMLElement {
           ) || 5000;
 
         this._toast(
-          `Título abierto · PLAY en ${Math.round(delay / 100) / 10}s…`
+          this._t("title_opened_play", { seconds: Math.round(delay / 100) / 10 })
         );
 
         await this._sleep(delay);
@@ -1884,7 +2047,7 @@ class StreamingBrowserCard extends HTMLElement {
         );
       } else {
         this._toast(
-          `Enlace del título enviado al LG`
+          this._t("title_link_sent")
         );
       }
 
@@ -1896,14 +2059,14 @@ class StreamingBrowserCard extends HTMLElement {
 
       if (!fallback) {
         this._toast(
-          `No se pudo abrir el título: ${this._formatError(err)}`
+          this._t("title_open_failed", { error: this._formatError(err) })
         );
 
         return;
       }
 
       this._toast(
-        `No pude abrir el título exacto; abriendo ${providerName} como respaldo…`
+        this._t("title_fallback", { provider: providerName })
       );
 
       await this._sleep(700);
@@ -1934,7 +2097,7 @@ class StreamingBrowserCard extends HTMLElement {
       );
     } catch (err) {
       this._toast(
-        `No se pudo abrir la página: ${this._formatError(err)}`
+        this._t("page_open_failed", { error: this._formatError(err) })
       );
     }
   }
@@ -1983,7 +2146,7 @@ class StreamingBrowserCard extends HTMLElement {
     return `
       <div class="profiles-wrap">
         <div class="profiles-label">
-          ¿Quién está viendo?
+          ${this._t("who_is_watching")}
         </div>
 
         <div class="profiles">
@@ -2284,7 +2447,7 @@ class StreamingBrowserCard extends HTMLElement {
         <div class="overlay">
           <div class="detail">
             <button class="close" data-close>×</button>
-            <div class="loading">Cargando detalles…</div>
+            <div class="loading">${this._t("loading_details")}</div>
           </div>
         </div>
       `;
@@ -2387,7 +2550,7 @@ class StreamingBrowserCard extends HTMLElement {
                       )}"
                       ${disabled}
                     >
-                      Abrir app
+                      ${this._t("open_app")}
                     </button>
 
                     <button
@@ -2397,7 +2560,7 @@ class StreamingBrowserCard extends HTMLElement {
                       )}"
                       ${disabled}
                     >
-                      🎬 Abrir título
+                      🎬 ${this._t("open_title")}
                     </button>
 
                     <button
@@ -2407,7 +2570,7 @@ class StreamingBrowserCard extends HTMLElement {
                       )}"
                       ${disabled}
                     >
-                      ▶ Título + Play
+                      ▶ ${this._t("title_play")}
                     </button>
                   </div>
                 </div>
@@ -2417,7 +2580,7 @@ class StreamingBrowserCard extends HTMLElement {
           .join("")
       : `
         <div style="opacity:.65">
-          No hay proveedores reportados para tu región.
+          ${this._t("no_providers")}
         </div>
       `;
 
@@ -2476,7 +2639,7 @@ class StreamingBrowserCard extends HTMLElement {
             <div class="overview">
               ${this._esc(
                 info.overview ||
-                  "Sin sinopsis disponible."
+                  this._t("no_synopsis")
               )}
             </div>
 
@@ -2484,7 +2647,7 @@ class StreamingBrowserCard extends HTMLElement {
               this._selectedProfile
                 ? `
                   <div class="profile-status">
-                    <b>Perfil activo:</b>
+                    <b>${this._t("active_profile")}</b>
                     ${this._esc(this._selectedProfile)}
                   </div>
                 `
@@ -2492,7 +2655,7 @@ class StreamingBrowserCard extends HTMLElement {
             }
 
             <div class="provider-title">
-              Dónde verla en
+              ${this._t("where_to_watch")}
               ${this._esc(this._config.region)}
             </div>
 
@@ -2508,7 +2671,7 @@ class StreamingBrowserCard extends HTMLElement {
                       class="action secondary"
                       data-watch-page
                     >
-                      Abrir disponibilidad en navegador del LG
+                      ${this._t("open_availability")}
                     </button>
                   `
                   : ""
@@ -2516,12 +2679,7 @@ class StreamingBrowserCard extends HTMLElement {
             </div>
 
             <div class="note">
-              <b>Abrir app</b> usa la integración LG webOS normal.
-              <b>Abrir título</b> consulta Watchmode usando el TMDB ID y
-              envía el enlace exacto del proveedor al LG.
-              <b>Título + Play</b> hace lo mismo y después envía PLAY.
-              Si webOS o la app no aceptan el enlace, el card vuelve a
-              abrir la app como respaldo.
+              ${this._t("detail_note")}
             </div>
           </div>
         </div>
@@ -2565,7 +2723,7 @@ class StreamingBrowserCard extends HTMLElement {
           }"
           data-provider="trending"
         >
-          🔥 Tendencias
+          🔥 ${this._t("trending")}
         </button>
       `,
       ...providers.map(
@@ -2632,8 +2790,8 @@ class StreamingBrowserCard extends HTMLElement {
                         item.media_type
                           ? ` · ${
                               item.media_type === "movie"
-                                ? "Película"
-                                : "Serie"
+                                ? this._t("movie")
+                                : this._t("series")
                             }`
                           : ""
                       }
@@ -2675,7 +2833,7 @@ class StreamingBrowserCard extends HTMLElement {
                     section.loadingMore
                       ? `
                         <div class="row-loading">
-                          Cargando…
+                          ${this._t("loading")}
                         </div>
                       `
                       : ""
@@ -2688,7 +2846,7 @@ class StreamingBrowserCard extends HTMLElement {
       : !this._loading
       ? `
         <div class="empty">
-          No encontré títulos para esta selección.
+          ${this._t("empty_selection")}
         </div>
       `
       : "";
@@ -3106,7 +3264,7 @@ class StreamingBrowserCard extends HTMLElement {
             <input
               class="search"
               type="search"
-              placeholder="Buscar película o serie…"
+              placeholder="${this._t("search_placeholder")}"
               value="${this._esc(this._query)}"
             >
           </div>
@@ -3120,7 +3278,7 @@ class StreamingBrowserCard extends HTMLElement {
               }"
               data-mode="movie"
             >
-              Películas
+              ${this._t("movies")}
             </button>
 
             <button
@@ -3129,7 +3287,7 @@ class StreamingBrowserCard extends HTMLElement {
               }"
               data-mode="tv"
             >
-              Series
+              ${this._t("tv_series")}
             </button>
           </div>
 
@@ -3141,8 +3299,7 @@ class StreamingBrowserCard extends HTMLElement {
             !this._tvSources().length
               ? `
                 <div class="error">
-                  No veo <code>source_list</code> en la entidad de tu TV.
-                  Enciende la TV y verifica las Sources de la integración LG webOS.
+                  ${this._t("no_source_list")}
                 </div>
               `
               : ""
@@ -3162,7 +3319,7 @@ class StreamingBrowserCard extends HTMLElement {
             this._loading
               ? `
                 <div class="loading">
-                  Cargando catálogo…
+                  ${this._t("loading_catalog")}
                 </div>
               `
               : `
@@ -3173,11 +3330,9 @@ class StreamingBrowserCard extends HTMLElement {
           }
 
           <div class="note">
-            Perfil activo:
-            <b>${this._esc(this._selectedProfile || "ninguno")}</b>.
-            “Abrir app” conserva el flujo de perfil/PIN.
-            “Abrir título” y “Título + Play” usan Watchmode para buscar
-            el enlace exacto del título y enviarlo al LG.
+            ${this._t("active_profile")}
+            <b>${this._esc(this._selectedProfile || this._t("none"))}</b>.
+            ${this._t("footer_note")}
           </div>
 
           ${
@@ -3409,7 +3564,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.39 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.40 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
