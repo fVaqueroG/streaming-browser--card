@@ -2,7 +2,7 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.46**
+Current version: **v0.4.47**
 
 ## Features
 
@@ -54,6 +54,8 @@ android_play_command: DPAD_CENTER
 ```
 
 ## Netflix default profile
+
+v0.4.47 restores explicit Android TV app startup waiting. After launching a streaming app, the card now waits for the target app to become the foreground activity, completes the configured launch delay, gives the app a short settle period, and only then sends Netflix profile-navigation commands. This prevents DPAD/profile commands from being sent while Netflix is still starting.
 
 v0.4.46 fixes Netflix profile selection on Android TV when Netflix hides its UI hierarchy from ADB. The card now sends raw Android DPAD keyevents, and when Netflix is already open it can open Netflix's profile menu before selecting the configured profile position. It also retries once if the picker is still visible after the first selection.
 
