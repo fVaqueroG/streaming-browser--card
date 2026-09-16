@@ -2,7 +2,19 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.50**
+Current version: **v0.4.51**
+
+## All sources catalog
+
+v0.4.51 adds an **All sources** catalog that combines the providers selected in the card editor.
+
+TMDB's discover API supports pipe-separated watch-provider IDs as OR logic, so the card sends the selected provider IDs as a single `with_watch_providers` query. This produces one deduplicated catalog containing titles available on any of the selected/matched platforms.
+
+- **All sources** is the default provider tab.
+- Individual provider tabs remain available.
+- Switching Movies/Series returns to **All sources**.
+- Popular, Top Rated, and Recent Releases all use the combined provider filter.
+- Title details still show the actual provider buttons for launching the correct app.
 
 ## TMDB provider selection
 
