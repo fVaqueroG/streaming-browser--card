@@ -1,0 +1,136 @@
+type: custom:streaming-browser-card
+
+title: Streaming
+
+# Android TV Remote integration — NO ADB.
+platform: android_tv
+
+# CHANGE BOTH to your Android TV Remote integration entities.
+tv_entity: media_player.android_tv
+remote_entity: remote.android_tv
+
+# Your TMDB v3 API key.
+tmdb_api_key: YOUR_TMDB_V3_API_KEY
+
+region: MX
+language: es-MX
+
+poster_width: 145
+max_items: 24
+include_rent_buy: false
+
+wake_delay_ms: 4500
+auto_play_delay_ms: 4000
+exact_title_play_delay_ms: 5000
+exact_title_prepare_profile: true
+
+watchmode_script: script.streaming_watchmode_sources
+exact_title_fallback_to_app: true
+
+# Optional profile helper.
+profile_entity: input_select.streaming_profile
+default_profile: Felipe
+
+# Android TV app/deep links.
+# Netflix / Prime Video / Disney+ are documented Android TV Remote
+# deep-link patterns in Home Assistant. Other providers are configurable
+# best-effort HTTPS app links and can be overridden here.
+android_app_links:
+  Netflix: "netflix://"
+  Netflix Standard with Ads: "netflix://"
+
+  Disney Plus: "https://www.disneyplus.com"
+
+  Amazon Prime Video: "https://app.primevideo.com"
+  Prime Video: "https://app.primevideo.com"
+
+  Max: "https://play.max.com"
+  HBO Max: "https://play.max.com"
+
+  Paramount Plus: "https://www.paramountplus.com"
+
+  Apple TV Plus: "https://tv.apple.com"
+
+  Crunchyroll: "https://www.crunchyroll.com"
+
+  ViX: "https://vix.com"
+
+  Claro Video: "https://www.clarovideo.com"
+
+# Friendly provider names used by profile configuration.
+provider_sources:
+  Netflix: Netflix
+  Netflix Standard with Ads: Netflix
+  Disney Plus: Disney+
+  Amazon Prime Video: Prime Video
+  Max: HBO Max
+  HBO Max: HBO Max
+  Paramount Plus: Paramount+
+  Apple TV Plus: Apple TV
+  Crunchyroll: Crunchyroll
+  ViX: ViX
+  Claro Video: Claro video
+
+profiles:
+
+  Felipe:
+    icon: mdi:account
+
+    apps:
+
+      # IMPORTANT:
+      # Android TV Remote commands do not work inside Netflix.
+      # Leave Netflix in "remember" mode. The card can still launch
+      # Netflix and exact Netflix title links.
+      Netflix:
+        mode: remember
+
+      # Start other Android TV apps in remember mode initially.
+      # If remote.send_command works inside a given app, you can change
+      # that app to mode: navigation and add its D-pad sequence.
+      Disney Plus:
+        mode: remember
+
+      Max:
+        mode: remember
+
+      Amazon Prime Video:
+        mode: remember
+
+      Paramount Plus:
+        mode: remember
+
+      Apple TV Plus:
+        mode: remember
+
+      Crunchyroll:
+        mode: remember
+
+      ViX:
+        mode: remember
+
+      Claro Video:
+        mode: remember
+
+  Guest:
+    icon: mdi:account-outline
+
+    apps:
+      Netflix:
+        mode: remember
+      Disney Plus:
+        mode: remember
+      Max:
+        mode: remember
+      Amazon Prime Video:
+        mode: remember
+      Paramount Plus:
+        mode: remember
+      Apple TV Plus:
+        mode: remember
+      Crunchyroll:
+        mode: remember
+      ViX:
+        mode: remember
+      Claro Video:
+        mode: remember
