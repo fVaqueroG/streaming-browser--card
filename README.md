@@ -2,7 +2,7 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.43**
+Current version: **v0.4.44**
 
 ## Features
 
@@ -54,6 +54,8 @@ android_play_command: DPAD_CENTER
 ## Netflix default profile
 
 v0.4.43 adds Netflix profile auto-selection for both **Android TV** and **LG webOS**.
+
+v0.4.44 fixes **Open title** and **Title + Play** for Netflix so the Watchmode HTTPS URL is never handed to the TV browser. Android TV targets `com.netflix.ninja` with a Netflix deep link, while LG webOS uses `system.launcher/launch` with Netflix's `contentId` payload.
 
 Android TV needs two integrations for the full experience:
 
