@@ -2,7 +2,7 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.38**
+Current version: **v0.4.39**
 
 ## Features
 
@@ -29,6 +29,22 @@ Current version: **v0.4.38**
 6. Reload the Home Assistant frontend if prompted.
 
 HACS installs `streaming-browser-card.js` from the repository root.
+
+## Visual editor
+
+v0.4.39 adds a native Home Assistant visual editor using the built-in card form API.
+
+From the dashboard editor you can configure:
+
+- TV media player
+- TMDB API key, region and language
+- Poster width and catalog lazy-loading threshold
+- Rental/purchase provider visibility
+- Watchmode script and playback timing
+- Profile helper, default profile and profile timing
+- Advanced `profiles` and `provider_sources` objects
+
+Existing YAML configuration remains supported.
 
 ## Minimal card configuration
 
