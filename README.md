@@ -2,7 +2,11 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.51**
+Current version: **v0.4.52**
+
+## Selected sources in title details
+
+v0.4.52 filters title details to the selected TMDB providers. The **Where to watch** section now shows only providers whose TMDB provider IDs are present in `selected_provider_ids`, including rent/buy groups when that option is enabled.
 
 ## All sources catalog
 
