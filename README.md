@@ -2,7 +2,18 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.49**
+Current version: **v0.4.50**
+
+## TMDB provider selection
+
+v0.4.50 adds a region-aware TMDB provider picker to the visual card editor.
+
+- The provider list is loaded from TMDB's movie and TV watch-provider endpoints for the configured region.
+- Movie and TV providers are merged and deduplicated by TMDB provider ID.
+- Use the **TMDB Providers** section in the visual editor to choose exactly which providers are shown as app tabs.
+- The saved Lovelace config contains only `selected_provider_ids`; provider-specific launch/profile behavior stays internal to the card.
+- Changing the TMDB API key, region, or language refreshes the provider list automatically.
+- Existing cards default to Netflix (8), Disney Plus (337), and Amazon Prime Video (119) until you save a different selection.
 
 ## Backend-managed apps and profiles
 
