@@ -1,0 +1,10 @@
+streaming_watchmode_sources:
+  url: >-
+    https://api.watchmode.com/v1/title/{{ title_id }}/sources/?regions={{ region }}
+  method: get
+
+  headers:
+    X-API-Key: !secret watchmode_api_key
+    Accept: application/json
+
+  verify_ssl: true
