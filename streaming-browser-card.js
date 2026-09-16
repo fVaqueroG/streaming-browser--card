@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.53
+ * v0.4.54
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -3127,6 +3127,102 @@ class StreamingBrowserCard extends HTMLElement {
     }
   }
 
+  async _waitForWebOsAppReady(
+    providerName,
+    source,
+    appConfig = {}
+  ) {
+    const minimumWait =
+      Number(
+        appConfig?.launch_delay_ms ??
+          STREAMING_BROWSER_BACKEND
+            .profileRules[
+              this._isNetflixProvider(
+                providerName,
+                source
+              )
+                ? "netflix"
+                : (
+                    this._isPrimeProvider(
+                      providerName,
+                      source
+                    )
+                      ? "prime"
+                      : "disney"
+                  )
+            ]?.launchDelayMs ??
+          5000
+      ) || 5000;
+
+    const timeout =
+      Math.max(
+        minimumWait,
+        Number(
+          appConfig?.launch_timeout_ms ??
+            9000
+        ) || 9000
+      );
+
+    const startedAt =
+      Date.now();
+
+    let active = false;
+
+    while (
+      Date.now() - startedAt <
+      timeout
+    ) {
+      const current =
+        this._norm(
+          this._tvState()
+            ?.attributes?.source ||
+          ""
+        );
+
+      const expected =
+        this._norm(source);
+
+      if (
+        current &&
+        expected &&
+        (
+          current === expected ||
+          current.includes(expected) ||
+          expected.includes(current)
+        )
+      ) {
+        active = true;
+        break;
+      }
+
+      await this._sleep(250);
+    }
+
+    const elapsed =
+      Date.now() - startedAt;
+
+    const remaining =
+      Math.max(
+        0,
+        minimumWait - elapsed
+      );
+
+    if (remaining > 0) {
+      await this._sleep(
+        remaining
+      );
+    }
+
+    /*
+     * webOS can update source before the app's profile UI is actually
+     * ready for remote input. Always allow a short settle window after
+     * the source becomes active.
+     */
+    if (active) {
+      await this._sleep(750);
+    }
+  }
+
   async _androidLaunchActivity(activity) {
     if (!this._config.remote_entity) {
       throw new Error("remote_entity is required for Android TV");
@@ -3234,10 +3330,37 @@ class StreamingBrowserCard extends HTMLElement {
         }
       );
 
+      const appConfig =
+        this._findProfileAppConfig(
+          providerName,
+          source
+        ) || {};
+
+      this._toast(
+        this._t(
+          "preparing_profile",
+          {
+            source,
+            profile:
+              this._selectedProfile || "",
+          }
+        )
+      );
+
+      await this._waitForWebOsAppReady(
+        providerName,
+        source,
+        appConfig
+      );
+
       await this._applyProfile(
         providerName,
         source,
-        { appJustOpened: !appAlreadyOpen }
+        {
+          appJustOpened:
+            !appAlreadyOpen,
+          appReadyWaited: true,
+        }
       );
 
       if (autoPlay) {
@@ -3647,6 +3770,23 @@ class StreamingBrowserCard extends HTMLElement {
                 source,
               }
             );
+
+            this._toast(
+              this._t(
+                "preparing_profile",
+                {
+                  source,
+                  profile:
+                    this._selectedProfile || "",
+                }
+              )
+            );
+
+            await this._waitForWebOsAppReady(
+              providerName,
+              source,
+              appConfig || {}
+            );
           }
 
           await this._applyProfile(
@@ -3654,9 +3794,7 @@ class StreamingBrowserCard extends HTMLElement {
             source,
             {
               appJustOpened: true,
-              appReadyWaited:
-                this._platform() ===
-                "android_tv",
+              appReadyWaited: true,
             }
           );
 
@@ -6067,7 +6205,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.53 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.54 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
