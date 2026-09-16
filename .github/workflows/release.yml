@@ -1,0 +1,49 @@
+name: Publish card release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "streaming-browser-card.js"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Read card version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(grep -m1 -oE 'v[0-9]+\.[0-9]+\.[0-9]+' streaming-browser-card.js)"
+          if [ -z "$VERSION" ]; then
+            echo "Could not find a semantic version in streaming-browser-card.js"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $VERSION"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists; nothing to do."
+            exit 0
+          fi
+
+          gh release create "$VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --generate-notes
