@@ -2,7 +2,13 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.55**
+Current version: **v0.4.56**
+
+## Uniform 10-second app load wait
+
+v0.4.56 standardizes the post-active app load wait at 10 seconds for Netflix, Disney+, and Prime Video before any profile-navigation commands are sent.
+
+The extra 1-second settle window after that wait is unchanged.
 
 ## Longer post-active webOS load wait
 
