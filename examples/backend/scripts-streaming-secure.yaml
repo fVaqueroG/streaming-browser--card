@@ -1,0 +1,64 @@
+streaming_pin_felipe:
+  alias: Streaming - Felipe PIN
+  description: Enter Felipe's streaming profile PIN on the LG webOS TV
+  mode: single
+
+  fields:
+    tv_entity:
+      name: TV
+      required: true
+      selector:
+        entity:
+          domain: media_player
+
+  variables:
+    profile_pin: !secret streaming_pin_felipe
+
+  sequence:
+    - repeat:
+        count: "{{ profile_pin | string | length }}"
+
+        sequence:
+          - action: webostv.button
+            target:
+              entity_id: "{{ tv_entity }}"
+            data:
+              button: >-
+                {{ (profile_pin | string)[repeat.index - 1] }}
+
+          - delay:
+              milliseconds: 300
+
+
+streaming_watchmode_sources:
+  alias: Streaming - Watchmode Sources
+  description: Return Watchmode streaming sources for a TMDB movie/TV ID
+  mode: parallel
+  max: 10
+
+  fields:
+    title_id:
+      name: Watchmode title ID
+      description: TMDB format, for example movie-278 or tv-1396
+      required: true
+      selector:
+        text:
+
+    region:
+      name: Region
+      description: Two-letter region such as MX
+      required: true
+      selector:
+        text:
+
+  sequence:
+    - action: rest_command.streaming_watchmode_sources
+      data:
+        title_id: "{{ title_id }}"
+        region: "{{ region }}"
+      response_variable: watchmode_response
+
+    # Scripts can return action response data. The card requests this
+    # script using Home Assistant's WebSocket API with return_response.
+    - stop: Watchmode response
+      response_variable: watchmode_response
