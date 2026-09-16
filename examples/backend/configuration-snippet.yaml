@@ -1,0 +1,9 @@
+# Add these top-level includes to /config/configuration.yaml.
+#
+# If you ALREADY have "script:" or "rest_command:" includes, do not create
+# duplicate top-level keys. Instead merge the contents of the supplied files
+# into your existing script/rest_command include files.
+
+script streaming_secure: !include scripts-streaming-secure.yaml
+
+rest_command: !include rest_commands-streaming.yaml
