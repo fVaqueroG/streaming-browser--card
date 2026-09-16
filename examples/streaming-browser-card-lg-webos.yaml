@@ -28,6 +28,12 @@ auto_play_delay_ms: 4000
 profile_launch_delay_ms: 4000
 profile_navigation_delay_ms: 400
 
+# Netflix default-profile behavior.
+netflix_profile_autoselect: true
+netflix_profile_launch_delay_ms: 5000
+netflix_profile_navigation_delay_ms: 350
+netflix_profile_after_select_delay_ms: 1500
+
 # Wait after sending an exact-title Watchmode link before PLAY.
 exact_title_play_delay_ms: 5000
 
@@ -92,32 +98,12 @@ profiles:
 
     apps:
 
-      # Example: APP WITH PIN
+      # Netflix profile positions are counted left-to-right.
+      # If this profile has a PIN, keep using mode: navigation with
+      # your custom PIN script instead of mode: netflix.
       Netflix:
-        mode: navigation
-        launch_delay_ms: 5000
-        step_delay_ms: 400
-
-        sequence:
-          # Force focus toward the first profile.
-          - button: LEFT
-            wait_ms: 300
-          - button: LEFT
-            wait_ms: 300
-          - button: LEFT
-            wait_ms: 300
-          - button: LEFT
-            wait_ms: 300
-          - button: LEFT
-            wait_ms: 500
-
-          # Felipe is first profile.
-          - button: ENTER
-            wait_ms: 2000
-
-          # REMOVE this script step if Netflix does not use a PIN.
-          - script: script.streaming_pin_felipe
-            wait_ms: 1000
+        mode: netflix
+        profile_position: 1
 
       # Example: APP WITHOUT PIN
       Disney Plus:
@@ -208,7 +194,8 @@ profiles:
 
     apps:
       Netflix:
-        mode: remember
+        mode: netflix
+        profile_position: 2
 
       Disney Plus:
         mode: remember
