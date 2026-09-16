@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.43
+ * v0.4.44
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -662,6 +662,7 @@ class StreamingBrowserCard extends HTMLElement {
             "selecting_profile": "{source}: selecting profile {profile}…",
             "netflix_adb_required": "Netflix profile auto-selection on Android TV requires an Android Debug Bridge media_player entity.",
             "netflix_profile_position_invalid": "Netflix profile position for {profile} must be between 1 and 5.",
+            "netflix_title_id_missing": "Could not extract the Netflix title ID from the provider link.",
             "unlocking_profile": "{source}: unlocking profile {profile}…",
             "command_missing": "Profile {profile} uses command for {source}, but has no command.",
             "applying_profile": "{source}: applying profile {profile}…",
@@ -742,6 +743,7 @@ class StreamingBrowserCard extends HTMLElement {
             "selecting_profile": "{source}: seleccionando perfil {profile}…",
             "netflix_adb_required": "La selección automática de perfil de Netflix en Android TV requiere una entidad media_player de Android Debug Bridge.",
             "netflix_profile_position_invalid": "La posición del perfil de Netflix para {profile} debe estar entre 1 y 5.",
+            "netflix_title_id_missing": "No pude extraer el ID del título de Netflix del enlace del proveedor.",
             "unlocking_profile": "{source}: desbloqueando perfil {profile}…",
             "command_missing": "El perfil {profile} usa command para {source}, pero no tiene command.",
             "applying_profile": "{source}: aplicando perfil {profile}…",
@@ -1944,6 +1946,102 @@ class StreamingBrowserCard extends HTMLElement {
     return true;
   }
 
+  _netflixContentId(url) {
+    const raw = String(url || "");
+
+    let decoded = raw;
+
+    try {
+      decoded = decodeURIComponent(raw);
+    } catch (_) {}
+
+    const candidates = [raw, decoded];
+
+    const patterns = [
+      /netflix\.com\/(?:watch|title)\/(\d+)/i,
+      /api\.netflix\.com\/catalog\/titles\/(?:movies|series|programs)\/(\d+)/i,
+      /(?:^|[?&])(?:movieid|contentid|titleid)=(\d+)/i,
+    ];
+
+    for (const candidate of candidates) {
+      for (const pattern of patterns) {
+        const match = String(candidate).match(pattern);
+
+        if (match?.[1]) {
+          return match[1];
+        }
+      }
+    }
+
+    return null;
+  }
+
+  async _openNetflixExactTitle(webUrl) {
+    const contentId =
+      this._netflixContentId(webUrl);
+
+    if (!contentId) {
+      throw new Error(
+        this._t("netflix_title_id_missing")
+      );
+    }
+
+    if (this._platform() === "android_tv") {
+      /*
+       * Android TV Remote can launch Netflix, but Netflix does not accept
+       * its remote key commands. When ADB is available, explicitly target
+       * com.netflix.ninja so Android cannot hand the HTTPS URL to a browser.
+       */
+      if (this._androidAdbEntity()) {
+        await this._androidAdbCommand(
+          "am start -W -n com.netflix.ninja/.MainActivity " +
+          "-a android.intent.action.VIEW " +
+          "-d netflix://title/" +
+          contentId +
+          " -f 0x10000020 -e source 30"
+        );
+
+        return;
+      }
+
+      /*
+       * ADB is optional when Netflix profile automation is disabled.
+       * Keep the fallback app-specific as well; never send the Watchmode
+       * HTTPS URL to the Android browser.
+       */
+      await this._androidLaunchActivity(
+        "netflix://title/" + contentId
+      );
+
+      return;
+    }
+
+    /*
+     * system.launcher/open is the webOS URL/browser endpoint.
+     * Netflix deep links use system.launcher/launch with Netflix's
+     * contentId payload instead.
+     */
+    await this._hass.callService(
+      "webostv",
+      "command",
+      {
+        entity_id:
+          this._config.tv_entity,
+
+        command:
+          "system.launcher/launch",
+
+        payload: {
+          id: "netflix",
+          contentId:
+            "m=http%3A%2F%2Fapi.netflix.com%2Fcatalog%2Ftitles%2Fmovies%2F" +
+            contentId +
+            "&source_type=4",
+        },
+      }
+    );
+  }
+
   async _sendProviderPlay(providerName, source = "") {
     if (
       this._platform() === "android_tv" &&
@@ -2814,7 +2912,16 @@ class StreamingBrowserCard extends HTMLElement {
         this._t("opening_title", { provider: match.name || providerName })
       );
 
-      if (this._platform() === "android_tv") {
+      if (
+        this._isNetflixProvider(
+          providerName,
+          source || match.name || ""
+        )
+      ) {
+        await this._openNetflixExactTitle(
+          match.web_url
+        );
+      } else if (this._platform() === "android_tv") {
         await this._androidLaunchActivity(match.web_url);
       } else {
         await this._hass.callService(
@@ -4383,7 +4490,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.43 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.44 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
