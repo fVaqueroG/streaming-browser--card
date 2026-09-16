@@ -2,7 +2,13 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.53**
+Current version: **v0.4.54**
+
+## App startup wait before profile selection
+
+v0.4.54 waits for LG webOS apps to finish loading before profile selection.
+
+The card now launches the app, waits until Home Assistant reports the target app as the active webOS source, completes the backend per-app minimum startup delay, adds a short settle window, and only then sends profile-navigation commands. The same ordering is used when preparing an app before an exact-title launch.
 
 ## Prime Video exact-title launch on LG webOS
 
