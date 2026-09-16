@@ -2,7 +2,17 @@
 
 A custom Home Assistant dashboard card for browsing streaming catalogs and launching titles on supported media players.
 
-Current version: **v0.4.52**
+Current version: **v0.4.53**
+
+## Prime Video exact-title launch on LG webOS
+
+v0.4.53 fixes Prime Video exact-title launching on LG webOS.
+
+- Prime no longer uses `system.launcher/open`, which is the webOS browser URL endpoint.
+- The card launches the Prime Video app with app id `amazon`.
+- The Prime title target is passed as both `contentId` and `params.contentTarget` for compatibility across webOS launcher generations.
+- Prime/Amazon detail URLs are normalized to a Prime Video detail target when possible.
+- The Netflix exact-title helper is also restored after a regression that left its call site without the helper implementation.
 
 ## Selected sources in title details
 
