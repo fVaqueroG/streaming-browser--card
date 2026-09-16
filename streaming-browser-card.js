@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.38
+ * v0.4.39
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -51,6 +51,284 @@ class StreamingBrowserCard extends HTMLElement {
     this._lastTvSourcesKey = "";
     this._selectedProfile = null;
     this._watchmodeCache = new Map();
+  }
+
+  static getConfigForm() {
+    const labels = {
+      title: "Card title",
+      tv_entity: "LG webOS media player",
+      tmdb_api_key: "TMDB API key (v3)",
+      region: "Region",
+      language: "Language",
+      poster_width: "Poster width",
+      catalog_prefetch_threshold_px: "Load-more threshold",
+      include_rent_buy: "Include rental and purchase providers",
+      watchmode_script: "Watchmode Home Assistant script",
+      exact_title_fallback_to_app: "Fall back to opening the app",
+      wake_delay_ms: "TV wake delay",
+      relaunch_delay_ms: "App relaunch delay",
+      auto_play_delay_ms: "Automatic Play delay",
+      exact_title_play_delay_ms: "Exact-title Play delay",
+      profile_entity: "Profile helper",
+      default_profile: "Default profile",
+      profile_launch_delay_ms: "Profile app launch delay",
+      profile_navigation_delay_ms: "Profile navigation step delay",
+      profiles: "Profiles and per-app behavior",
+      provider_sources: "Provider source overrides",
+    };
+
+    const helpers = {
+      tmdb_api_key:
+        "Use the short TMDB API key v3. It is stored in the dashboard card configuration.",
+      region:
+        "Two-letter country code used for streaming availability, for example MX.",
+      language:
+        "TMDB language code, for example es-MX or en-US.",
+      catalog_prefetch_threshold_px:
+        "Distance from the end of a horizontal catalog row before the next TMDB page is loaded.",
+      include_rent_buy:
+        "Also show rental and purchase providers in title availability.",
+      watchmode_script:
+        "Leave empty to use script.streaming_watchmode_sources.",
+      exact_title_fallback_to_app:
+        "If an exact-title deep link fails, open the provider app instead.",
+      profile_entity:
+        "Optional input_select or select entity used to synchronize the active streaming profile.",
+      default_profile:
+        "Profile selected when no profile helper or saved choice is available.",
+      profiles:
+        "Advanced object containing profile names, app modes, PIN scripts and navigation sequences.",
+      provider_sources:
+        "Advanced mapping used when automatic provider-to-webOS source matching needs an override.",
+    };
+
+    return {
+      schema: [
+        {
+          type: "expandable",
+          name: "",
+          title: "General",
+          flatten: true,
+          schema: [
+            {
+              name: "title",
+              selector: { text: {} },
+            },
+            {
+              name: "tv_entity",
+              required: true,
+              selector: {
+                entity: {
+                  filter: { domain: "media_player" },
+                },
+              },
+            },
+            {
+              name: "tmdb_api_key",
+              required: true,
+              selector: {
+                text: {
+                  type: "password",
+                  autocomplete: "off",
+                },
+              },
+            },
+            {
+              type: "grid",
+              name: "",
+              flatten: true,
+              column_min_width: "160px",
+              schema: [
+                {
+                  name: "region",
+                  selector: {
+                    text: {
+                      pattern: "[A-Za-z]{2}",
+                      validation_message:
+                        "Use a two-letter country code such as MX.",
+                    },
+                  },
+                },
+                {
+                  name: "language",
+                  selector: { text: {} },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "expandable",
+          name: "",
+          title: "Catalog",
+          flatten: true,
+          schema: [
+            {
+              name: "poster_width",
+              selector: {
+                number: {
+                  min: 100,
+                  max: 280,
+                  step: 5,
+                  unit_of_measurement: "px",
+                },
+              },
+            },
+            {
+              name: "catalog_prefetch_threshold_px",
+              selector: {
+                number: {
+                  min: 100,
+                  max: 1500,
+                  step: 20,
+                  unit_of_measurement: "px",
+                },
+              },
+            },
+            {
+              name: "include_rent_buy",
+              selector: { boolean: {} },
+            },
+          ],
+        },
+        {
+          type: "expandable",
+          name: "",
+          title: "Exact-title playback",
+          flatten: true,
+          schema: [
+            {
+              name: "watchmode_script",
+              selector: {
+                entity: {
+                  filter: { domain: "script" },
+                },
+              },
+            },
+            {
+              name: "exact_title_fallback_to_app",
+              selector: { boolean: {} },
+            },
+            {
+              type: "grid",
+              name: "",
+              flatten: true,
+              column_min_width: "170px",
+              schema: [
+                {
+                  name: "wake_delay_ms",
+                  selector: {
+                    number: {
+                      min: 0,
+                      step: 100,
+                      unit_of_measurement: "ms",
+                    },
+                  },
+                },
+                {
+                  name: "relaunch_delay_ms",
+                  selector: {
+                    number: {
+                      min: 0,
+                      step: 100,
+                      unit_of_measurement: "ms",
+                    },
+                  },
+                },
+                {
+                  name: "auto_play_delay_ms",
+                  selector: {
+                    number: {
+                      min: 0,
+                      step: 100,
+                      unit_of_measurement: "ms",
+                    },
+                  },
+                },
+                {
+                  name: "exact_title_play_delay_ms",
+                  selector: {
+                    number: {
+                      min: 0,
+                      step: 100,
+                      unit_of_measurement: "ms",
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "expandable",
+          name: "",
+          title: "Profiles",
+          flatten: true,
+          schema: [
+            {
+              name: "profile_entity",
+              selector: {
+                entity: {
+                  filter: {
+                    domain: ["input_select", "select"],
+                  },
+                },
+              },
+            },
+            {
+              name: "default_profile",
+              selector: { text: {} },
+            },
+            {
+              type: "grid",
+              name: "",
+              flatten: true,
+              column_min_width: "170px",
+              schema: [
+                {
+                  name: "profile_launch_delay_ms",
+                  selector: {
+                    number: {
+                      min: 0,
+                      step: 100,
+                      unit_of_measurement: "ms",
+                    },
+                  },
+                },
+                {
+                  name: "profile_navigation_delay_ms",
+                  selector: {
+                    number: {
+                      min: 0,
+                      step: 50,
+                      unit_of_measurement: "ms",
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "expandable",
+          name: "",
+          title: "Advanced",
+          flatten: true,
+          schema: [
+            {
+              name: "profiles",
+              selector: { object: {} },
+            },
+            {
+              name: "provider_sources",
+              selector: { object: {} },
+            },
+          ],
+        },
+      ],
+      computeLabel: (schema) => labels[schema.name],
+      computeHelper: (schema) => helpers[schema.name],
+    };
   }
 
   static getStubConfig() {
@@ -3131,7 +3409,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.38 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.39 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
