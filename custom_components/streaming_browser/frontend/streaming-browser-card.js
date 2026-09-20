@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.70
+ * v0.4.71
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.70";
+const STREAMING_BROWSER_VERSION = "0.4.71";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -4504,6 +4504,27 @@ class StreamingBrowserCard extends HTMLElement {
         position: relative;
       }
 
+      /* Title and close/remote buttons remain visible while episodes scroll. */
+      .detail-sticky-header {
+        position:sticky; top:0; z-index:8;
+        display:flex; align-items:center; gap:8px;
+        padding:8px 12px; min-height:52px;
+        color:var(--primary-text-color);
+        background:var(--card-background-color);
+        border-bottom:1px solid var(--divider-color);
+      }
+      .detail-sticky-title {
+        flex:1; min-width:0; overflow:hidden;
+        white-space:nowrap; text-overflow:ellipsis;
+        font-size:15px; font-weight:700;
+      }
+      .detail-sticky-header .detail-remote-button,
+      .detail-sticky-header .close {
+        position:static; flex:0 0 36px;
+        width:36px; height:36px; min-height:36px;
+        border-radius:50%; background:var(--secondary-background-color);
+        color:var(--primary-text-color); display:grid;place-items:center;
+      }
       .detail-loading-panel { padding: 64px 28px 32px; min-height: 180px; }
       .detail-loading-preview { display:flex; gap:14px; align-items:center; }
       .detail-loading-preview img { width:64px; border-radius:7px; flex:0 0 64px; }
@@ -4627,12 +4648,27 @@ class StreamingBrowserCard extends HTMLElement {
         gap:12px; padding:9px; text-align:left; font:inherit; cursor:pointer;
         border:1px solid var(--divider-color); border-radius:12px;
         background:var(--secondary-background-color); color:var(--primary-text-color); }
-      .episode-row.active { border-color:var(--primary-color); border-radius:12px 12px 0 0;
-        box-shadow:inset 0 0 0 1px var(--primary-color); }
+      /* One accent outline on the shared episode + sources wrapper. */
       .episode-row-container { border-bottom:1px solid var(--divider-color); }
-      .episode-inline-actions { padding:12px 14px 16px;background:var(--secondary-background-color);
-        border:1px solid var(--primary-color);border-top:0;
-        border-radius:0 0 12px 12px;margin:0 0 12px; }
+      .episode-row-container.selected {
+        border:2px solid var(--primary-color);
+        border-radius:12px;
+        overflow:hidden;
+        background:var(--secondary-background-color);
+      }
+      .episode-row-container.selected .episode-row.active {
+        border:0;
+        border-radius:0;
+        box-shadow:none;
+      }
+      .episode-inline-actions {
+        padding:12px 14px 16px;
+        background:var(--secondary-background-color);
+        border:0;
+        border-top:1px solid var(--divider-color);
+        border-radius:0;
+        margin:0;
+      }
       .episode-inline-actions > strong { display:block; margin-bottom:10px; }
       .episode-inline-actions .provider-card { min-width:0; align-items:flex-start; }
       .episode-inline-actions .provider-main { min-width:0; flex:1; }
@@ -4865,7 +4901,7 @@ class StreamingBrowserCard extends HTMLElement {
             ? `<p class="episode-link-note" role="alert">${this._esc(detail.providersError)}</p>`
             : `<div class="provider-grid">${this._renderProviderCards(detail, this._detailProviders(), true)}</div>`}
       </div>` : "";
-      return `<div class="episode-row-container"><button type="button" class="episode-row ${active ? "active" : ""}"
+      return `<div class="episode-row-container ${active ? "selected" : ""}"><button type="button" class="episode-row ${active ? "active" : ""}"
         data-episode-index="${index}" aria-pressed="${String(Boolean(active))}">
         ${thumb ? `<img class="episode-thumb" loading="lazy" src="${this._esc(thumb)}" alt="">`
           : `<span class="episode-thumb episode-fallback"><ha-icon icon="mdi:movie-open"></ha-icon></span>`}
@@ -4967,12 +5003,15 @@ class StreamingBrowserCard extends HTMLElement {
     return `
       <div class="overlay" data-overlay>
         <div class="detail">
-          <button class="close" data-close>×</button>
-          <button class="detail-remote-button streaming-remote-toggle"
-            type="button" title="TV remote" aria-label="TV remote"
-            aria-pressed="${this._remoteExpanded ? "true" : "false"}">
-            <ha-icon icon="mdi:remote-tv"></ha-icon>
-          </button>
+          <header class="detail-sticky-header">
+            <span class="detail-sticky-title" title="${this._esc(title)}">${this._esc(title)}</span>
+            <button class="detail-remote-button streaming-remote-toggle"
+              type="button" title="TV remote" aria-label="TV remote"
+              aria-pressed="${this._remoteExpanded ? "true" : "false"}">
+              <ha-icon icon="mdi:remote-tv"></ha-icon>
+            </button>
+            <button class="close" type="button" data-close aria-label="Close title details">×</button>
+          </header>
 
           <div
             class="hero"
@@ -6764,7 +6803,7 @@ if (streamingBrowserPreviousPickerEntry) {
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.70 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.71 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
