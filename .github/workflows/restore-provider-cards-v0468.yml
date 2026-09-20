@@ -1,0 +1,80 @@
+name: Fix streaming title provider cards v0.4.68
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/restore-provider-cards-v0468.yml"
+permissions:
+  contents: write
+jobs:
+  verify-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore missing provider card renderer and align version
+        run: python3 tools/restore-provider-cards-v0468.py
+      - name: Test movie and episode details and provider action links
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          node - <<'JS'
+          const fs=require('node:fs'), vm=require('node:vm');
+          const js=fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card.js','utf8');
+          const elements=new Map(),window={customCards:[]};
+          const context={HTMLElement:class{},window,customElements:{get:n=>elements.get(n),define:(n,v)=>elements.set(n,v)},document:{createElement:n=>({tagName:n})},console};
+          vm.runInNewContext(js,context);
+          const Card=elements.get('streaming-browser-card');
+          if(!Card || !elements.get('streaming-browser-card-editor') || !Card.getConfigElement())throw Error('Card and visual editor must load');
+          if(window.customCards.filter(c=>c.type==='streaming-browser-card'&&c.name==='Streaming Browser Card').length!==1)throw Error('Named card picker entry missing');
+          if(!js.includes('STREAMING_BROWSER_VERSION = "0.4.68"'))throw Error('Frontend version mismatch');
+          const card=Object.create(Card.prototype);
+          card._config={region:'MX',include_rent_buy:false};
+          card._t=k=>k;
+          card._sourceForProvider=name=>name==='Netflix'?'Netflix':null;
+          card._watchmodeProviderScore=(a,b)=>a===b?100:-1;
+          const providers=[{provider_id:8,provider_name:'Netflix',logo_path:'/logo.png',groups:['flatrate']}];
+          const movie={type:'movie',selectedEpisode:null,localSourcesLoading:false,localSources:[{name:'Netflix',web_url:'https://example.com/movie?id=1&lang=en'}]};
+          const result=card._renderProviderCards(movie,providers,false);
+          if(!result.includes('provider-card')||!result.includes('data-title-provider="Netflix"')||!result.includes('data-open-provider="Netflix"')||!result.includes('open_this_device')||!result.includes('https://example.com/movie?id=1&amp;lang=en'))throw Error('Movie provider actions/HTML escaping broken');
+          if(result.includes('href="https://example.com/movie?id=1&lang=en"'))throw Error('Movie URL improperly escaped');
+          if(card._renderProviderCards({type:'tv',selectedEpisode:null},providers,true)!=='')throw Error('Series must wait for episode selection');
+          const ep={episode_number:3,name:'Episode 3'};
+          const series={type:'tv',selectedSeason:2,selectedEpisode:ep,episodeSourcesLoading:false,episodeSources:[
+            {name:'Netflix',scope:'episode',season:1,episode:3,web_url:'https://example.com/wrong-season'},
+            {name:'Netflix',scope:'series',season:2,episode:3,web_url:'https://example.com/series'},
+            {name:'Netflix',scope:'episode',season:2,episode:3,web_url:'https://example.com/s2e3'}]};
+          const seriesHtml=card._renderProviderCards(series,providers,true);
+          if(!seriesHtml.includes('https://example.com/s2e3')||seriesHtml.includes('wrong-season')||seriesHtml.includes('example.com/series'))throw Error('Episode link not correctly scoped');
+          const pending=card._renderProviderCards({...series,episodeSourcesLoading:true},providers,true);
+          if(pending.includes('data-title-provider=')||pending.includes('href=')||!pending.includes('local_link_loading'))throw Error('Loading episode must not expose stale links');
+          const noLink=card._renderProviderCards({...series,episodeSources:[]},providers,true);
+          if(noLink.includes('data-title-provider=')||noLink.includes('href=')||!noLink.includes('data-open-provider='))throw Error('Unavailable link should only expose Open app');
+          card._details={...movie,loading:false,providersLoading:false,providers:{},item:{title:'Movie'},details:{title:'Movie',genres:[]}};
+          card._detailProviders=()=>providers;
+          if(!card._renderDetails().includes('provider-card'))throw Error('Opening movie details must render provider cards');
+          const showEpisode={...series,loading:false,providersLoading:false,providers:{},item:{name:'Series'},details:{name:'Series',genres:[]},seriesSeasons:[{season_number:2,name:'Season 2'}],episodes:[ep],episodesLoading:false,selectedSeason:2};
+          card._details=showEpisode;
+          const tvHtml=card._renderDetails();
+          if(!tvHtml.includes('provider-card')||!tvHtml.includes('https://example.com/s2e3'))throw Error('Opening episode must render episode provider cards');
+          console.log('PASS: card picker/editor, movie details, exact movie links, episode selection and scope, provider actions and loading state');
+          JS
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.68'
+          assert 'v0.4.68' in (base/'frontend/streaming-browser-card.js').read_text()
+          print('PASS: HACS integration manifest and frontend release version aligned')
+          PY
+      - name: Publish verified HACS integration v0.4.68
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json README.md
+          git commit -m "Restore Streaming Browser title provider cards v0.4.68"
+          git push origin HEAD:main
+          gh release create v0.4.68 --target "$(git rev-parse HEAD)" --title v0.4.68 --notes "Restore missing title detail provider-card renderer, with movie and episode-scoped streaming links, TV and this-device actions, and safe loading fallbacks. Update the HACS Integration, restart Home Assistant, and fully reload your dashboard; saved card settings are preserved."
