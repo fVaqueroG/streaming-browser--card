@@ -38,7 +38,7 @@ jobs:
           assert '<span class="card-version">v${STREAMING_BROWSER_VERSION}</span>' in s
           assert 'title: "HDMI / remote"' in s
           assert 'async _prepareDisplayRoute()' in s
-          assert 'this._config.display_entity' in s
+          assert 'this._config?.display_entity' in s
           assert s.count('await this._prepareDisplayRoute();') >= 3
           assert 'class="detail-remote-button streaming-remote-toggle"' in s
           assert 'root.querySelectorAll(".streaming-remote-toggle")' in s
