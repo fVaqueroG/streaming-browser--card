@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.64
+ * v0.4.65
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.64";
+const STREAMING_BROWSER_VERSION = "0.4.65";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -464,14 +464,14 @@ class StreamingBrowserCard extends HTMLElement {
   static getStubConfig() {
     return {
       platform: "webos",
-      tv_entity: "media_player.lg_webos_tv",
+      tv_entity: "",
       remote_entity: null,
       adb_entity: null,
       display_entity: null,
       display_source: "",
       display_source_delay_ms: 2500,
       remote_side: "left",
-      tmdb_api_key: "YOUR_TMDB_V3_API_KEY",
+      tmdb_api_key: "",
       region: "MX",
       language: "es-MX",
       title: "Streaming",
@@ -500,9 +500,8 @@ class StreamingBrowserCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config.tv_entity) throw new Error("tv_entity is required");
-    if (!config.tmdb_api_key) throw new Error("tmdb_api_key is required");
-
+    // Incomplete configuration is expected while creating a card.
+    // The editor collects both required fields; the preview explains what is missing.
     const previousLanguage = this._languageCode?.() || null;
 
     this._config = {
@@ -575,7 +574,10 @@ class StreamingBrowserCard extends HTMLElement {
       this._render();
     }
 
-    if (!this._initialized) {
+    // Do not start network calls for a new, not-yet-configured card.
+    if (!this._initialized && this._config.tv_entity &&
+        this._config.tmdb_api_key &&
+        this._config.tmdb_api_key !== "YOUR_TMDB_V3_API_KEY") {
       this._initialized = true;
       this._initialize();
     }
@@ -4917,6 +4919,17 @@ class StreamingBrowserCard extends HTMLElement {
           </div>
         </ha-card>
       `;
+      return;
+    }
+
+    if (!this._config.tv_entity || !this._config.tmdb_api_key ||
+        this._config.tmdb_api_key === "YOUR_TMDB_V3_API_KEY") {
+      this.shadowRoot.innerHTML = `
+        <ha-card><div style="padding:16px;line-height:1.5">
+          <strong>Set up Streaming Browser</strong><br>
+          Edit this card and choose its playback device and enter your TMDB API key.
+          Existing cards keep their saved settings.
+        </div></ha-card>`;
       return;
     }
 

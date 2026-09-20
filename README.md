@@ -2,6 +2,14 @@
 
 **Current version: v0.4.64.** The dashboard card and independent episode-link backend are now **one HACS Integration**. All runtime files are bundled inside `custom_components/streaming_browser/`; the card's JavaScript is served automatically from `/streaming_browser/streaming-browser-card.js?v=0.4.63`. No manual file copying or `configuration.yaml` entry is required for a new install.
 
+## v0.4.65: Editor setup and automatic resource migration
+
+The card now accepts an empty first-time configuration, allowing you to choose the playback device and enter your existing TMDB API key in the visual card editor. Previously saved dashboard card settings are unchanged.
+
+The **Streaming Browser HACS Integration** registers `/streaming_browser/streaming-browser-card.js?v=0.4.65` and, on Home Assistant startup, updates an existing resource of that URL to the installed version, deduplicates the new resource, and deletes the obsolete `/hacsfiles/streaming-browser--card/streaming-browser-card.js` (or `/local/community/streaming-browser--card/streaming-browser-card.js`) resource left by the old Dashboard-category package. This avoids competing JavaScript versions. After updating the Integration in HACS, restart Home Assistant and reload the browser or mobile companion app. Do not reinstall the former Dashboard-category card; it is a legacy package. For a first-time installation, complete Settings > Devices & services > Add integration > Streaming Browser.
+
+If you manually added a different `/local/...` copy of the card, remove that duplicate resource yourself; the integration intentionally does not delete unrelated user-managed resources. Updating files in HACS alone does not hot-reload a running Python integration or an already loaded browser module.
+
 ## One-time migration from the older HACS Dashboard card
 
 1. In HACS, uninstall the **old Streaming Browser Card** from the **Dashboard** category (do **not** delete your existing dashboard cards or their configuration). This prevents loading two copies of the same custom element.

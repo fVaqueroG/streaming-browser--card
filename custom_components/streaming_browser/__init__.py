@@ -26,6 +26,13 @@ _CARD_URL = "/streaming_browser/streaming-browser-card.js"
 _CARD_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-card.js"
 _VERSION = str(json.loads((_INTEGRATION_DIR / "manifest.json").read_text(encoding="utf-8"))["version"])
 _RESOURCE_URL = f"{_CARD_URL}?v={_VERSION}"
+# URLs installed by the old HACS Dashboard category of this same repository.
+# They define the same custom element and can prevent the new visual editor
+# from loading. Remove only these recognized legacy HACS resource URLs.
+_LEGACY_CARD_URLS = frozenset({
+    "/hacsfiles/streaming-browser--card/streaming-browser-card.js",
+    "/local/community/streaming-browser--card/streaming-browser-card.js",
+})
 
 
 async def _register_card(hass: HomeAssistant) -> None:
@@ -44,6 +51,15 @@ async def _register_card(hass: HomeAssistant) -> None:
 
     collection = lovelace.resources
     await collection.async_get_info()
+    resources = collection.async_items() or []
+    # Automatically migrate the former Dashboard HACS resource. The old
+    # and new URLs must never load together: customElements.define is
+    # first-wins, so the older file would disable the current card editor.
+    for item in resources:
+        url = str(item.get(CONF_URL) or "").split("?", 1)[0]
+        if url in _LEGACY_CARD_URLS:
+            await collection.async_delete_item(item[CONF_ID])
+            _LOGGER.info("Removed obsolete Streaming Browser dashboard resource: %s", url)
     resources = collection.async_items() or []
     matches = [
         item for item in resources
