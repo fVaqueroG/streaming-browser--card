@@ -1,0 +1,45 @@
+name: Publish Streaming Browser power toggle v0.4.80
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-power-toggle-v0480.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bundle state-driven power switch into current card
+        run: python3 tools/apply-power-toggle-v0480.py
+      - name: Validate state updates, card syntax and integration compatibility
+        shell: bash
+        run: |
+          node --check tools/streaming-browser-power-toggle-v0480.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node tools/test-power-toggle-v0480.js
+          node tools/test-power-helper-v0479.js
+          node tools/test-room-routing-v0478.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base = Path('custom_components/streaming_browser')
+          card = (base / 'frontend/streaming-browser-card.js').read_text()
+          assert json.loads((base / 'manifest.json').read_text())['version'] == '0.4.80'
+          assert card.count('const STREAMING_BROWSER_VERSION = "0.4.80";') == 1
+          assert card.count('/* Streaming Browser v0.4.80: replace separate power buttons with a single state-driven switch. */') == 1
+          print('PASS v0.4.80 HACS integration and bundled single-switch card')
+          PY
+      - name: Commit verified card and publish v0.4.80
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.80: single state-driven power toggle for room connections'
+          git push origin HEAD:main
+          gh release create v0.4.80 --target "$(git rev-parse HEAD)" --title v0.4.80 --notes 'Replace separate Power On and Power Off buttons with one accessible toggle in each connection using a smart-plug switch or input_boolean power helper. Reflect live Home Assistant state; disable while switching or unavailable; preserve startup delay and power-off confirmation. Update HACS Streaming Browser, restart Home Assistant, and reload the dashboard.'
