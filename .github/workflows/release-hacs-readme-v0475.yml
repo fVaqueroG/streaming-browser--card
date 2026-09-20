@@ -1,0 +1,51 @@
+name: HACS README refresh v0.4.75
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-hacs-readme-v0475.yml'
+permissions:
+  contents: write
+jobs:
+  verify-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update integration version and HACS README highlights
+        run: python3 tools/release-hacs-readme-v0475.py
+      - name: Validate frontend, README and installed integration
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root = Path('custom_components/streaming_browser')
+          manifest = json.loads((root/'manifest.json').read_text())
+          js = (root/'frontend/streaming-browser-card.js').read_text()
+          readme = Path('README.md').read_text()
+          assert manifest['version'] == '0.4.75'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.75";' in js
+          assert 'customElements.define(' in js
+          assert 'streaming-browser-card-editor' in js
+          for version in range(70, 76):
+              assert f'v0.4.{version} —' in readme, f'Missing release notes for v0.4.{version}'
+          assert 'https://github.com/fVaqueroG/streaming-browser--card/releases/latest' in readme
+          assert 'category **Dashboard**' not in readme
+          assert '**Current version: v0.4.66.**' not in readme
+          assert 'v=0.4.63' not in readme
+          assert 'render_readme' in Path('hacs.json').read_text()
+          print('PASS: README contains v0.4.70–v0.4.75, evergreen release link, correct Integration setup; frontend and manifest versions match')
+          PY
+      - name: Publish docs release with refreshed HACS page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'Refresh HACS integration listing and version to v0.4.75'
+          git push origin HEAD:main
+          gh release create v0.4.75 --target "$(git rev-parse HEAD)" --title v0.4.75 --notes 'Update the HACS-facing README to include recent Streaming Browser updates through Roku support v0.4.74, correct the HACS Integration installation and resource instructions, and replace stale current-version paragraphs with a dynamic latest-release badge and links to the complete GitHub release notes. No playback behavior or existing card configuration changes.'
