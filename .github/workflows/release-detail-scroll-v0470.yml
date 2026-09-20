@@ -1,0 +1,76 @@
+name: Fix Streaming Browser details scroll and episode layout v0.4.70
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-detail-scroll-v0470.yml'
+permissions:
+  contents: write
+jobs:
+  verify-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix popup scroll position and expanded-episode layout
+        run: python3 tools/keep-details-scroll-v0470.py
+      - name: Check syntax and exercise in-place dialog update
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          node <<'JS'
+          const fs = require('fs');
+          const vm = require('vm');
+          const assert = require('node:assert/strict');
+          const source = fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card.js', 'utf8');
+          const registry = new Map(), window = { customCards: [] };
+          const context = {
+            HTMLElement: class { attachShadow() {this.shadowRoot = {innerHTML:''};} },
+            customElements: { get: key => registry.get(key), define: (key, value) => registry.set(key, value) },
+            window, document: {createElement: tag => ({tagName:tag})}, console,
+          };
+          vm.runInNewContext(source, context);
+          const Card = registry.get('streaming-browser-card');
+          assert.ok(Card && registry.get('streaming-browser-card-editor'));
+          assert.ok(window.customCards.some(card => card.type === 'streaming-browser-card'));
+          const card = new Card();
+          const active = {dataset:{episodeIndex:'16'},getBoundingClientRect:()=>({top:250})};
+          const updatedActive = {getBoundingClientRect:()=>({top:286})};
+          const updatedBody = {querySelector: s => s.includes('episode-row.active') ? updatedActive : null};
+          let body = {
+            querySelector: s => s === '.episode-row.active' ? active : null,
+            replaceWith: replacement => {assert.equal(replacement,updatedBody); body=replacement;},
+          };
+          const pane = {scrollTop:520,querySelector: s => s === '.body' ? body : null};
+          card.shadowRoot.querySelector = s => s === '.detail' ? pane : null;
+          card._details = {loading:false,error:null};
+          card._renderDetails = () => '<div class="overlay"><div class="detail"><div class="body">Updated links</div></div></div>';
+          let reattached = false;
+          card._bindDetailBodyActions = root => {assert.equal(root,updatedBody); reattached=true;};
+          context.document.createElement = tag => {
+            assert.equal(tag,'template');
+            return {set innerHTML(html){assert.ok(html.includes('Updated links'));},content:{querySelector:s=>s==='.detail .body'?updatedBody:null}};
+          };
+          card._refreshDetailsInPlace(card._details);
+          assert.equal(pane.scrollTop,556,'popup scroll and selected episode anchor retained');
+          assert.ok(reattached,'replacement body has working playback/episode buttons');
+          assert.equal(body,updatedBody,'only detail body replaced');
+          assert.ok(source.includes('this._refreshDetailsInPlace(detail);'));
+          assert.ok(source.includes('if (isSeries && !loading && !url && !tvSource) return "";'));
+          assert.ok(source.includes('border-radius:12px 12px 0 0;'));
+          assert.ok(source.includes('const STREAMING_BROWSER_VERSION = "0.4.70";'));
+          const manifest=JSON.parse(fs.readFileSync('custom_components/streaming_browser/manifest.json','utf8'));
+          assert.equal(manifest.version,'0.4.70');
+          console.log('PASS: in-place provider/episode link rendering retains scroll, episode anchor, actions, card picker and version');
+          JS
+      - name: Publish Streaming Browser v0.4.70
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'Keep Streaming Browser episode and provider link scroll position v0.4.70'
+          git push origin HEAD:main
+          gh release create v0.4.70 --target "$(git rev-parse HEAD)" --title v0.4.70 --notes 'Keep the title/episode popup and its scroll position while streaming provider and episode links load. Preserve selected episode position, remove duplicate missing-link notices, and visually join expanded episode source actions to the selected episode. Existing card settings and visual editor are unchanged. Update HACS Integrations, restart Home Assistant, and fully reload the dashboard.'
