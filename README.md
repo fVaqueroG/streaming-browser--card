@@ -91,3 +91,8 @@ Android TV: the standard Android TV Remote is the primary path for app launching
 ## v0.4.86: optional ADB remote
 
 An Android TV connection can now select a separate optional `remote.*` entity from the Android Debug Bridge integration, as well as the existing optional ADB `media_player.*` entity. Set **ADB remote (optional)** in the single-card editor or in **Rooms & connections** for each Android TV connection. Standard Android TV Remote handles routine commands. The selected ADB remote is used for Netflix-specific keys and only when a standard remote command fails; Netflix auto-profile navigation can use the ADB remote without configuring an ADB media player. Leaving the field blank preserves existing behavior. This does not add universal TV-app episode deep-link support.
+
+
+## v0.4.87 — link compatibility recovery
+
+Restores attempting existing provider-specific Netflix/Prime TV links that v0.4.85 previously blocked and labeled App, without falsely labeling a generic series destination as Episode. Original Prime Video URLs are tried first rather than unconditionally rewritten to a different host; the alternate is used if Home Assistant rejects the original. Restores the previous Netflix native Android TV movie intent, preserving the episode /watch link as the first episode attempt. Previously used Watchmode and JustWatch links are preferred ahead of new WatchHub fallbacks. Crunchyroll Android TV continues to launch the installed app rather than an unsupported web intent. A TV accepting a command is not confirmation that the provider actually navigated to the title. WatchHub, icon/caption controls, rooms, HDMI, power switch, and optional ADB remote remain available.
