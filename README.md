@@ -184,3 +184,8 @@ V2 retains the actual header, Movies/Series, genre selector, All and provider sc
 ## v0.4.106 — V2 incremental room-control fix
 
 Complete v0.4.105 partial-rendering support: reused room controls are no longer inserted a second time by the legacy routing wrapper; newly updated profile selector buttons keep their event handlers. Switching rooms performs a targeted full route refresh when connection options can differ, while movie/series/genre/provider/category selections and title catalog updates keep the fixed header mounted. V1 and streaming playback logic are unchanged.
+
+
+## v0.4.107 — fix repeated V2 power buttons and mobile header wrapping
+
+V2 reuses the existing per-room power switch instead of appending legacy power on/off buttons on every incremental catalog update. Mobile screens keep Movies/Series over the aligned genre selector, All, and the scrollable provider icons in a single fixed horizontal row. The All/provider squares match the complete filter stack height and provider names remain icon-only. V1 and provider playback/routing remain unchanged. Update through HACS, restart Home Assistant, and reload the V2 card to discard controls that were already duplicated in an older DOM.

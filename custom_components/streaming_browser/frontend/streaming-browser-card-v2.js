@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.106";
+const STREAMING_BROWSER_VERSION = "0.4.107";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -7650,6 +7650,13 @@ console.info(
     if (!connection?.power_entity) return;
     const roomBar = this.shadowRoot?.querySelector('.sbr-room-controls');
     if (!roomBar) return;
+    // V2 keeps this header node across catalog updates. Avoid accumulating
+    // extra legacy on/off buttons each time an incremental render runs.
+    const existingPower = roomBar.querySelector('.sbr-power-controls');
+    if (existingPower) {
+      this._roomPowerRefresh();
+      return;
+    }
     const es = locale(this);
     const holder = document.createElement('span');
     holder.className = 'sbr-power-controls';
@@ -7746,6 +7753,10 @@ console.info(
     previousRender.apply(this, args);
     const holder = this.shadowRoot?.querySelector('.sbr-power-controls');
     if (!holder) return;
+    if (holder.querySelector('.sbr-power-switch')) {
+      this._roomPowerRefresh();
+      return;
+    }
     const es = isSpanish(this);
     const title = es ? 'Alimentación' : 'Power';
     holder.innerHTML = `
@@ -10012,14 +10023,24 @@ console.info(
       .v2-header .top .title { flex:1 1 125px; }
       .v2-header .top .tvstate { display:none; }
       .v2-header .sbr-room-controls { flex:0 1 155px; }
-      .v2-provider-strip { --v2-mode-height:48px; gap:9px; }
-      .v2-provider-strip .switcher { flex-basis:min(100%,176px);
-        width:min(100%,176px); }
+      /* Mobile: filters + square All + provider logos share ONE row. */
+      .v2-provider-strip { --v2-mode-height:44px; --v2-genre-height:36px;
+        --v2-filter-gap:6px; flex-wrap:nowrap; gap:8px; align-items:stretch; }
+      .v2-provider-strip .switcher { flex:0 0 clamp(140px,43vw,166px);
+        width:clamp(140px,43vw,166px); max-width:47%; min-width:0; }
       .v2-provider-strip .switcher .mode { height:var(--v2-mode-height);
-        min-height:var(--v2-mode-height); padding:7px 5px; }
+        min-height:var(--v2-mode-height); padding:5px 3px; }
       .v2-provider-strip .switcher .genre-select { min-width:0;
+        height:var(--v2-genre-height); min-height:var(--v2-genre-height);
         max-width:none; width:100%; margin:0; }
-      .v2-provider-strip .chip img { width:48px; height:48px; }
+      .v2-provider-choice { flex:1 1 0; min-width:0; width:0; max-width:none;
+        flex-wrap:nowrap; align-items:stretch; gap:7px; }
+      .v2-provider-choice > .chip[data-provider="all"] {
+        flex:0 0 var(--v2-source-size); }
+      .v2-provider-scroll { flex:1 1 0; min-width:0; max-width:none;
+        height:var(--v2-source-size); overflow-x:auto; }
+      .v2-provider-scroll .chips { min-width:0; }
+      .v2-provider-strip .chip img { width:38px; height:38px; }
       .v2-categories { gap:5px; }
       .v2-category-tab { padding:9px 4px; gap:4px; min-height:40px; font-size:12px; }
       .v2-category-tab ha-icon { --mdc-icon-size:17px; }
