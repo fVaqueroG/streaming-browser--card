@@ -1,0 +1,65 @@
+name: Release Prime Video manual-detail links v0.4.94
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-prime-manual-v0494.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Prime Video GTI non-ADB handler
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          frontend = Path('custom_components/streaming_browser/frontend/streaming-browser-card.js')
+          manifest = Path('custom_components/streaming_browser/manifest.json')
+          readme = Path('README.md')
+          addon = Path('tools/streaming-browser-prime-manual-v0494.js').read_text(encoding='utf-8')
+          marker = '/* Streaming Browser v0.4.94: Prime Video GTI details through Android TV Remote; manual playback. */'
+          assert addon.startswith(marker)
+          text = frontend.read_text(encoding='utf-8')
+          data = json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version'] == '0.4.93', 'Version has changed: do not overwrite newer release'
+          assert text.count('const STREAMING_BROWSER_VERSION = "0.4.93";') == 1
+          assert '/* Netflix v0.4.93: verified Android TV ADB playback.' in text
+          assert marker not in text
+          text = text.replace('const STREAMING_BROWSER_VERSION = "0.4.93";', 'const STREAMING_BROWSER_VERSION = "0.4.94";', 1)
+          frontend.write_text(text.rstrip() + '\n\n' + addon.rstrip() + '\n', encoding='utf-8')
+          data['version'] = '0.4.94'
+          manifest.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+          with readme.open('a', encoding='utf-8') as out:
+              out.write('''\n\n## v0.4.94 — Prime Video Android TV GTI details (no ADB)\n\nFor Android TV, a Prime Video movie/season/episode source with a genuine `amzn1.dv.gti.<UUID>` in `https://app.primevideo.com/detail?gti=...` now opens its details through the configured Android TV Remote entity (`remote.turn_on` with `activity`). No ADB, follow-up Enter, automatic Play, forced profile selection, or app restart is issued by the Prime handler. A matching episode GTI is preferred; when none is provided by the source resolver, the corresponding season GTI or series GTI can open its details for manual episode selection. Alphanumeric ASINs and `primevideo.com/region/.../detail/<ASIN>?autoplay=1` links are not misrepresented as GTIs. This update does not synthesize or discover missing episode GTIs from TMDB episode numbers: exact episode navigation requires a source containing the episode's real GTI. Existing room power/HDMI routing, manual remote, Netflix, Crunchyroll, webOS, and other providers remain unchanged.\n''')
+          print('Installed Prime Video manual GTI handler v0.4.94')
+          PY
+      - name: Validate Prime routing and regression checks
+        shell: bash
+        run: |
+          node --check tools/streaming-browser-prime-manual-v0494.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node tools/test-prime-manual-v0494.js
+          node tools/test-prime-disney-v0490.js
+          node tools/test-crunchyroll-deeplinks-v0492.js
+          node tools/test-netflix-episode-tv-v0489.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          git diff --check
+      - name: Commit and publish HACS v0.4.94
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.94: Prime Video episode GTI details via Android TV Remote, manual Play'
+          git push origin HEAD:main
+          gh release create v0.4.94 --target "$(git rev-parse HEAD)" --title v0.4.94 --notes 'Prime Video Android TV movies, seasons and matching episodes: use real amzn1.dv.gti. deep links via standard Android TV Remote. Manual profile selection and manual Play: no automatic Enter/Play and no ADB in Prime handler. Invalid ASIN-to-GTI substitution blocked, season fallback retained. Episode-level navigation requires an episode GTI from the source. Netflix, Crunchyroll, other providers, existing room routing and webOS unchanged.'
