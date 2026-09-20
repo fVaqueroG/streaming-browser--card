@@ -1,0 +1,52 @@
+name: Publish Streaming Browser Crunchyroll deep links v0.4.92
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-crunchyroll-deeplinks-v0492.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native Crunchyroll link handler
+        run: python3 tools/apply-crunchyroll-deeplinks-v0492.py
+      - name: Validate frontend, link routing and retained provider behavior
+        run: |
+          node --check tools/streaming-browser-crunchyroll-deeplinks-v0492.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node tools/test-crunchyroll-deeplinks-v0492.js
+          node tools/test-prime-disney-v0490.js
+          node tools/test-netflix-episode-tv-v0489.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          card=(base/'frontend/streaming-browser-card.js').read_text(encoding='utf-8')
+          meta=json.loads((base/'manifest.json').read_text(encoding='utf-8'))
+          assert meta['version']=='0.4.92'
+          assert card.count('const STREAMING_BROWSER_VERSION = "0.4.92";')==1
+          for marker in ('/* Streaming Browser v0.4.92: native Crunchyroll /watch/ playback on Android TV. */',
+                         '/* Streaming Browser v0.4.91: Crunchyroll Android TV opens its installed app, never a generic web intent. */',
+                         '/* Streaming Browser v0.4.90: Prime TV targeting and Disney+ link specificity. */',
+                         '/* Streaming Browser v0.4.89: Netflix episode TV app-specific launch. */',
+                         '/* Streaming Browser v0.4.88: episode > season > series; WatchHub last. */',
+                         '/* Streaming Browser v0.4.86: optional ADB remote entity',
+                         '/* Compact action captions v0.4.84 */'):
+              assert marker in card, marker
+          print('PASS native Crunchyroll v0.4.92 and retained provider, WatchHub, ADB and UI modules')
+          PY
+      - name: Commit and publish v0.4.92
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.92: launch exact Crunchyroll episode and movie links without ADB'
+          git push origin HEAD:main
+          gh release create v0.4.92 --target "$(git rev-parse HEAD)" --title v0.4.92 --notes 'Native Crunchyroll Android TV /watch/ playback via standard Android TV Remote with media player fallback. Tested episode switching without ADB or app restart; movie link route implemented but requires on-device confirmation. Exact-source guard preserves app fallback for series-only links. Other providers and room/HDMI/remote controls retained. Update through HACS, restart Home Assistant, then reload dashboard.'
