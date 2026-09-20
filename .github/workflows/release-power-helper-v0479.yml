@@ -1,0 +1,48 @@
+name: Publish Streaming Browser power helper v0.4.79
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-power-helper-v0479.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bundle optional smart-plug and input_boolean helper for each room connection
+        run: python3 tools/apply-power-helper-v0479.py
+      - name: Validate helper behavior, existing room routing and bundled integration
+        shell: bash
+        run: |
+          node --check tools/streaming-browser-power-helper-v0479.js
+          node --check tools/streaming-browser-power-status-v0479.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node tools/test-power-helper-v0479.js
+          node tools/test-room-routing-v0478.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base = Path('custom_components/streaming_browser')
+          card = (base / 'frontend/streaming-browser-card.js').read_text()
+          assert json.loads((base / 'manifest.json').read_text())['version'] == '0.4.79'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.79";' in card
+          assert card.count('/* Streaming Browser v0.4.78: room and connection routing.') == 1
+          assert card.count('/* Streaming Browser v0.4.79: optional per-connection power helper. */') == 1
+          assert card.count('/* Streaming Browser v0.4.79: synchronize power helper controls') == 1
+          assert card.count('customElements.define(\n    "streaming-browser-card",\n    StreamingBrowserCard\n  );') == 1
+          print('PASS bundled v0.4.79, single element registration and compatible HACS integration')
+          PY
+      - name: Commit verified card and publish v0.4.79
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.79: optional per-connection smart plug power control'
+          git push origin HEAD:main
+          gh release create v0.4.79 --target "$(git rev-parse HEAD)" --title v0.4.79 --notes 'Add optional per-connection Power helper supporting smart-plug switch and input_boolean entities. Power-on happens before HDMI routing and TV wake-up, with configurable startup delay. Separate manual power-on/off controls track helper status. Power-off is never automatic on room changes and asks for confirmation during playback. Existing rooms without a helper remain unchanged. Update HACS Integrations, restart Home Assistant and reload the dashboard.'
