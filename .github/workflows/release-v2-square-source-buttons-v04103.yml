@@ -1,0 +1,62 @@
+name: Publish Streaming Browser V2 aligned squares v0.4.103
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v2-square-source-buttons-v04103.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Align V2 source squares with fixed two-row filter stack
+        run: python3 tools/align-v2-square-sources-v04103.py
+      - name: Validate V2 equal squares, V1 isolation, routes and module registration
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          v1=(base/'frontend/streaming-browser-card.js').read_text()
+          v2=(base/'frontend/streaming-browser-card-v2.js').read_text()
+          py=(base/'__init__.py').read_text()
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.103'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.98";' in v1
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.103";' in v2
+          for expected in [
+              '--v2-mode-height:56px', '--v2-genre-height:38px', '--v2-filter-gap:7px',
+              '--v2-source-size:calc(var(--v2-mode-height) + var(--v2-filter-gap) + var(--v2-genre-height))',
+              'height:var(--v2-source-size);', 'min-width:var(--v2-source-size)',
+              'flex:0 0 var(--v2-source-size)', 'aspect-ratio:1 / 1',
+              '--v2-mode-height:48px', '.v2-provider-choice > .chip[data-provider="all"]',
+              'scrollbar-width:none; padding:0',
+              '.v2-provider-strip .switcher .genre-select { grid-column:1 / -1',
+              "this._v2ProviderScrollLeft = scrollable.scrollLeft", "this._roomCurrent()",
+              "this._selectRoomRoute", 'streaming_browser/episode_links',
+          ]: assert expected in v2, expected
+          for old in ['width:70px; min-width:70px; height:64px',
+                      'width:59px; min-width:59px; height:57px', 'flex:0 0 70px']:
+              assert old not in v2, old
+          assert 'streaming-browser-card-v2' in py and 'streaming-browser-card.js' in py
+          assert 'class StreamingBrowserCard extends HTMLElement' in v1
+          assert 'class StreamingBrowserV2Card extends HTMLElement' in v2
+          assert '/* Streaming Browser V2 v0.4.99' in v2
+          print('PASS V2 All/provider identical square size and filter-height alignment (101px/93px), fixed All, scrolling logos; V1 and playback retained')
+          PY
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js
+      - name: Commit and publish v0.4.103
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.103: align V2 square All and provider buttons with fixed filters'
+          git push origin HEAD:main
+          gh release create v0.4.103 --target "$(git rev-parse HEAD)" --title v0.4.103 --notes 'V2: make the All and every provider chip the same square size with top edge aligned to Movies/Series and bottom edge aligned to the Genre dropdown; 101px on desktop/tablet and 93px on mobile. Movies, Series, Genre and All stay fixed, while provider logos scroll horizontally. V1, room selection, categories and streaming/playback routes are unchanged. Update through HACS, restart Home Assistant and reload the dashboard.'
