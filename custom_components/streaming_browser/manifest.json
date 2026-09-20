@@ -1,0 +1,10 @@
+{
+  "domain": "streaming_browser",
+  "name": "Streaming Browser Episode Links",
+  "version": "0.4.62",
+  "documentation": "https://github.com/fVaqueroG/streaming-browser--card",
+  "codeowners": [],
+  "dependencies": [],
+  "requirements": [],
+  "iot_class": "cloud_polling"
+}
