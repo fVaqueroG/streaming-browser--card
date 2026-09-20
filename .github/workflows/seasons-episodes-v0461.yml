@@ -1,0 +1,97 @@
+name: Streaming Browser Card v0.4.61 - series episodes
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/seasons-episodes-v0461.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch series browsing
+        run: python3 tools/add-seasons-episodes-v0461.py
+      - name: Validate syntax and series interactions
+        shell: bash
+        run: |
+          node --check streaming-browser-card.js
+          node <<'JS'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const source = fs.readFileSync('streaming-browser-card.js', 'utf8');
+          const registry = new Map();
+          vm.runInNewContext(source, {
+            HTMLElement: class { attachShadow() { return { innerHTML: '' }; } },
+            customElements: { get: (k) => registry.get(k), define: (k, v) => registry.set(k, v) },
+            window: { customCards: [] }, console,
+          });
+          const Card = registry.get('streaming-browser-card');
+          const card = new Card();
+          card._config = { region: 'MX', language: 'en-US', platform: 'android_tv' };
+          card._detailProviders = () => [{ provider_name: 'Amazon Prime Video' }];
+          card._sourceForProvider = () => 'Prime Video';
+          card._render = () => { card.renderCount = (card.renderCount || 0) + 1; };
+          card._api = async (path) => {
+            assert.match(path, /\/tv\/23\/season\/[12]$/);
+            const n = Number(path.split('/').at(-1));
+            return { episodes: [{ episode_number: 2, name: 'Second', overview: 'Two', still_path: '/still.png', runtime: 43 },
+              { episode_number: 1, name: 'First', overview: 'One', runtime: 44, air_date: '2026-01-01' }].map(e => ({...e, season_number: n})) };
+          };
+          const detail = {
+            type: 'tv', item: { id: 23 }, providers: {},
+            details: {name: 'Test series', genres: [], overview: ''},
+            seriesSeasons: [{season_number:0,name:'Specials'}, {season_number:1,name:'Season 1'}, {season_number:2,name:'Season 2'}],
+            selectedSeason: 1, selectedEpisode: null, episodes: [],
+            episodesLoading: false, seasonCache: new Map(), seasonRequest: 0,
+            localSources: [{name:'Amazon Prime Video',web_url:'https://primevideo.com/detail/series'}]
+          };
+          card._details = detail;
+          (async () => {
+            await card._loadSeasonEpisodes(detail, 1);
+            assert.deepEqual(Array.from(detail.episodes, e => e.episode_number), [1,2]);
+            let html = card._renderEpisodeBrowser(detail);
+            assert.match(html, /data-season="1"/);
+            assert.match(html, /data-season="2"/);
+            assert.match(html, /Episode 1 · First/);
+            assert.match(html, /Episode 2 · Second/);
+            assert.match(html, /data-episode-index="0"/);
+            assert.match(card._renderDetails(), /Select an episode to view streaming sources/);
+            assert.doesNotMatch(card._renderDetails(), /data-title-provider=/);
+            card._selectEpisode(detail, 0);
+            html = card._renderDetails();
+            assert.match(html, /Season 1 · Episode 1: First/);
+            assert.match(html, /These streaming links may open the series page/);
+            assert.match(html, /Open on TV/);
+            assert.match(html, /Open on this device/);
+            assert.match(html, /data-title-provider=/);
+            await card._loadSeasonEpisodes(detail, 2);
+            assert.equal(detail.selectedEpisode, null);
+            assert.equal(detail.selectedSeason, 2);
+            assert.deepEqual(Array.from(detail.episodes, e => e.episode_number), [1,2]);
+            const callsBefore = card.renderCount;
+            card._details = { item: {id:999} };
+            await card._loadSeasonEpisodes(detail, 1);
+            assert.equal(card.renderCount, callsBefore);
+            card._config.language = 'es-MX';
+            assert.equal(card._t('choose_episode'), 'Selecciona un episodio para ver las plataformas disponibles.');
+            assert.match(source, /detailScrollTop/);
+            assert.match(source, /\[data-episode-index\]/);
+            console.log('PASS: season tabs, TMDB metadata ordering, selection, two buttons, stale requests, ES/EN, modal scroll.');
+          })().catch(e => { console.error(e); process.exitCode = 1; });
+          JS
+      - name: Commit validated card and publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add streaming-browser-card.js
+          git commit -m 'v0.4.61: Nuvio-like season tabs and episode detail browsing'
+          git push origin HEAD:main
+          gh release create v0.4.61 --target "$(git rev-parse HEAD)" --title v0.4.61 --notes 'Browse TV seasons and episodes with TMDB thumbnails, descriptions, and metadata; choose an episode to reveal TV/local-device provider actions. Series-level provider URLs do not guarantee exact-episode playback. Includes English/Spanish labels and preserves popup scroll position.'
