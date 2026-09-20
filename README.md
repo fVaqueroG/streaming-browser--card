@@ -8,6 +8,7 @@ Browse TMDB movie and TV catalogs, choose streaming providers, review movie and 
 
 ## Recent release highlights
 
+- **v0.4.75 — HACS documentation:** Bring the HACS-facing README, installation instructions and recent changes up to date; link directly to the latest GitHub release notes and use a dynamic release badge instead of an obsolete hard-coded current-version statement. Playback behavior and existing configurations are unchanged.
 - **v0.4.74 — Roku TV and Roku streaming players:** Choose Roku in the visual editor, launch installed provider apps using Home Assistant's Roku media player, use the directional remote, and optionally route a separate HDMI-connected Roku through a display TV. Exact-title TV links are deliberately not offered for Roku: the web URLs returned by the link service are not Roku app-specific content IDs.
 - **v0.4.73 — Compact provider cards:** Display a streaming service logo rather than repeating its name; fall back to text if no logo exists.
 - **v0.4.72 — Icon-only source actions:** `mdi:television-play` opens an available title/episode link on the TV on supported platforms, and `mdi:cellphone-play` opens that link on the current device. These are separate from **Open app**, which launches only the streaming app.

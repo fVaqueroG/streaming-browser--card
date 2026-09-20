@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant: LG webOS, Android TV and Roku TV
- * v0.4.74
+ * v0.4.75
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.74";
+const STREAMING_BROWSER_VERSION = "0.4.75";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -6904,7 +6904,7 @@ if (streamingBrowserPreviousPickerEntry) {
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.74 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.75 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
