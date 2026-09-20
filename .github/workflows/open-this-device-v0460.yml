@@ -1,0 +1,91 @@
+name: Streaming Browser Card v0.4.60 - open on this device
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/open-this-device-v0460.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply guarded update
+        run: python3 tools/add-local-device-v0460.py
+      - name: Syntax and popup behavior tests
+        shell: bash
+        run: |
+          node --check streaming-browser-card.js
+          node <<'JS'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const source = fs.readFileSync('streaming-browser-card.js', 'utf8');
+          const registry = new Map();
+          const context = {
+            HTMLElement: class { attachShadow() { return { innerHTML: '' }; } },
+            customElements: { get: (k) => registry.get(k), define: (k, v) => registry.set(k, v) },
+            window: { customCards: [] }, console,
+          };
+          vm.runInNewContext(source, context);
+          const Card = registry.get('streaming-browser-card');
+          const card = new Card();
+          card._config = { region: 'MX', language: 'en-US', platform: 'webos' };
+          card._detailProviders = () => [{ provider_name: 'Amazon Prime Video' }];
+          card._sourceForProvider = () => null; // Local links are independent of TV app matching.
+          const item = { id: 1, media_type: 'movie' };
+          const detail = { item, type: 'movie', providers: {},
+            details: { title: 'Test title', genres: [], overview: '' },
+            localSources: [{ name: 'Amazon Prime Video', region: 'MX', type: 'sub',
+              web_url: 'https://www.primevideo.com/detail/abc?a=1&b=2' }],
+          };
+          card._details = detail;
+          let html = card._renderDetails();
+          assert.match(html, /Open on TV/);
+          assert.match(html, /Open on this device/);
+          assert.match(html, /data-title-provider=/);
+          assert.match(html, /href="https:\/\/www\.primevideo\.com\/detail\/abc\?a=1&amp;b=2"/);
+          assert.match(html, /target="_blank" rel="noopener noreferrer"/);
+          assert.doesNotMatch(html, /data-open-provider=|data-title-play-provider=|data-watch-page/);
+          assert.match(html, /data-title-provider="Amazon Prime Video" disabled/);
+          assert.match(html, /class="mini-btn local-device"\s+href=/);
+          // On lookup errors, never send a generic availability URL or trigger TV actions.
+          delete detail.localSources;
+          detail.localSourcesLoading = true;
+          html = card._renderDetails();
+          assert.match(html, /Looking up title link/);
+          assert.doesNotMatch(html, /href="https:\/\/www\.primevideo/);
+          let renderCount = 0;
+          card._render = () => { renderCount += 1; };
+          card._watchmodeSourcesForCurrentTitle = async ({ silent }) => {
+            assert.equal(silent, true);
+            return [{ name: 'Amazon Prime Video', web_url: 'https://www.primevideo.com/detail/abc' }];
+          };
+          (async () => {
+            await card._primeLocalTitleLinks(detail);
+            assert.equal(detail.localSourcesLoading, false);
+            assert.equal(detail.localSources.length, 1);
+            assert.equal(renderCount, 1);
+            card._details = { item: { id: 2 } };
+            await card._primeLocalTitleLinks(detail);
+            assert.equal(renderCount, 1, 'A stale request must not replace another popup');
+            assert.equal(card._t('open_on_tv'), 'Open on TV');
+            card._config.language = 'es-MX';
+            assert.equal(card._t('open_this_device'), 'Abrir en este dispositivo');
+            console.log('PASS: TV and local actions, exact provider URL, escaping, pending state, stale popup, EN/ES.');
+          })().catch((error) => { console.error(error); process.exitCode = 1; });
+          JS
+      - name: Commit and publish HACS release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add streaming-browser-card.js
+          git commit -m 'v0.4.60: open title on TV or on current dashboard device'
+          git push origin HEAD:main
+          gh release create v0.4.60 --target "$(git rev-parse HEAD)" --title v0.4.60 --notes 'Two title actions: Open on TV preserves HDMI playback; Open on this device uses the exact provider link directly on the current phone, tablet, or web browser. Links load per title and do not require a matched TV app. Includes English and Spanish labels.'
