@@ -1,0 +1,60 @@
+name: Logo-only Streaming Browser providers v0.4.73
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-logo-only-providers-v0473.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch compact provider cards and preserve existing actions
+        run: python3 tools/compact-provider-brand-v0473.py
+      - name: Validate JavaScript, fallback, icons, accessible names and version
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          node <<'JS'
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const source = fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card.js','utf8');
+          const manifest = JSON.parse(fs.readFileSync('custom_components/streaming_browser/manifest.json','utf8'));
+          if (manifest.version !== '0.4.73' || !source.includes('STREAMING_BROWSER_VERSION = "0.4.73"')) throw Error('Version mismatch');
+          const registry = new Map(), window = {customCards:[]};
+          vm.runInNewContext(source,{HTMLElement:class{},window,customElements:{get:k=>registry.get(k),define:(k,v)=>registry.set(k,v)},console});
+          const Card=registry.get('streaming-browser-card');
+          if (!Card || !registry.get('streaming-browser-card-editor') || !window.customCards.some(c=>c.type==='streaming-browser-card')) throw Error('Card picker/editor missing');
+          const mock = {
+            _pickWatchmodeSource:()=>({web_url:'https://example.com/movie'}),
+            _sourceForProvider:()=> 'Prime Video',
+            _providerLogo:()=>'<img src="logo.png" alt="">',
+            _t:(k)=>k,
+            _esc:(s)=>String(s),
+            _config:{region:'MX'},
+          };
+          const movie={selectedEpisode:null,localSourcesLoading:false,localSources:[]};
+          const branded=Card.prototype._renderProviderCards.call(mock,movie,[{provider_name:'Amazon Prime Video',logo_path:'/logo.png',groups:['flatrate']}]);
+          if (branded.includes('class="provider-name"') || branded.includes('class="provider-name-fallback"')) throw Error('Redundant visible provider name remains alongside the logo');
+          if (!branded.includes('role="img" aria-label="Amazon Prime Video"') || !branded.includes('title="Amazon Prime Video"')) throw Error('Accessible logo name missing');
+          if (!branded.includes('mdi:television-play') || !branded.includes('mdi:cellphone-play') || !branded.includes('data-title-provider="Amazon Prime Video"') || !branded.includes('data-open-provider="Amazon Prime Video"')) throw Error('TV/device/app actions changed');
+          const fallback=Card.prototype._renderProviderCards.call(mock,movie,[{provider_name:'Unknown Service',groups:[]}]);
+          if (!fallback.includes('class="provider-name-fallback">Unknown Service</span>')) throw Error('Missing-logo visible text fallback missing');
+          const css=Card.prototype._detailStyles.call({});
+          if (!css.includes('.provider-brand-fallback') || !css.includes('.provider-main {') || !css.includes('margin: 0 0 0 auto;')) throw Error('Compact horizontal provider layout missing');
+          console.log('PASS: logo-only provider cards, text fallback, accessible service names, compact layout, TV and device actions');
+          JS
+      - name: Publish HACS Integration v0.4.73
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'Use provider logo instead of repeated service name v0.4.73'
+          git push origin HEAD:main
+          gh release create v0.4.73 --target "$(git rev-parse HEAD)" --title v0.4.73 --notes 'Show service logo without the redundant visible provider name; accessible service name and hover title remain. Show a text name only when there is no logo. Compact source-card layout keeps TV-play, this-device, and Open app actions unchanged. Update via HACS Integrations, restart Home Assistant, and reload the dashboard; existing card settings are unchanged.'
