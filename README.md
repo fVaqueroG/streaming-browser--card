@@ -46,3 +46,8 @@ Provider availability and catalog metadata come from TMDB. Episode-level link re
 ## Older documentation
 
 The [historical README at v0.4.73](https://github.com/fVaqueroG/streaming-browser--card/blob/v0.4.73/README.md) preserves prior implementation notes and older installation instructions **for reference only**. Its older Dashboard-category setup and hard-coded version numbers are no longer current; follow the Integration instructions above.
+
+
+## Rooms and HDMI connections (v0.4.78)
+
+Edit a Streaming Browser card and expand **Rooms & connections**. Select **Add room** to migrate the original TV/media-player configuration into the first room; then rename it and add as many rooms and playback connections as needed. Each connection has its own platform (LG webOS, Android TV, Roku), playback `media_player`, optional display TV, HDMI input, optional `remote` and ADB entities, and HDMI switching delay. HDMI options are read from the selected display TV's `source_list`; saved inputs remain selectable while a TV is offline. Choose a default connection in each room. On the card, select a room and, when a room has multiple connections, select a playback device. Device selection reroutes playback and the remote without discarding the current catalog or title view. The last room and connection are saved locally per card title; set `room_storage_key` on cards with identical titles that should keep independent selections. Older single-device cards continue to work unchanged. The existing playback logic turns on the display, switches HDMI if configured and then opens the streaming app on the selected playback device.
