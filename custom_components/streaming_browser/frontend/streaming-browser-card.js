@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.71
+ * v0.4.72
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.71";
+const STREAMING_BROWSER_VERSION = "0.4.72";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -4754,6 +4754,16 @@ class StreamingBrowserCard extends HTMLElement {
         min-height: 36px;
       }
 
+      /* Icon-only source actions stay compact and tappable on mobile. */
+      .mini-btn.icon-action {
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+        padding: 0;
+        flex: 0 0 44px;
+      }
+      .mini-btn.icon-action ha-icon { --mdc-icon-size: 24px; }
+
       .mini-btn.title {
         background:
           color-mix(
@@ -4859,10 +4869,14 @@ class StreamingBrowserCard extends HTMLElement {
               ${sourceStatus ? `<div class="provider-source">${this._esc(sourceStatus)}</div>` : ""}
               <div class="provider-actions">
                 ${url ? `
-                  <button type="button" class="mini-btn title"
-                    data-title-provider="${this._esc(name)}">${this._esc(this._t("open_on_tv"))}</button>
-                  <a class="mini-btn" href="${this._esc(url)}" target="_blank"
-                    rel="noopener noreferrer">${this._esc(this._t("open_this_device"))}</a>
+                  <button type="button" class="mini-btn title icon-action"
+                    data-title-provider="${this._esc(name)}"
+                    aria-label="${this._esc(this._t("open_on_tv"))}"
+                    title="${this._esc(this._t("open_on_tv"))}"><ha-icon icon="mdi:television-play" aria-hidden="true"></ha-icon></button>
+                  <a class="mini-btn icon-action" href="${this._esc(url)}" target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="${this._esc(this._t("open_this_device"))}"
+                    title="${this._esc(this._t("open_this_device"))}"><ha-icon icon="mdi:cellphone-play" aria-hidden="true"></ha-icon></a>
                 ` : ""}
                 ${tvSource ? `<button type="button" class="mini-btn"
                   data-open-provider="${this._esc(name)}">${this._esc(this._t("open_app"))}</button>` : ""}
@@ -6803,7 +6817,7 @@ if (streamingBrowserPreviousPickerEntry) {
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.71 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.72 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
