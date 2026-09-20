@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant: LG webOS, Android TV and Roku TV
- * v0.4.76
+ * v0.4.77
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.76";
+const STREAMING_BROWSER_VERSION = "0.4.77";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -76,6 +76,11 @@ class StreamingBrowserCard extends HTMLElement {
     this._sectionLoadLocks = new Set();
     this._rowScrollPositions = new Map();
     this._mode = "movie";
+    // Genres are fetched from TMDB for each media type and language.
+    // Keep separate selections when switching Movies / Series.
+    this._genres = { movie: [], tv: [] };
+    this._genreByMode = { movie: "all", tv: "all" };
+    this._browseRequest = 0;
     this._provider = "all";
     this._providers = { movie: [], tv: [] };
     this._matchedProviders = { movie: [], tv: [] };
@@ -615,7 +620,7 @@ class StreamingBrowserCard extends HTMLElement {
       this._error = "";
       this._render();
 
-      await this._loadProviderLists();
+      await Promise.all([this._loadProviderLists(), this._loadGenreLists()]);
       this._matchProvidersToTv();
       await this._loadBrowse();
     } catch (err) {
@@ -659,6 +664,8 @@ class StreamingBrowserCard extends HTMLElement {
             "tmdb_key_rejected": "TMDB rejected the API key. Use the short v3 API key, not the v4 token.",
             "trending": "Trending",
             "all_sources": "All sources",
+            "genre": "Genre",
+            "all_genres": "All genres",
             "popular": "Popular",
             "now_playing": "Now Playing",
             "top_rated": "Top Rated",
@@ -756,6 +763,8 @@ class StreamingBrowserCard extends HTMLElement {
             "tmdb_key_rejected": "TMDB rechazó la API key. Usa la API key v3 corta, no el token v4.",
             "trending": "Tendencias",
             "all_sources": "Todas las fuentes",
+            "genre": "Género",
+            "all_genres": "Todos los géneros",
             "popular": "Populares",
             "now_playing": "En cartelera",
             "top_rated": "Mejor valoradas",
@@ -1253,6 +1262,25 @@ class StreamingBrowserCard extends HTMLElement {
     this._providers.tv = sortProviders(tv.results);
   }
 
+  // Pull localized genre names from TMDB; film and television IDs differ.
+  // A failure here must never prevent the selected provider catalog from loading.
+  async _loadGenreLists() {
+    const modes = ["movie", "tv"];
+    const results = await Promise.allSettled(
+      modes.map((mode) => this._apiWithTimeout(`/genre/${mode}/list`, {}, 8000))
+    );
+    modes.forEach((mode, index) => {
+      if (results[index].status !== "fulfilled") return;
+      const list = results[index].value?.genres;
+      if (!Array.isArray(list)) return;
+      this._genres[mode] = list.filter((genre) =>
+        Number.isInteger(Number(genre.id)) && Number(genre.id) > 0 &&
+        typeof genre.name === "string" && genre.name.trim()
+      ).map((genre) => ({ id: String(genre.id), name: genre.name.trim() }))
+        .sort((a, b) => a.name.localeCompare(b.name, this._languageCode()));
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Provider / LG source matching
   // ---------------------------------------------------------------------------
@@ -1519,6 +1547,9 @@ class StreamingBrowserCard extends HTMLElement {
       with_watch_monetization_types:
         "flatrate",
       include_adult: "false",
+      // TMDB applies this genre server-side before paginating the catalog.
+      ...(this._genreByMode[mode] !== "all"
+        ? { with_genres: this._genreByMode[mode] } : {}),
     };
 
     const recentDateField =
@@ -1570,7 +1601,12 @@ class StreamingBrowserCard extends HTMLElement {
         if (!item?.poster_path) return false;
 
         if (section.search) {
-          return ["movie", "tv"].includes(item.media_type);
+          if (!["movie", "tv"].includes(item.media_type)) return false;
+          const genre = this._genreByMode[section.mediaType || this._mode] || "all";
+          if (genre === "all") return true; // Keep the existing global search.
+          return item.media_type === (section.mediaType || this._mode) &&
+            Array.isArray(item.genre_ids) &&
+            item.genre_ids.some((id) => String(id) === genre);
         }
 
         return true;
@@ -1608,6 +1644,7 @@ class StreamingBrowserCard extends HTMLElement {
 
   async _loadBrowse() {
     if (!this._config || !this._hass) return;
+    const request = ++this._browseRequest;
 
     this._loading = true;
     this._error = "";
@@ -1628,6 +1665,7 @@ class StreamingBrowserCard extends HTMLElement {
         )
       );
 
+      if (request !== this._browseRequest) return;
       this._sections = results
         .filter((result) => result.status === "fulfilled")
         .map((result) => result.value)
@@ -1641,11 +1679,14 @@ class StreamingBrowserCard extends HTMLElement {
         throw failed[0].reason;
       }
     } catch (err) {
+      if (request !== this._browseRequest) return;
       this._error = this._formatError(err);
       this._sections = [];
     } finally {
-      this._loading = false;
-      this._render();
+      if (request === this._browseRequest) {
+        this._loading = false;
+        this._render();
+      }
     }
   }
 
@@ -1709,6 +1750,7 @@ class StreamingBrowserCard extends HTMLElement {
       await this._loadBrowse();
       return;
     }
+    const request = ++this._browseRequest;
 
     this._loading = true;
     this._error = "";
@@ -1731,13 +1773,17 @@ class StreamingBrowserCard extends HTMLElement {
       };
 
       const section = await this._fetchSection(definition, 1);
+      if (request !== this._browseRequest) return;
       this._sections = section.items.length ? [section] : [];
     } catch (err) {
+      if (request !== this._browseRequest) return;
       this._error = this._formatError(err);
       this._sections = [];
     } finally {
-      this._loading = false;
-      this._render();
+      if (request === this._browseRequest) {
+        this._loading = false;
+        this._render();
+      }
     }
   }
 
@@ -5279,6 +5325,12 @@ class StreamingBrowserCard extends HTMLElement {
           .find((item) => String(item.provider_id) === String(this._provider))
       : null;
     const providers = previousSelection ? [...availableProviders, previousSelection] : availableProviders;
+    const activeGenre = this._genreByMode[this._mode] || "all";
+    const genreOptions = [
+      `<option value="all" ${activeGenre === "all" ? "selected" : ""}>${this._esc(this._t("all_genres"))}</option>`,
+      ...(this._genres[this._mode] || []).map((genre) =>
+        `<option value="${this._esc(genre.id)}" ${activeGenre === genre.id ? "selected" : ""}>${this._esc(genre.name)}</option>`),
+    ].join("");
 
     const tv = this._tvState();
     const detailScrollTop = this.shadowRoot.querySelector(".detail")?.scrollTop ?? null;
@@ -5586,9 +5638,25 @@ class StreamingBrowserCard extends HTMLElement {
 
         .switcher {
           display: flex;
+          align-items: center;
+          flex-wrap: wrap;
           gap: 6px;
           margin: 2px 0 12px;
         }
+        .genre-select {
+          min-width: 132px;
+          max-width: min(225px, 50vw);
+          min-height: 38px;
+          margin-left: 4px;
+          padding: 7px 9px;
+          border: 1px solid var(--divider-color);
+          border-radius: 16px;
+          background: var(--secondary-background-color);
+          color: var(--primary-text-color);
+          font: inherit;
+          cursor: pointer;
+        }
+        .genre-select:focus-visible { outline: 2px solid var(--primary-color); }
 
         .mode {
           border: 0;
@@ -5898,6 +5966,8 @@ class StreamingBrowserCard extends HTMLElement {
             >
               ${this._t("tv_series")}
             </button>
+            <select class="genre-select" aria-label="${this._esc(this._t("genre"))}"
+              title="${this._esc(this._t("genre"))}">${genreOptions}</select>
           </div>
 
           <div class="chips">
@@ -5999,10 +6069,21 @@ class StreamingBrowserCard extends HTMLElement {
         element.addEventListener("click", async () => {
           this._mode = element.dataset.mode;
           this._ensureSelectedProvider();
+          this._rowScrollPositions.clear();
           this._query = "";
           await this._loadBrowse();
         })
       );
+
+    root.querySelector(".genre-select")?.addEventListener("change", async (event) => {
+      const genre = String(event.target.value);
+      if (genre !== "all" && !(this._genres[this._mode] || []).some((g) => g.id === genre)) return;
+      if (this._genreByMode[this._mode] === genre) return;
+      this._genreByMode[this._mode] = genre;
+      this._query = "";
+      this._rowScrollPositions.clear();
+      await this._loadBrowse();
+    });
 
     root
       .querySelectorAll("[data-provider]")
@@ -6959,7 +7040,7 @@ if (streamingBrowserPreviousPickerEntry) {
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.76 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.77 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
