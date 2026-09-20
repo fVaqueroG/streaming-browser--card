@@ -1,0 +1,48 @@
+name: Publish Streaming Browser V1 subview resource fix v0.4.100
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v1-subview-resource-v04100.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decouple V1 and V2 registration
+        run: python3 tools/fix-v1-subview-resource-v04100.py
+      - name: Validate version and V1 independent resource registration
+        run: |
+          python3 -m compileall -q custom_components/streaming_browser
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast, json
+          base=Path('custom_components/streaming_browser')
+          py=(base/'__init__.py').read_text()
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.100'
+          assert 'v2_available = _V2_CARD_FILE.is_file()' in py
+          assert 'paths = [StaticPathConfig(_CARD_URL, str(_CARD_FILE), cache_headers=False)]' in py
+          assert 'frontend.add_extra_js_url(hass, _RESOURCE_URL)\n        if v2_available:' in py
+          assert 'if v2_available:\n            await _ensure_v2_resource(collection)' in py
+          assert 'Streaming Browser V2 card file is missing: %s' not in py
+          ast.parse(py)
+          assert (base/'frontend/streaming-browser-card.js').is_file()
+          assert (base/'frontend/streaming-browser-card-v2.js').is_file()
+          print('PASS V1 is never gated on the V2 file; both cards remain installed, JS and Python syntax valid')
+          PY
+      - name: Commit and publish v0.4.100
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git add README.md custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.100: keep V1 resource available if V2 bundle is missing'
+          git push origin HEAD:main
+          gh release create v0.4.100 --target "$(git rev-parse HEAD)" --title v0.4.100 --notes 'V1 resource registration no longer aborts when an optional V2 JavaScript bundle is missing. Both card names and frontends remain unchanged. If a subview still displays a configuration error only on cold direct navigation, check that the V1 resource URL is reachable and consider a Sections subview rather than Panel while Home Assistant fixes its custom-module load race.'
