@@ -8,6 +8,8 @@ Browse TMDB movie and TV catalogs, choose streaming providers, review movie and 
 
 ## Recent release highlights
 
+- **v0.4.93 — Netflix Android TV ADB playback:** For a room with an explicitly configured ADB media player, the TV Play button uses the selected Netflix movie/episode ID with `am start -a android.intent.action.VIEW -d http://www.netflix.com/watch/<id> --es source 30 -n com.netflix.ninja/.MainActivity`. No follow-up keyevent, Play button, restart, or forced profile navigation. Validated /watch/ episode URLs must match the selected episode; movie /title/ URLs (including regional paths) are accepted. Netflix on webOS and other providers are unchanged.
+
 - **v0.4.77 — Genre dropdown:** Beside Movies and Series, choose a TMDB genre such as Horror, Comedy or Drama, or All genres. Movie and TV genre names come from TMDB in the configured language. Genre and streaming-provider filters combine server-side for paginated catalogs; each mode remembers its own genre selection.
 - **v0.4.76 — Offer badges:** A small corner badge on each streaming-service logo shows included-with-subscription (`mdi:currency-usd-off`), free-with-ads (`mdi:play-circle-outline` + AD), or extra rental/purchase (`mdi:currency-usd`). The raw `flatrate`/`rent`/`buy` text is hidden; offer labels remain available to screen readers and on hover.
 - **v0.4.75 — HACS documentation:** Bring the HACS-facing README, installation instructions and recent changes up to date; link directly to the latest GitHub release notes and use a dynamic release badge instead of an obsolete hard-coded current-version statement. Playback behavior and existing configurations are unchanged.

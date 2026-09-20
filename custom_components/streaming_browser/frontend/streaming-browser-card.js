@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.92";
+const STREAMING_BROWSER_VERSION = "0.4.93";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -9404,5 +9404,92 @@ console.info(
     const selected = this._pickWatchmodeSource?.(provider, available);
     if (!selected || !exact(selected, detail)) return priorExact.call(this, provider, autoPlay);
     return this._playCrunchyrollWatch(selected, detail);
+  };
+})();
+
+
+/* Netflix v0.4.93: verified Android TV ADB playback.
+ * Never append a Play/OK key after the Netflix intent: the app handles
+ * movie playback itself and episode switching needs no extra key.
+ */
+(() => {
+  const Card = StreamingBrowserCard;
+  const previousExact = Card.prototype._openExactTitle;
+  const previousDestination = Card.prototype._providerDestination;
+  const isNetflix = name => /netflix/i.test(String(name || ''));
+  const video = (raw, episode) => {
+    try {
+      const url = new URL(String(raw || ''));
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
+          !['netflix.com', 'www.netflix.com'].includes(url.hostname.toLowerCase())) return null;
+      const match = /^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(watch|title)\/(\d+)\/?$/i.exec(url.pathname);
+      if (!match || (episode && match[1].toLowerCase() !== 'watch')) return null;
+      return match[2];
+    } catch (_) { return null; }
+  };
+  const matchesEpisode = (link, detail) => link?.scope === 'episode' &&
+    Number(link.season) === Number(detail?.selectedSeason) &&
+    Number(link.episode) === Number(detail?.selectedEpisode?.episode_number);
+
+  // Only expose exact episode playback for a genuine Netflix /watch/
+  // episode ID tied to the currently selected season and episode.
+  Card.prototype._providerDestination = function(provider, link, detail, isSeries) {
+    const old = previousDestination.call(this, provider, link, detail, isSeries);
+    if (this._platform() !== 'android_tv' || !isNetflix(provider) ||
+        !this._androidAdbEntity?.()) return old;
+    const id = video(link?.web_url, isSeries);
+    if (!id || (isSeries && !matchesEpisode(link, detail))) return old;
+    return {...old, deviceKind: isSeries ? 'episode' : 'movie', tvCanOpen: true};
+  };
+
+  Card.prototype._openExactTitle = async function(provider, autoPlay = false) {
+    if (this._platform() !== 'android_tv' || !isNetflix(provider)) {
+      return previousExact.call(this, provider, autoPlay);
+    }
+    // Preserve the existing non-ADB configuration behavior. When an
+    // ADB connection was selected but is unavailable, do not silently
+    // downgrade an exact-play request to the Netflix home screen.
+    if (!this._androidAdbEntity?.()) {
+      if (!this._config?.adb_entity) return previousExact.call(this, provider, autoPlay);
+      this._toast('Netflix ADB media player is unavailable for the selected room.');
+      return;
+    }
+    const detail = this._details;
+    const episode = detail?.type === 'tv';
+    if (!detail || (episode && !detail.selectedEpisode)) {
+      this._toast('Select an episode before playing on Netflix.');
+      return;
+    }
+    try {
+      const sources = episode
+        ? (!detail.episodeSourcesLoading ? detail.episodeSources || [] : [])
+        : (!detail.localSourcesLoading && detail.localSources?.length
+            ? detail.localSources
+            : await this._watchmodeSourcesForCurrentTitle());
+      const valid = sources.filter(link => isNetflix(link?.name) &&
+        video(link?.web_url, episode) &&
+        (!episode || matchesEpisode(link, detail)));
+      const selected = this._pickWatchmodeSource(provider, valid);
+      const id = selected && video(selected.web_url, episode);
+      if (!id) {
+        this._toast(episode
+          ? 'No exact Netflix episode URL is available; a series ID cannot play an episode.'
+          : 'No playable Netflix movie URL is available.');
+        return;
+      }
+      // Existing room connection power, HDMI routing and wake logic.
+      await this._prepareDisplayRoute();
+      await this._ensureTvOn();
+      await this._androidAdbCommand(
+        'am start -a android.intent.action.VIEW ' +
+        '-d http://www.netflix.com/watch/' + id + ' ' +
+        '--es source 30 -n com.netflix.ninja/.MainActivity'
+      );
+      // Do NOT call _launchProvider, _applyProfile, _sendProviderPlay,
+      // keyevent 23, force-stop or any restart path after this intent.
+      this._toast('Netflix playback requested on the selected Android TV.');
+    } catch (err) {
+      this._toast('Netflix ADB launch failed: ' + this._formatError(err));
+    }
   };
 })();
