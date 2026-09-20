@@ -1,6 +1,4 @@
 {
-  "name": "Streaming Browser Card",
-  "filename": "streaming-browser-card.js",
-  "content_in_root": true,
+  "name": "Streaming Browser",
   "render_readme": true
 }
