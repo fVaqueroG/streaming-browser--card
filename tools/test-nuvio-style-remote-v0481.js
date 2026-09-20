@@ -45,7 +45,7 @@ assert(Card, 'card remains registered');
     assert(html.includes(`data-remote="${key}"`),`Missing ${key}`);
     assert(actions.has(key),`Unwired ${key}`);
   }
-  assert(html.includes('"⌫",0,"↵"'), 'backspace, 0 and keypad Enter are preserved');
+  assert(html.includes('data-remote="0"') && html.includes('title="Backspace"') && html.includes('title="Enter"'), 'backspace, 0 and keypad Enter are preserved');
   assert(html.includes('max-height:calc(100dvh - 20px)') && html.includes('overflow-y:auto'), 'short screen remains scrollable');
   assert(html.includes('role="dialog"') && html.includes('aria-label="Close remote"'));
   await actions.get('WAKE')(); await actions.get('UP')(); await actions.get('ENTER')();
