@@ -5,6 +5,7 @@ add Streaming Browser under Settings > Devices & services. No Nuvio dependency.
 """
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -20,9 +21,10 @@ from .justwatch import JustWatchGraphQLApi, JustWatchApiError
 
 DOMAIN = "streaming_browser"
 _LOGGER = logging.getLogger(__name__)
+_INTEGRATION_DIR = Path(__file__).parent
 _CARD_URL = "/streaming_browser/streaming-browser-card.js"
-_CARD_FILE = Path(__file__).parent / "frontend" / "streaming-browser-card.js"
-_VERSION = "0.4.63"
+_CARD_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-card.js"
+_VERSION = str(json.loads((_INTEGRATION_DIR / "manifest.json").read_text(encoding="utf-8"))["version"])
 _RESOURCE_URL = f"{_CARD_URL}?v={_VERSION}"
 
 
