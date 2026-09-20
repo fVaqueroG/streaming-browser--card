@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.69
+ * v0.4.70
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.69";
+const STREAMING_BROWSER_VERSION = "0.4.70";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -1812,6 +1812,56 @@ class StreamingBrowserCard extends HTMLElement {
     }
   }
 
+  // Link and provider updates reuse the current popup and its scroll container.
+  _refreshDetailsInPlace(detail) {
+    if (this._details !== detail || detail.loading || detail.error) return;
+    const pane = this.shadowRoot?.querySelector(".detail");
+    const previousBody = pane?.querySelector(".body");
+    if (!previousBody) { this._render(); return; }
+    const oldScrollTop = pane.scrollTop;
+    const previousActive = previousBody.querySelector(".episode-row.active");
+    const activeTop = previousActive?.getBoundingClientRect().top;
+    const previousEpisode = previousActive?.dataset.episodeIndex;
+    const template = document.createElement("template");
+    template.innerHTML = this._renderDetails().trim();
+    const updatedBody = template.content.querySelector(".detail .body");
+    if (!updatedBody) return;
+    previousBody.replaceWith(updatedBody);
+    // Preserve the selected episode's location even when its links expand.
+    const nextActive = previousEpisode === undefined ? null :
+      updatedBody.querySelector(`.episode-row.active[data-episode-index="${previousEpisode}"]`);
+    if (nextActive && Number.isFinite(activeTop)) {
+      pane.scrollTop = oldScrollTop + nextActive.getBoundingClientRect().top - activeTop;
+    } else {
+      pane.scrollTop = oldScrollTop;
+    }
+    this._bindDetailBodyActions(updatedBody);
+  }
+
+  _bindDetailBodyActions(root) {
+    root.querySelectorAll("[data-open-provider]").forEach((element) =>
+      element.addEventListener("click", () =>
+        this._launchProvider(element.dataset.openProvider, false)));
+    root.querySelectorAll("[data-season]").forEach((element) =>
+      element.addEventListener("click", () => {
+        const detail = this._details;
+        if (detail) void this._loadSeasonEpisodes(detail, Number(element.dataset.season));
+      }));
+    root.querySelectorAll("[data-episode-index]").forEach((element) =>
+      element.addEventListener("click", () => {
+        const detail = this._details;
+        if (detail) this._selectEpisode(detail, Number(element.dataset.episodeIndex));
+      }));
+    root.querySelectorAll("[data-title-provider]").forEach((element) =>
+      element.addEventListener("click", () =>
+        this._openExactTitle(element.dataset.titleProvider, false)));
+    root.querySelectorAll("[data-title-play-provider]").forEach((element) =>
+      element.addEventListener("click", () =>
+        this._openExactTitle(element.dataset.titlePlayProvider, true)));
+    const watchPage = root.querySelector("[data-watch-page]");
+    if (watchPage) watchPage.addEventListener("click", () => this._openWatchPage());
+  }
+
   async _loadDetailProviders(detail) {
     const key = `${detail.type}:${detail.item.id}:${this._config.region}`;
     try {
@@ -1828,7 +1878,7 @@ class StreamingBrowserCard extends HTMLElement {
     } finally {
       if (this._details === detail) {
         detail.providersLoading = false;
-        this._render();
+        this._refreshDetailsInPlace(detail);
       }
     }
   }
@@ -1861,7 +1911,7 @@ class StreamingBrowserCard extends HTMLElement {
     } finally {
       if (this._details === detail && request === detail.seasonRequest) {
         detail.episodesLoading = false;
-        this._render();
+        this._refreshDetailsInPlace(detail);
       }
     }
   }
@@ -1874,7 +1924,7 @@ class StreamingBrowserCard extends HTMLElement {
     detail.episodeSources = [];
     detail.episodeSourcesError = "";
     detail.episodeSourcesLoading = true;
-    this._render();
+    this._refreshDetailsInPlace(detail);
     void this._loadIndependentEpisodeLinks(detail, episode);
   }
 
@@ -1903,7 +1953,7 @@ class StreamingBrowserCard extends HTMLElement {
     } finally {
       if (this._details === detail && detail.selectedEpisode === episode) {
         detail.episodeSourcesLoading = false;
-        this._render();
+        this._refreshDetailsInPlace(detail);
       }
     }
   }
@@ -1917,8 +1967,8 @@ class StreamingBrowserCard extends HTMLElement {
       detail.localSourceError = this._formatError(err);
     } finally {
       detail.localSourcesLoading = false;
-      // Do not replace a newer title's popup when an older lookup completes.
-      if (this._details === detail) this._render();
+      // Never replace the scrollable popup when a movie link finishes.
+      if (this._details === detail) this._refreshDetailsInPlace(detail);
     }
   }
 
@@ -4577,11 +4627,16 @@ class StreamingBrowserCard extends HTMLElement {
         gap:12px; padding:9px; text-align:left; font:inherit; cursor:pointer;
         border:1px solid var(--divider-color); border-radius:12px;
         background:var(--secondary-background-color); color:var(--primary-text-color); }
-      .episode-row.active { border-color:var(--primary-color);
+      .episode-row.active { border-color:var(--primary-color); border-radius:12px 12px 0 0;
         box-shadow:inset 0 0 0 1px var(--primary-color); }
       .episode-row-container { border-bottom:1px solid var(--divider-color); }
-      .episode-inline-actions { padding:12px 12px 17px;background:var(--secondary-background-color);
-        border:1px solid var(--primary-color);border-radius:0 0 12px 12px;margin:0 0 9px; }
+      .episode-inline-actions { padding:12px 14px 16px;background:var(--secondary-background-color);
+        border:1px solid var(--primary-color);border-top:0;
+        border-radius:0 0 12px 12px;margin:0 0 12px; }
+      .episode-inline-actions > strong { display:block; margin-bottom:10px; }
+      .episode-inline-actions .provider-card { min-width:0; align-items:flex-start; }
+      .episode-inline-actions .provider-main { min-width:0; flex:1; }
+      .episode-inline-actions .provider-actions { gap:7px; }
       .episode-inline-actions .provider-grid { margin-top:8px; }
       .episode-thumb { width:118px; aspect-ratio:16/9; flex:0 0 118px;
         border-radius:8px; object-fit:cover; background:var(--card-background-color); }
@@ -4754,8 +4809,9 @@ class StreamingBrowserCard extends HTMLElement {
         const url = exact && typeof exact.web_url === "string" &&
           /^https:\/\//i.test(exact.web_url) ? exact.web_url : "";
         const tvSource = this._sourceForProvider(name);
+        if (isSeries && !loading && !url && !tvSource) return "";
         const groups = Array.isArray(provider.groups) ? provider.groups.join(" · ") : "";
-        const sourceStatus = loading
+        const sourceStatus = isSeries ? "" : loading
           ? this._t("local_link_loading")
           : !url ? this._t("local_link_missing") : "";
         return `
@@ -5863,59 +5919,7 @@ class StreamingBrowserCard extends HTMLElement {
       });
     }
 
-    root
-      .querySelectorAll("[data-open-provider]")
-      .forEach((element) =>
-        element.addEventListener("click", () =>
-          this._launchProvider(
-            element.dataset.openProvider,
-            false
-          )
-        )
-      );
-
-    root.querySelectorAll("[data-season]").forEach((element) =>
-      element.addEventListener("click", () => {
-        const detail = this._details;
-        if (detail) void this._loadSeasonEpisodes(detail, Number(element.dataset.season));
-      })
-    );
-    root.querySelectorAll("[data-episode-index]").forEach((element) =>
-      element.addEventListener("click", () => {
-        const detail = this._details;
-        if (detail) this._selectEpisode(detail, Number(element.dataset.episodeIndex));
-      })
-    );
-
-    root
-      .querySelectorAll("[data-title-provider]")
-      .forEach((element) =>
-        element.addEventListener("click", () =>
-          this._openExactTitle(
-            element.dataset.titleProvider,
-            false
-          )
-        )
-      );
-
-    root
-      .querySelectorAll("[data-title-play-provider]")
-      .forEach((element) =>
-        element.addEventListener("click", () =>
-          this._openExactTitle(
-            element.dataset.titlePlayProvider,
-            true
-          )
-        )
-      );
-
-    const watchPage = root.querySelector("[data-watch-page]");
-
-    if (watchPage) {
-      watchPage.addEventListener("click", () =>
-        this._openWatchPage()
-      );
-    }
+    this._bindDetailBodyActions(root);
   }
 }
 
@@ -6760,7 +6764,7 @@ if (streamingBrowserPreviousPickerEntry) {
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.69 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.70 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
