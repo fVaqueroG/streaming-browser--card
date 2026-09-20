@@ -143,6 +143,23 @@ query NuvioEpisodes(
 """
 
 
+_SEASON_OFFERS_QUERY = """
+query StreamingBrowserSeasonOffers(
+  $nodeId: ID!, $country: Country!, $filter: OfferFilter!
+) {
+  node(id: $nodeId) {
+    ... on Season {
+      offers(country: $country, platform: WEB, filter: $filter) {
+        standardWebURL preAffiliatedStandardWebURL streamUrl
+        monetizationType presentationType
+        package { clearName technicalName shortName packageId }
+      }
+    }
+  }
+}
+"""
+
+
 class JustWatchApiError(Exception):
     """Raised when the unofficial JustWatch GraphQL request fails."""
 
@@ -747,3 +764,42 @@ class JustWatchGraphQLApi:
             language=language,
         )
         return self._store(cache_key, offers)
+
+
+async def _streaming_browser_scope_offers(
+    self, *, scope: str, title: str, country: str, language: str = "en-US",
+    tmdb_id: int | str | None = None, season: int | None = None,
+) -> list[dict[str, Any]]:
+    """Resolve distinct season or series provider URLs without claiming episode scope."""
+    if scope not in {"season", "series"}:
+        raise ValueError("Expected season or series scope")
+    title = " ".join(str(title or "").split())
+    if not title:
+        return []
+    node = await self._search_title(
+        title=title, media_type="series", country=country.upper(),
+        language=self._language(language), tmdb_id=tmdb_id, imdb_id=None,
+    )
+    if not node:
+        return []
+    if scope == "series":
+        return self._offers(node.get("offers"))
+    if season is None:
+        return []
+    season_id = await self._season_id(
+        show_id=str(node.get("id") or ""), season=int(season),
+        country=country.upper(), language=self._language(language),
+    )
+    if not season_id:
+        return []
+    response = await self._post(
+        operation_name="StreamingBrowserSeasonOffers",
+        query=_SEASON_OFFERS_QUERY,
+        variables={"nodeId": season_id, "country": country.upper(),
+                   "filter": {"bestOnly": True, "preAffiliate": True}},
+    )
+    season_node = (response.get("data") or {}).get("node") or {}
+    return self._offers(season_node.get("offers")) if isinstance(season_node, dict) else []
+
+
+JustWatchGraphQLApi.async_scope_offers = _streaming_browser_scope_offers

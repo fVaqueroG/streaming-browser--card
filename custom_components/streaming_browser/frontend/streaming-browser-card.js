@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant: LG webOS, Android TV and Roku TV
- * v0.4.87
+ * v0.4.88
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.87";
+const STREAMING_BROWSER_VERSION = "0.4.88";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -5133,7 +5133,7 @@ class StreamingBrowserCard extends HTMLElement {
         const name = String(provider?.provider_name || "").trim();
         if (!name) return "";
         const exact = loading ? null : this._pickWatchmodeSource(name,
-          isSeries ? sources.filter(validEpisodeLink) : sources);
+          sources);
         const url = exact && typeof exact.web_url === "string" &&
           /^https:\/\//i.test(exact.web_url) ? exact.web_url : "";
         const tvSource = this._sourceForProvider(name) ||
@@ -8288,5 +8288,762 @@ console.info(
     }
     try { return await previousNetflix.call(this, webUrl); }
     catch (_) { return this._androidLaunchActivity(native); }
+  };
+})();
+
+/* Streaming Browser v0.4.88: restored v0.4.82 link handling. */
+(() => {
+  const Card = StreamingBrowserCard;
+  // These method bodies are copied verbatim from the v0.4.82 release tag by
+  // the bundler. Installing them LAST removes the v0.4.83–0.4.87 launch and
+  // source-order overrides while preserving the newer UI and remote methods.
+  const Historical = class {
+  async _watchmodeSourcesForCurrentTitle({ silent = false } = {}) {
+    const detail = this._details;
+
+    if (!detail?.item?.id) {
+      throw new Error(
+        this._t("no_title_selected")
+      );
+    }
+
+    const type =
+      detail.type ||
+      this._mediaType(detail.item);
+
+    const watchmodeType =
+      type === "tv"
+        ? "tv"
+        : "movie";
+
+    const titleId =
+      `${watchmodeType}-${detail.item.id}`;
+
+    const cacheKey =
+      `${titleId}:${this._config.region}`;
+
+    if (this._watchmodeCache.has(cacheKey)) {
+      return this._watchmodeCache.get(cacheKey);
+    }
+
+    const action =
+      this._config.watchmode_script ||
+      "script.streaming_watchmode_sources";
+
+    if (!silent) {
+      this._toast(this._t("looking_up_exact_link"));
+    }
+
+    const response =
+      await this._callServiceWithResponse(
+        action,
+        {
+          title_id: titleId,
+          region: this._config.region,
+        }
+      );
+
+    const status =
+      Number(response?.status ?? 0);
+
+    if (status && status !== 200) {
+      throw new Error(
+        this._t("watchmode_http", { status })
+      );
+    }
+
+    let content =
+      response?.content ??
+      response;
+
+    if (typeof content === "string") {
+      try {
+        content = JSON.parse(content);
+      } catch (_) {
+        throw new Error(
+          this._t("watchmode_bad_response")
+        );
+      }
+    }
+
+    if (!Array.isArray(content)) {
+      throw new Error(
+        this._t("watchmode_not_list")
+      );
+    }
+
+    this._watchmodeCache.set(
+      cacheKey,
+      content
+    );
+
+    return content;
+  }
+
+  async _loadIndependentEpisodeLinks(detail, episode) {
+    const season = Number(detail.selectedSeason);
+    const number = Number(episode.episode_number);
+    try {
+      const response = await this._withTimeout(this._hass.callWS({
+        type: "streaming_browser/episode_links",
+        tmdb_id: Number(detail.item.id),
+        title: String(detail.details?.name || detail.item.name || ""),
+        season, episode: number,
+        region: this._config.region || "MX",
+        language: this._languageCode(),
+      }), 12000, "Episode provider lookup");
+      if (this._details !== detail || detail.selectedEpisode !== episode ||
+          Number(detail.selectedSeason) !== season) return;
+      detail.episodeSources = (Array.isArray(response?.links) ? response.links : [])
+        .filter((link) => link?.scope === "episode" &&
+          Number(link.season) === season && Number(link.episode) === number &&
+          typeof link.web_url === "string" && /^https:\/\//i.test(link.web_url));
+    } catch (err) {
+      if (this._details !== detail || detail.selectedEpisode !== episode) return;
+      detail.episodeSources = [];
+      detail.episodeSourcesError = this._formatError(err);
+    } finally {
+      if (this._details === detail && detail.selectedEpisode === episode) {
+        detail.episodeSourcesLoading = false;
+        this._refreshDetailsInPlace(detail);
+      }
+    }
+  }
+
+  _pickWatchmodeSource(providerName, sources) {
+    const region =
+      String(
+        this._config.region ||
+        ""
+      ).toUpperCase();
+
+    const preferredTypes = {
+      sub: 40,
+      free: 30,
+      tve: 20,
+      rent: 10,
+      buy: 5,
+    };
+
+    return (sources || [])
+      .filter((source) => {
+        if (!source?.web_url) {
+          return false;
+        }
+
+        if (
+          !/^https?:\/\//i.test(
+            source.web_url
+          )
+        ) {
+          return false;
+        }
+
+        if (
+          source.region &&
+          region &&
+          String(source.region).toUpperCase() !==
+            region
+        ) {
+          return false;
+        }
+
+        return (
+          this._watchmodeProviderScore(
+            providerName,
+            source.name
+          ) >= 0
+        );
+      })
+      .map((source) => ({
+        source,
+        score:
+          this._watchmodeProviderScore(
+            providerName,
+            source.name
+          ) +
+          (
+            preferredTypes[
+              source.type
+            ] || 0
+          ),
+      }))
+      .sort(
+        (a, b) =>
+          b.score - a.score
+      )[0]?.source || null;
+  }
+
+  async _androidLaunchActivity(activity) {
+    if (!this._config.remote_entity) {
+      throw new Error("remote_entity is required for Android TV");
+    }
+
+    await this._hass.callService("remote", "turn_on", {
+      entity_id: this._config.remote_entity,
+      activity,
+    });
+  }
+
+  async _openNetflixExactTitle(webUrl) {
+    const contentId =
+      this._netflixContentId(
+        webUrl
+      );
+
+    if (!contentId) {
+      throw new Error(
+        this._t(
+          "netflix_title_id_missing"
+        )
+      );
+    }
+
+    if (
+      this._platform() ===
+      "android_tv"
+    ) {
+      if (
+        this._androidAdbEntity()
+      ) {
+        await this._androidAdbCommand(
+          "am start -W -n com.netflix.ninja/.MainActivity " +
+          "-a android.intent.action.VIEW " +
+          "-d netflix://title/" +
+          contentId +
+          " -f 0x10000020 -e source 30"
+        );
+
+        return;
+      }
+
+      await this._androidLaunchActivity(
+        "netflix://title/" +
+          contentId
+      );
+
+      return;
+    }
+
+    await this._hass.callService(
+      "webostv",
+      "command",
+      {
+        entity_id:
+          this._config.tv_entity,
+
+        command:
+          "system.launcher/launch",
+
+        payload: {
+          id: "netflix",
+          contentId:
+            "m=http%3A%2F%2Fapi.netflix.com%2Fcatalog%2Ftitles%2Fmovies%2F" +
+            contentId +
+            "&source_type=4",
+        },
+      }
+    );
+  }
+
+  async _openExactTitle(
+    providerName,
+    autoPlay = false
+  ) {
+    if (!this._hass) {
+      return;
+    }
+
+    if (this._platform() === "roku") {
+      // A Watchmode/JustWatch web URL is not a Roku channel-specific content ID.
+      // Do not send it to webOS, or claim that launching an app played the title.
+      this._toast(this._locale() === "es"
+        ? "Roku necesita un ID de contenido de la app para abrir este título. Usa Abrir app."
+        : "Roku needs an app-specific content ID for exact title playback. Use Open app.");
+      return;
+    }
+
+    try {
+      await this._prepareDisplayRoute();
+      const tv = await this._ensureTvOn();
+
+      const detail = this._details;
+      const series = detail?.type === "tv";
+      const sources = series
+        ? (detail.selectedEpisode && !detail.episodeSourcesLoading ? detail.episodeSources || [] : [])
+        : await this._watchmodeSourcesForCurrentTitle();
+
+      const match =
+        this._pickWatchmodeSource(
+          providerName,
+          sources
+        );
+
+      if (!match?.web_url) {
+        throw new Error(
+          this._t("watchmode_no_provider_link", { provider: providerName, region: this._config.region })
+        );
+      }
+
+      const source =
+        this._sourceForProvider(providerName);
+
+      const appConfig =
+        this._findProfileAppConfig(
+          providerName,
+          source || providerName
+        );
+
+      const profileMode =
+        this._profileModeFor(
+          providerName,
+          source || providerName
+        );
+
+      /*
+       * Some webOS apps (notably Disney+) discard the original
+       * title launch target while the profile picker is active.
+       * For those apps, establish the app/profile session first,
+       * then send the exact-title link into the running app.
+       */
+      if (
+        this._config.manual_profile_selection === false &&
+        source &&
+        (
+          appConfig?.exact_title_profile_first === true ||
+          profileMode === "netflix"
+        )
+      ) {
+        const currentSource =
+          this._platform() === "android_tv"
+            ? this._androidActivity()
+            : tv?.attributes?.source || "";
+
+        const appAlreadyOpen =
+          this._platform() === "android_tv"
+            ? this._providerAliases(providerName).some(
+                (alias) =>
+                  alias &&
+                  this._norm(currentSource).includes(alias)
+              )
+            : this._norm(currentSource) ===
+              this._norm(source);
+
+        if (!appAlreadyOpen) {
+          this._toast(
+            this._t("opening_and_preparing", { source, profile: this._selectedProfile || "" })
+          );
+
+          if (this._platform() === "android_tv") {
+            const activity =
+              this._androidAppLink(providerName, source);
+
+            if (activity) {
+              await this._androidLaunchActivity(
+                activity
+              );
+
+              await this._waitForAndroidAppReady(
+                providerName,
+                source,
+                appConfig || {}
+              );
+            }
+          } else {
+            await this._hass.callService(
+              "media_player",
+              "select_source",
+              {
+                entity_id:
+                  this._config.tv_entity,
+                source,
+              }
+            );
+
+            this._toast(
+              this._t(
+                "preparing_profile",
+                {
+                  source,
+                  profile:
+                    this._selectedProfile || "",
+                }
+              )
+            );
+
+            await this._waitForWebOsAppReady(
+              providerName,
+              source,
+              appConfig || {}
+            );
+          }
+
+          await this._applyProfile(
+            providerName,
+            source,
+            {
+              appJustOpened: true,
+              appReadyWaited: true,
+            }
+          );
+
+          const afterProfileDelay =
+            Number(
+              appConfig
+                .exact_title_after_profile_delay_ms ??
+                0
+            ) || 0;
+
+          if (afterProfileDelay > 0) {
+            this._toast(
+              this._t("waiting_profile_session", { source })
+            );
+
+            await this._sleep(
+              afterProfileDelay
+            );
+          }
+        } else {
+          if (
+            profileMode === "netflix" &&
+            this._platform() === "android_tv"
+          ) {
+            await this._applyProfile(
+              providerName,
+              source,
+              { appJustOpened: false }
+            );
+          }
+
+          this._toast(
+            this._t("using_current_session", { source })
+          );
+        }
+      }
+
+      this._toast(
+        this._t("opening_title", { provider: match.name || providerName })
+      );
+
+      if (
+        this._isNetflixProvider(
+          providerName,
+          source || match.name || ""
+        )
+      ) {
+        await this._openNetflixExactTitle(
+          match.web_url
+        );
+      } else if (
+        this._platform() === "webos" &&
+        this._isPrimeProvider(
+          providerName,
+          source || match.name || ""
+        )
+      ) {
+        await this._openPrimeExactTitle(
+          match.web_url
+        );
+      } else if (this._platform() === "android_tv") {
+        await this._androidLaunchActivity(match.web_url);
+      } else {
+        await this._hass.callService(
+          "webostv",
+          "command",
+          {
+            entity_id:
+              this._config.tv_entity,
+
+            command:
+              "system.launcher/open",
+
+            payload: {
+              target:
+                match.web_url,
+            },
+          }
+        );
+      }
+
+      if (autoPlay) {
+        const delay =
+          Number(
+            this._config
+              .exact_title_play_delay_ms
+          ) || 5000;
+
+        this._toast(
+          this._t("title_opened_play", { seconds: Math.round(delay / 100) / 10 })
+        );
+
+        await this._sleep(delay);
+
+        await this._sendProviderPlay(
+          providerName,
+          source || providerName
+        );
+
+        this._toast(
+          this._t("play_sent")
+        );
+      } else {
+        this._toast(
+          this._t("title_link_sent")
+        );
+      }
+
+    } catch (err) {
+      if (this._details?.type === "tv") {
+        this._toast(this._t("title_open_failed", { error: this._formatError(err) }));
+        return; // Never open the series home as an episode-link fallback.
+      }
+      const fallback =
+        this._config
+          .exact_title_fallback_to_app !==
+        false;
+
+      if (!fallback) {
+        this._toast(
+          this._t("title_open_failed", { error: this._formatError(err) })
+        );
+
+        return;
+      }
+
+      this._toast(
+        this._t("title_fallback", { provider: providerName })
+      );
+
+      await this._sleep(700);
+
+      await this._launchProvider(
+        providerName,
+        autoPlay
+      );
+    }
+  }
+  };
+  for (const name of ["_watchmodeSourcesForCurrentTitle", "_loadIndependentEpisodeLinks", "_pickWatchmodeSource", "_androidLaunchActivity", "_openNetflixExactTitle", "_openExactTitle"]) {
+    Card.prototype[name] = Historical.prototype[name];
+  }
+
+  // v0.4.82 Watchmode / JustWatch results always win. Retain optional WatchHub
+  // only when the original source has no links; never reorder a working list.
+  const oldMovieSources = Card.prototype._watchmodeSourcesForCurrentTitle;
+  Card.prototype._watchmodeSourcesForCurrentTitle = async function(options = {}) {
+    let old, originalError;
+    try { old = await oldMovieSources.call(this, options); }
+    catch (err) { originalError = err; }
+    if (Array.isArray(old) && old.length) return old;
+    if (this._config?.watchhub_enabled !== false &&
+        this._details?.type !== 'tv' && this._watchhubSourcesFor) {
+      try {
+        const fallback = await this._watchhubSourcesFor(this._details);
+        if (Array.isArray(fallback) && fallback.length) return fallback;
+      } catch (_) { /* The v0.4.82 error remains authoritative. */ }
+    }
+    if (originalError) throw originalError;
+    return old || [];
+  };
+  const oldEpisodeSources = Card.prototype._loadIndependentEpisodeLinks;
+  Card.prototype._loadIndependentEpisodeLinks = async function(detail, episode) {
+    const season = Number(detail.selectedSeason);
+    await oldEpisodeSources.call(this, detail, episode);
+    if (this._details !== detail || detail.selectedEpisode !== episode ||
+        Number(detail.selectedSeason) !== season || detail.episodeSources?.length ||
+        this._config?.watchhub_enabled === false || !this._watchhubSourcesFor) return;
+    try {
+      const fallback = await this._watchhubSourcesFor(detail, episode);
+      if (this._details !== detail || detail.selectedEpisode !== episode ||
+          Number(detail.selectedSeason) !== season || !fallback?.length) return;
+      detail.episodeSources = fallback;
+      detail.episodeSourcesError = '';
+      this._refreshDetailsInPlace(detail);
+    } catch (_) { /* Preserve the original source error and card behavior. */ }
+  };
+
+  // The new compact TV button must invoke the original v0.4.82 content-link
+  // path whenever it has an HTTPS provider URL, not the v0.4.85 App shortcut.
+  // Preserve the destination label as descriptive, not proof of playback.
+  const newerDestination = Card.prototype._providerDestination;
+  Card.prototype._providerDestination = function(provider, match, detail, isSeries) {
+    const newer = newerDestination.call(this, provider, match, detail, isSeries);
+    const url = String(match?.web_url || '');
+    return { ...newer, tvCanOpen: this._platform() !== 'roku' && /^https:\/\//i.test(url) };
+  };
+})();
+
+/* Streaming Browser v0.4.88: episode > season > series; WatchHub last. */
+(() => {
+  const Card = StreamingBrowserCard;
+  const historicEpisodeLoader = Card.prototype._loadIndependentEpisodeLinks;
+  const historicPick = Card.prototype._pickWatchmodeSource;
+  const historicNetflixLaunch = Card.prototype._openNetflixExactTitle;
+  const historicRender = Card.prototype._renderProviderCards;
+  const sourceRank = link => ({watchmode: 0, justwatch: 1, watchhub: 9})[
+    String(link?.source || '').toLowerCase()] ?? 5;
+  const scopes = {episode:0, season:1, series:2};
+  const netflix = name => /netflix/i.test(String(name || ''));
+  const normalized = name => String(name || '').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const signature = link => `${normalized(link.name)}|${String(link.web_url || '')}`;
+  const unique = list => {
+    const seen = new Set();
+    return (list || []).filter(link => {
+      if (!link || !/^https:\/\//i.test(String(link.web_url || ''))) return false;
+      const k = `${signature(link)}|${link.scope}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
+  const actualScope = (link, season, episode) => {
+    const claimed = String(link?.scope || '').toLowerCase();
+    let url;
+    try { url = new URL(String(link?.web_url || '')); } catch (_) { return null; }
+    const path = url.pathname.toLowerCase();
+    const host = url.hostname.toLowerCase();
+    // A Netflix /title/ link does not become an episode link just because
+    // JustWatch/WatchHub looked it up for an episode. /watch/ carries the
+    // actual episode ID; preserve its optional trackId and other parameters.
+    if (host === 'netflix.com' || host.endsWith('.netflix.com')) {
+      if (/^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?title\/\d+(?:\/|$)/i.test(path)) return 'series';
+      if (/^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?watch\/\d+(?:\/|$)/i.test(path)) {
+        return claimed === 'episode' && Number(link.season) === season &&
+          Number(link.episode) === episode ? 'episode' : 'series';
+      }
+    }
+    if (/\/series\//.test(path) || /\/show\//.test(path)) return 'series';
+    if (/\/season\//.test(path)) return 'season';
+    if (claimed === 'episode' && Number(link.season) === season &&
+        Number(link.episode) === episode) return 'episode';
+    if (claimed === 'season' && Number(link.season) === season) return 'season';
+    return 'series';
+  };
+
+  // Fetch exact-episode links using the historical v0.4.82 JustWatch flow;
+  // then obtain separate, explicitly scoped season/series offers. A provider
+  // with an episode link is never downgraded merely because another provider
+  // has only a series page. WatchHub is never the first source in any scope.
+  Card.prototype._loadIndependentEpisodeLinks = async function(detail, episode) {
+    detail.seriesFallbackSources = [];
+    const season = Number(detail.selectedSeason);
+    const current = () => this._details === detail && detail.selectedEpisode === episode &&
+      Number(detail.selectedSeason) === season;
+    await historicEpisodeLoader.call(this, detail, episode);
+    if (!current()) return;
+    let fallback = [], watchhub = [], watchmode = [];
+    try {
+      const response = await this._withTimeout(this._hass.callWS({
+        type:'streaming_browser/series_fallback_links',
+        tmdb_id:Number(detail.item.id),
+        title:String(detail.details?.name || detail.item.name || ''),
+        season, region:this._config.region || 'MX', language:this._languageCode(),
+      }), 16000, 'Season and series provider lookup');
+      if (!current()) return;
+      fallback = Array.isArray(response?.links) ? response.links : [];
+    } catch (_) { /* Fallback tiers are optional. */ }
+    if (this._config?.watchhub_enabled !== false && this._watchhubSourcesFor) {
+      try { watchhub = await this._watchhubSourcesFor(detail, episode); }
+      catch (_) { /* No WatchHub result must break an existing link. */ }
+    }
+    if (!current()) return;
+    try {
+      const result = await this._watchmodeSourcesForCurrentTitle({silent:true});
+      watchmode = Array.isArray(result) ? result.map(link => ({...link,
+        source:link.source || 'watchmode',scope:link.scope || 'series'})) : [];
+    } catch (_) { /* No Watchmode script configured. */ }
+    if (!current()) return;
+    // Re-include WatchHub episode results even if JustWatch returned a link
+    // for another provider; each provider must be resolved independently.
+    detail.episodeSources = unique([...(detail.episodeSources || []), ...watchhub]);
+    detail.seriesFallbackSources = unique([...fallback, ...watchmode]);
+    this._refreshDetailsInPlace(detail);
+  };
+
+  Card.prototype._seriesLinksForDetail = function(detail) {
+    if (!detail?.selectedEpisode) return [];
+    const season = Number(detail.selectedSeason);
+    const episode = Number(detail.selectedEpisode.episode_number);
+    const all = unique([...(detail.episodeSources || []),
+      ...(detail.seriesFallbackSources || [])]);
+    const resolved = all.map(link => ({...link, scope:actualScope(link, season, episode)}))
+      .filter(link => link.scope && Object.hasOwn(scopes, link.scope));
+    // Season and show offers can resolve to the SAME general provider page.
+    // If so the URL has not demonstrated season-level navigation.
+    const seriesUrls = new Set(resolved.filter(link => link.scope === 'series')
+      .map(link => signature(link)));
+    for (const link of resolved) {
+      if (link.scope === 'season' && seriesUrls.has(signature(link))) link.scope = 'series';
+    }
+    return resolved.sort((a,b) => scopes[a.scope]-scopes[b.scope] ||
+      sourceRank(a)-sourceRank(b));
+  };
+
+  Card.prototype._pickWatchmodeSource = function(provider, sources) {
+    const list = Array.isArray(sources) ? sources : [];
+    if (!this._details?.selectedEpisode) return historicPick.call(this,provider,list);
+    // Filter to the selected provider before choosing the highest available
+    // specificity. The historical source scoring still resolves name aliases.
+    const ranked = [...list].sort((a,b) =>
+      (scopes[a.scope] ?? 3) - (scopes[b.scope] ?? 3) ||
+      sourceRank(a) - sourceRank(b));
+    for (const candidate of ranked) {
+      if (historicPick.call(this,provider,[candidate])) return candidate;
+    }
+    return null;
+  };
+
+  // Compact button rendering and the original v0.4.82 click handler now use
+  // the same ranked list; the clicked provider is resolved per provider.
+  Card.prototype._renderProviderCards = function(detail,providers,isSeries=false) {
+    if (!isSeries) return historicRender.call(this,detail,providers,false);
+    const oldEpisodeSources = detail.episodeSources;
+    const oldLoading = detail.episodeSourcesLoading;
+    try {
+      detail.episodeSources = this._seriesLinksForDetail(detail);
+      detail.episodeSourcesLoading = oldLoading && !detail.episodeSources.length;
+      return historicRender.call(this,detail,providers,true);
+    } finally {
+      detail.episodeSources = oldEpisodeSources;
+      detail.episodeSourcesLoading = oldLoading;
+    }
+  };
+
+  // Netflix episode URL may carry trackId (which is NOT an episode ID).
+  // Keep it untouched for the TV's direct URL launch. Without an episode
+  // /watch/ URL, the historical v0.4.82 Netflix native route is unchanged.
+  Card.prototype._openNetflixExactTitle = async function(url) {
+    if (this._platform() === 'android_tv' && this._details?.type === 'tv' &&
+        /^https:\/\/(?:www\.)?netflix\.com\/watch\/\d+(?:[/?#]|$)/i.test(String(url || '')) &&
+        new URL(url).searchParams.has('trackId')) {
+      return this._androidLaunchActivity(url);
+    }
+    return historicNetflixLaunch.call(this,url);
+  };
+})();
+
+/* Streaming Browser v0.4.88: series link routing finalization. */
+(() => {
+  const Card = StreamingBrowserCard;
+  const legacyOpen = Card.prototype._openExactTitle;
+  const previousDestination = Card.prototype._providerDestination;
+
+  // v0.4.82 dispatch remains untouched; only its source list is temporarily
+  // supplied by the same per-provider priority resolver used by the UI.
+  Card.prototype._openExactTitle = async function(provider, autoPlay=false) {
+    const detail = this._details;
+    if (!detail || detail.type !== 'tv' || !detail.selectedEpisode)
+      return legacyOpen.call(this,provider,autoPlay);
+    const original = detail.episodeSources;
+    detail.episodeSources = this._seriesLinksForDetail(detail);
+    try { return await legacyOpen.call(this,provider,autoPlay); }
+    finally { detail.episodeSources = original; }
+  };
+  Card.prototype._providerDestination = function(provider,link,detail,isSeries) {
+    const original = previousDestination.call(this,provider,link,detail,isSeries);
+    if (!isSeries || !link?.web_url) return original;
+    const scope = String(link.scope || 'series').toLowerCase();
+    return {...original, deviceKind:['episode','season','series'].includes(scope) ? scope : 'series',
+      tvCanOpen:this._platform() !== 'roku' && /^https:\/\//i.test(link.web_url)};
   };
 })();

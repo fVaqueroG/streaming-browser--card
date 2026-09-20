@@ -115,6 +115,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.data[DOMAIN] = JustWatchGraphQLApi(async_get_clientsession(hass))
     websocket_api.async_register_command(hass, ws_episode_links)
     websocket_api.async_register_command(hass, ws_watchhub_links)
+    websocket_api.async_register_command(hass, ws_series_fallback_links)
     await _register_card(hass)
     return True
 
@@ -216,3 +217,46 @@ async def ws_watchhub_links(hass: HomeAssistant, connection, msg: dict) -> None:
         # The optional third-party source must not interrupt Watchmode/JustWatch.
         _LOGGER.debug("WatchHub official link lookup unavailable: %s", err)
         connection.send_error(msg["id"], "watchhub_unavailable", "WatchHub official links unavailable")
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "streaming_browser/series_fallback_links",
+        vol.Required("title"): str,
+        vol.Required("tmdb_id"): vol.Coerce(int),
+        vol.Required("season"): vol.Coerce(int),
+        vol.Optional("region", default="MX"): str,
+        vol.Optional("language", default="en-US"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_series_fallback_links(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Return separately scoped JustWatch season and series links for a show."""
+    try:
+        if msg["tmdb_id"] <= 0 or msg["season"] < 0 or not msg["title"].strip():
+            raise ValueError("Invalid series or season")
+        region = msg["region"].strip().upper()
+        if len(region) != 2 or not region.isalpha():
+            raise ValueError("Invalid region")
+        api: JustWatchGraphQLApi = hass.data[DOMAIN]
+        links: list[dict] = []
+        for scope in ("season", "series"):
+            try:
+                offers = await api.async_scope_offers(
+                    scope=scope, title=msg["title"], tmdb_id=msg["tmdb_id"],
+                    season=msg["season"], country=region, language=msg["language"],
+                )
+            except (JustWatchApiError, ValueError, LookupError, TypeError) as exc:
+                _LOGGER.debug("JustWatch %s fallback unavailable: %s",scope,exc)
+                continue
+            for offer in offers:
+                if (isinstance(offer,dict) and offer.get("provider_name")
+                    and str(offer.get("url") or "").startswith("https://")):
+                    item = {"name":offer["provider_name"],"web_url":offer["url"],
+                            "source":"justwatch","scope":scope}
+                    if scope == "season":
+                        item["season"] = msg["season"]
+                    links.append(item)
+        connection.send_result(msg["id"],{"links":links})
+    except (ValueError,TypeError) as exc:
+        connection.send_error(msg["id"],"series_fallback_unavailable",str(exc))

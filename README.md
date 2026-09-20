@@ -96,3 +96,8 @@ An Android TV connection can now select a separate optional `remote.*` entity fr
 ## v0.4.87 — link compatibility recovery
 
 Restores attempting existing provider-specific Netflix/Prime TV links that v0.4.85 previously blocked and labeled App, without falsely labeling a generic series destination as Episode. Original Prime Video URLs are tried first rather than unconditionally rewritten to a different host; the alternate is used if Home Assistant rejects the original. Restores the previous Netflix native Android TV movie intent, preserving the episode /watch link as the first episode attempt. Previously used Watchmode and JustWatch links are preferred ahead of new WatchHub fallbacks. Crunchyroll Android TV continues to launch the installed app rather than an unsupported web intent. A TV accepting a command is not confirmation that the provider actually navigated to the title. WatchHub, icon/caption controls, rooms, HDMI, power switch, and optional ADB remote remain available.
+
+
+## v0.4.88: restore v0.4.82 TV links
+
+Restores the actual v0.4.82 Watchmode/JustWatch source-selection and Netflix, Prime Video and general TV link-launch methods from the historical release tag. Existing WatchHub remains an optional fallback only when an old source is empty, rather than replacing working links. The compact TV button now attempts the v0.4.82 content route when a valid link exists. Rooms, power helper, compact controls, and optional ADB remote are retained. TV app acceptance of external links still depends on the device and app.
