@@ -1,0 +1,157 @@
+name: Implement Netflix ADB playback v0.4.93
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/netflix-adb-playback-v0493.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch Netflix playback, version, and release notes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          card = Path('custom_components/streaming_browser/frontend/streaming-browser-card.js')
+          manifest = Path('custom_components/streaming_browser/manifest.json')
+          readme = Path('README.md')
+          text = card.read_text(encoding='utf-8')
+          data = json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version'] == '0.4.92', 'Version changed: do not overwrite a newer release'
+          old = 'const STREAMING_BROWSER_VERSION = "0.4.92";'
+          assert text.count(old) == 1, 'Expected version declaration is missing'
+          assert '/* Netflix v0.4.93: verified Android TV ADB playback.' not in text
+          assert text.count('/* Streaming Browser v0.4.92: native Crunchyroll') == 1
+          text = text.replace(old, 'const STREAMING_BROWSER_VERSION = "0.4.93";', 1)
+          text += r'''
+
+          /* Netflix v0.4.93: verified Android TV ADB playback.
+           * Never append a Play/OK key after the Netflix intent: the app handles
+           * movie playback itself and episode switching needs no extra key.
+           */
+          (() => {
+            const Card = StreamingBrowserCard;
+            const previousExact = Card.prototype._openExactTitle;
+            const previousDestination = Card.prototype._providerDestination;
+            const isNetflix = name => /netflix/i.test(String(name || ''));
+            const video = (raw, episode) => {
+              try {
+                const url = new URL(String(raw || ''));
+                if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
+                    !['netflix.com', 'www.netflix.com'].includes(url.hostname.toLowerCase())) return null;
+                const match = /^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(watch|title)\/(\d+)\/?$/i.exec(url.pathname);
+                if (!match || (episode && match[1].toLowerCase() !== 'watch')) return null;
+                return match[2];
+              } catch (_) { return null; }
+            };
+            const matchesEpisode = (link, detail) => link?.scope === 'episode' &&
+              Number(link.season) === Number(detail?.selectedSeason) &&
+              Number(link.episode) === Number(detail?.selectedEpisode?.episode_number);
+
+            // Only expose exact episode playback for a genuine Netflix /watch/
+            // episode ID tied to the currently selected season and episode.
+            Card.prototype._providerDestination = function(provider, link, detail, isSeries) {
+              const old = previousDestination.call(this, provider, link, detail, isSeries);
+              if (this._platform() !== 'android_tv' || !isNetflix(provider) ||
+                  !this._androidAdbEntity?.()) return old;
+              const id = video(link?.web_url, isSeries);
+              if (!id || (isSeries && !matchesEpisode(link, detail))) return old;
+              return {...old, deviceKind: isSeries ? 'episode' : 'movie', tvCanOpen: true};
+            };
+
+            Card.prototype._openExactTitle = async function(provider, autoPlay = false) {
+              if (this._platform() !== 'android_tv' || !isNetflix(provider)) {
+                return previousExact.call(this, provider, autoPlay);
+              }
+              // Preserve the existing non-ADB configuration behavior. When an
+              // ADB connection was selected but is unavailable, do not silently
+              // downgrade an exact-play request to the Netflix home screen.
+              if (!this._androidAdbEntity?.()) {
+                if (!this._config?.adb_entity) return previousExact.call(this, provider, autoPlay);
+                this._toast('Netflix ADB media player is unavailable for the selected room.');
+                return;
+              }
+              const detail = this._details;
+              const episode = detail?.type === 'tv';
+              if (!detail || (episode && !detail.selectedEpisode)) {
+                this._toast('Select an episode before playing on Netflix.');
+                return;
+              }
+              try {
+                const sources = episode
+                  ? (!detail.episodeSourcesLoading ? detail.episodeSources || [] : [])
+                  : (!detail.localSourcesLoading && detail.localSources?.length
+                      ? detail.localSources
+                      : await this._watchmodeSourcesForCurrentTitle());
+                const valid = sources.filter(link => isNetflix(link?.name) &&
+                  video(link?.web_url, episode) &&
+                  (!episode || matchesEpisode(link, detail)));
+                const selected = this._pickWatchmodeSource(provider, valid);
+                const id = selected && video(selected.web_url, episode);
+                if (!id) {
+                  this._toast(episode
+                    ? 'No exact Netflix episode URL is available; a series ID cannot play an episode.'
+                    : 'No playable Netflix movie URL is available.');
+                  return;
+                }
+                // Existing room connection power, HDMI routing and wake logic.
+                await this._prepareDisplayRoute();
+                await this._ensureTvOn();
+                await this._androidAdbCommand(
+                  'am start -a android.intent.action.VIEW ' +
+                  '-d http://www.netflix.com/watch/' + id + ' ' +
+                  '--es source 30 -n com.netflix.ninja/.MainActivity'
+                );
+                // Do NOT call _launchProvider, _applyProfile, _sendProviderPlay,
+                // keyevent 23, force-stop or any restart path after this intent.
+                this._toast('Netflix playback requested on the selected Android TV.');
+              } catch (err) {
+                this._toast('Netflix ADB launch failed: ' + this._formatError(err));
+              }
+            };
+          })();
+          '''
+          card.write_text(text, encoding='utf-8')
+          data['version'] = '0.4.93'
+          manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          notes = readme.read_text(encoding='utf-8')
+          anchor = '## Recent release highlights\n'
+          assert notes.count(anchor) == 1
+          notes = notes.replace(anchor, anchor + '\n- **v0.4.93 — Netflix Android TV ADB playback:** For a room with an explicitly configured ADB media player, the TV Play button uses the selected Netflix movie/episode ID with `am start -a android.intent.action.VIEW -d http://www.netflix.com/watch/<id> --es source 30 -n com.netflix.ninja/.MainActivity`. No follow-up keyevent, Play button, restart, or forced profile navigation. Validated /watch/ episode URLs must match the selected episode; movie /title/ URLs (including regional paths) are accepted. Netflix on webOS and other providers are unchanged.\n', 1)
+          readme.write_text(notes, encoding='utf-8')
+          print('Patched Netflix Android TV playback v0.4.93')
+          PY
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          python3 - <<'PY'
+          from pathlib import Path
+          js=Path('custom_components/streaming_browser/frontend/streaming-browser-card.js').read_text()
+          block=js.split('/* Netflix v0.4.93: verified Android TV ADB playback.',1)[1]
+          assert block.count('--es source 30') == 1
+          assert 'input keyevent 23' not in block and 'sleep 3' not in block
+          assert 'await this._prepareDisplayRoute();' in block
+          assert 'await this._ensureTvOn();' in block
+          assert 'matchesEpisode(link, detail)' in block
+          print('Static Netflix playback guards passed')
+          PY
+          git diff --check
+      - name: Commit and publish HACS version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json README.md
+          git commit -m 'v0.4.93: Netflix movie and episode ADB playback without extra keyevents'
+          git push origin HEAD:main
+          gh release create v0.4.93 --target "$(git rev-parse HEAD)" --title v0.4.93 --notes 'Netflix Android TV: tested ADB intent source=30 for movie and episode Play on TV; no extra keyevent 23. Respects selected room ADB entity, HDMI and power helper, and exact episode IDs. Other platforms and providers unchanged.'
