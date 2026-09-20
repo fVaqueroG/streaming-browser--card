@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Bundle independent ADB remote configuration and selective key routing
         run: python3 tools/apply-optional-adb-remote-v0486.py
-      - name: Validate app routing, remote fallback and release version
+      - name: Validate app routing, cross-context remote commands and release version
         run: |
           node --check tools/streaming-browser-optional-adb-remote-v0486.js
           node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
