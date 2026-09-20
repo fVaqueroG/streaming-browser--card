@@ -1,0 +1,46 @@
+name: Circular Streaming Browser remote v0.4.69
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-circular-remote-v0469.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Implement circular D-pad, icon actions, and volume routing
+        run: python3 tools/upgrade-circular-remote-v0469.py
+      - name: Validate frontend, runtime controls, integration and version
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check tools/test-circular-remote-v0469.js
+          node tools/test-circular-remote-v0469.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base = Path('custom_components/streaming_browser')
+          assert json.loads((base/'manifest.json').read_text())['version'] == '0.4.69'
+          card = (base/'frontend/streaming-browser-card.js').read_text()
+          assert 'STREAMING_BROWSER_VERSION = "0.4.69"' in card
+          assert 'STREAMING-BROWSER-CARD %c v0.4.69' in card
+          assert 'class="sbr-pad" role="group"' in card
+          assert 'class="sbr-actions" role="group"' in card
+          assert 'this._renderProviderCards(detail, providers, isSeries)' in card
+          print('PASS version-aligned HACS integration, provider-card regression and UI registrations')
+          PY
+      - name: Publish Streaming Browser v0.4.69
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json README.md
+          git commit -m 'Redesign Streaming Browser remote and add volume controls v0.4.69'
+          git push origin HEAD:main
+          gh release create v0.4.69 --target "$(git rev-parse HEAD)" --title 'v0.4.69' --notes 'Circular dark D-pad with centered OK; icon-only Home, Back, Play, Pause, Mute, Wake (mdi:volume-mute / mdi:sleep-off); volume up/down and toggle mute via Home Assistant media_player services. HDMI display TV owns volume when configured, otherwise playback media player. Preserves number pad, existing cards and visual editor. Update HACS Integrations, restart Home Assistant, fully reload dashboard.'
