@@ -47,7 +47,7 @@ jobs:
           assert 'data-episode-index=' in s
           assert 'episode-inline-actions' in s
           assert 'this._renderProviderCards(detail, this._detailProviders(), true)' in s
-          assert 'series ? (detail.selectedEpisode && !detail.episodeSourcesLoading' in s
+          assert 'detail.selectedEpisode && !detail.episodeSourcesLoading' in s
           assert '/nuvio/nuvio-card.js' not in s
           assert '"nuvio", "remote_key"' not in s
           assert 'this._details?.type === "tv"' in s
