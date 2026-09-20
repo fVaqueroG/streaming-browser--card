@@ -1,0 +1,84 @@
+name: Streaming Browser Roku TV support v0.4.74
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-roku-support-v0474.yml'
+permissions:
+  contents: write
+jobs:
+  verify-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch Roku TV frontend and integration version
+        run: python3 tools/add-roku-support-v0474.py
+      - name: Verify JS, Python, Roku commands and source actions
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          node <<'JS'
+          (async () => {
+            const fs = require('node:fs');
+            const vm = require('node:vm');
+            const src = fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card.js','utf8');
+            const manifest = JSON.parse(fs.readFileSync('custom_components/streaming_browser/manifest.json','utf8'));
+            if(manifest.version !== '0.4.74' || !src.includes('STREAMING_BROWSER_VERSION = "0.4.74"')) throw Error('Version mismatch');
+            const registry=new Map();const window={customCards:[]};
+            vm.runInNewContext(src,{HTMLElement:class {},window,customElements:{get:k=>registry.get(k),define:(k,C)=>registry.set(k,C)},console});
+            const Card=registry.get('streaming-browser-card');
+            if(!Card||!registry.get('streaming-browser-card-editor')||!window.customCards.some(x=>x.type==='streaming-browser-card'))throw Error('Named card/editor registration missing');
+            const form=Card.getConfigForm(null,{});
+            const general=form.schema.find(x=>x.title==='General');
+            const platform=general.schema.find(x=>x.name==='platform');
+            if(!platform.selector.select.options.some(x=>x.value==='roku'))throw Error('Roku unavailable in visual editor');
+            const calls=[];const card=Object.create(Card.prototype);
+            card._config={platform:'roku',tv_entity:'media_player.roku_tv',remote_entity:'remote.roku_tv',region:'MX',provider_sources:{},profile_launch_delay_ms:0,auto_play_delay_ms:0};
+            card._hass={states:{'media_player.roku_tv':{state:'on',attributes:{source_list:['Netflix','Prime Video','HDMI 1'],source:'Roku'}}},callService:async (...args)=>{calls.push(args);}};
+            card._prepareDisplayRoute=async()=>{};
+            card._ensureTvOn=async()=>card._tvState();
+            card._applyProfile=async()=>{};
+            card._sleep=async()=>{};
+            card._toast=()=>{};
+            if(card._platform()!=='roku')throw Error('Roku platform not recognized');
+            if(card._sourceForProvider('Amazon Prime Video')!=='Prime Video')throw Error('Installed Roku app match failed');
+            await card._launchProvider('Amazon Prime Video');
+            if(!calls.some(([d,s,v])=>d==='media_player'&&s==='select_source'&&v.entity_id==='media_player.roku_tv'&&v.source==='Prime Video'))throw Error('Roku app launch failed');
+            if(calls.some(([d])=>d==='webostv'||d==='androidtv'))throw Error('Roku route called another platform');
+            calls.length=0;
+            for(const [input,expected] of [['UP','up'],['ENTER','select'],['HOME','home'],['BACK','back'],['PLAY','play'],['PAUSE','play'],['VOLUME_UP','volume_up'],['VOLUME_DOWN','volume_down'],['MUTE','volume_mute'],['7','Lit_7']]){
+              await card._sendRemoteButton(input);
+              const [d,s,v]=calls.pop()||[];
+              if(d!=='remote'||s!=='send_command'||v?.entity_id!=='remote.roku_tv'||v?.command!==expected)throw Error(`${input} mapped incorrectly: ${JSON.stringify(v)}`);
+            }
+            card._details={type:'movie',item:{id:1}};
+            card._locale=()=> 'en';
+            await card._openExactTitle('Netflix');
+            if(calls.some(([d,s])=>d==='webostv'||s==='play_media'))throw Error('Web URL sent as an unsupported Roku deep link');
+            card._esc=x=>String(x);card._t=x=>x;
+            card._providerLogo=()=>'<img src="logo.png" alt="">';
+            card._pickWatchmodeSource=()=>({web_url:'https://www.netflix.com/watch/123'});
+            const html=card._renderProviderCards({type:'movie',localSources:[{web_url:'https://www.netflix.com/watch/123'}],localSourcesLoading:false},[{provider_name:'Netflix',groups:['flatrate'],logo_path:'a'}]);
+            if(!html.includes('mdi:cellphone-play')||!html.includes('data-open-provider')||html.includes('mdi:television-play'))throw Error('Roku should expose device link + app, not a falsely exact TV action');
+            card._config.platform='android_tv';
+            calls.length=0;await card._sendRemoteButton('ENTER');
+            if(calls.pop()?.[2]?.command!=='DPAD_CENTER')throw Error('Android TV regression');
+            card._config.platform='webos';
+            calls.length=0;await card._sendRemoteButton('ENTER');
+            if(calls.pop()?.[0]!=='webostv')throw Error('webOS regression');
+            if(!src.includes('if (this._platform() === "roku" && !this._config.display_entity)'))throw Error('Roku TV volume key routing missing');
+            console.log('PASS: Roku card editor, installed app launch, remote mapping, exact-title safety, HTML actions, Roku volume routing, Android TV/webOS regression, version and syntax');
+          })().catch(e=>{console.error(e);process.exitCode=1});
+          JS
+      - name: Publish Streaming Browser HACS integration v0.4.74
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json README.md
+          git commit -m 'Add Roku TV playback and remote support v0.4.74'
+          git push origin HEAD:main
+          gh release create v0.4.74 --target "$(git rev-parse HEAD)" --title v0.4.74 --notes 'Add Roku TV/Roku streaming players to visual editor; use Home Assistant Roku media_player.select_source to open installed streaming apps and remote.send_command for navigation, play/pause, digits and Roku TV volume. Support Roku TV HDMI input routing. Do not pass web links as unsupported Roku exact-title deep links. Existing webOS/Android TV card settings preserved. Update HACS Integrations, restart Home Assistant, and fully reload dashboard.'
