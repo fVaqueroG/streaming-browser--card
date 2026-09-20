@@ -1,0 +1,45 @@
+name: Publish repaired Streaming Browser resource v0.4.67
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release-repaired-resource-v0467.yml"
+permissions:
+  contents: write
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build resource registration repair
+        run: python3 tools/repair-card-resource-v0467.py
+      - name: Test registration, visual card picker and integration syntax
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 tools/test-card-resource-v0467.py
+          node - <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm');
+          const source=fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card.js','utf8');
+          const registered=new Map(),window={customCards:[]};
+          const context={HTMLElement:class{},window,document:{createElement:k=>({tagName:k})},customElements:{get:k=>registered.get(k),define:(k,value)=>registered.set(k,value)},console};
+          vm.runInNewContext(source,context);
+          const Card=registered.get('streaming-browser-card');
+          if(!Card || !registered.get('streaming-browser-card-editor'))throw Error('Card/editor custom elements not registered');
+          if(Card.getConfigElement().tagName!=='streaming-browser-card-editor')throw Error('Visual editor not returned');
+          if(window.customCards.filter(card=>card.type==='streaming-browser-card'&&card.name==='Streaming Browser Card').length!==1)throw Error('Named picker entry not registered');
+          if(!source.includes('STREAMING_BROWSER_VERSION = "0.4.67"'))throw Error('Bundled card version differs from integration');
+          console.log('PASS: named card picker, visual editor, aligned frontend version');
+          JS
+      - name: Publish versioned HACS integration
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card.js
+          git commit -m "Repair Streaming Browser resource registration v0.4.67"
+          git push origin HEAD:main
+          gh release create v0.4.67 --target "$(git rev-parse HEAD)" --title v0.4.67 --notes "Retry a missed dashboard resource registration during integration UI setup and after Home Assistant startup; avoid duplicate static routes, migrate the legacy HACS dashboard card resource, and log the registered versioned module URL. Keep the Streaming Browser Card named picker entry and visual editor. Update the Integration through HACS, restart Home Assistant, and refresh the dashboard."
