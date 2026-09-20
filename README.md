@@ -169,3 +169,8 @@ V2 places the genre selector directly beneath Movies and Series, spanning exactl
 ## v0.4.103 — V2 aligned square sources
 
 V2 uses equal square All/provider buttons. Their top/bottom edges match the fixed Movies/Series row and full-width Genre selector beneath it, respectively. Buttons are 101 × 101 px on tablets/desktops (56 + 7 + 38), and 93 × 93 px on phones (48 + 7 + 38). All remains fixed; only provider icons scroll horizontally. Room and playback routing, catalog tabs and V1 JavaScript are unchanged.
+
+
+## v0.4.104 — three equal-width V2 category tabs
+
+V2 distributes Popular, Top Rated and Recent into three equal-width tabs spanning its full width. Recent is a shorter label for the existing Recent Releases catalog; the category query, fixed controls, All and identically sized square provider buttons from v0.4.103 remain unchanged. V1 is unchanged.

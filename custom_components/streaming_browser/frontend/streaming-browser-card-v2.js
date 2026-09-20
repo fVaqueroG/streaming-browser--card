@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.103";
+const STREAMING_BROWSER_VERSION = "0.4.104";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -9975,17 +9975,19 @@ console.info(
     .v2-provider-strip .chip[data-provider="all"] ha-icon { --mdc-icon-size:32px; }
     .v2-provider-strip .chip[data-provider="all"] span { font-size:11px;
       font-weight:650; line-height:1; white-space:nowrap; }
-    .v2-categories { display:flex; gap:8px; overflow-x:auto;
-      overscroll-behavior-inline:contain; scrollbar-width:thin; padding-top:10px;
+    /* Three equal horizontal categories span the entire card width. */
+    .v2-categories { display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+      width:100%; min-width:0; gap:8px; overflow:visible; padding-top:10px;
       border-top:1px solid var(--divider-color); }
-    .v2-category-tab { flex:1 0 max-content; display:flex; align-items:center;
-      justify-content:center; gap:9px; padding:10px 14px; min-height:44px;
+    .v2-category-tab { display:flex; min-width:0; width:100%; align-items:center;
+      justify-content:center; gap:7px; padding:10px 8px; min-height:44px;
       border:1px solid var(--divider-color); border-radius:10px;
       background:var(--secondary-background-color); color:var(--primary-text-color);
       cursor:pointer; font:inherit; font-size:13px; font-weight:650; }
     .v2-category-tab.active { border-color:var(--primary-color);
       background:color-mix(in srgb,var(--primary-color) 22%,var(--secondary-background-color)); }
-    .v2-category-tab ha-icon { --mdc-icon-size:20px; }
+    .v2-category-tab ha-icon { --mdc-icon-size:20px; flex:0 0 auto; }
+    .v2-category-tab span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .v2-body { flex:1 1 auto; min-height:0; overflow:auto; overscroll-behavior:contain;
       padding:clamp(10px,1.5vw,20px); scrollbar-width:thin; }
     .v2-body .catalog-section { margin:0; min-width:0; }
@@ -10015,7 +10017,9 @@ console.info(
       .v2-provider-strip .switcher .genre-select { min-width:0;
         max-width:none; width:100%; margin:0; }
       .v2-provider-strip .chip img { width:48px; height:48px; }
-      .v2-category-tab { padding:9px 12px; min-height:40px; font-size:12px; }
+      .v2-categories { gap:5px; }
+      .v2-category-tab { padding:9px 4px; gap:4px; min-height:40px; font-size:12px; }
+      .v2-category-tab ha-icon { --mdc-icon-size:17px; }
       .v2-body { padding:10px 9px; }
     }
   `;
@@ -10088,7 +10092,7 @@ console.info(
         tab.className = 'v2-category-tab' + (key === this._v2CategoryKey ? ' active' : '');
         tab.dataset.v2Category = key;
         tab.setAttribute('aria-pressed', String(key === this._v2CategoryKey));
-        tab.innerHTML = `<ha-icon icon="${tabIcons[key]}" aria-hidden="true"></ha-icon><span>${this._t(tabLabels[key])}</span>`;
+        tab.innerHTML = `<ha-icon icon="${tabIcons[key]}" aria-hidden="true"></ha-icon><span>${key === 'provider-recent' ? (this._locale() === 'es' ? 'Recientes' : 'Recent') : this._t(tabLabels[key])}</span>`;
         tab.addEventListener('click', () => {
           if (this._v2CategoryKey === key && !this._v2ShowAll) return;
           this._v2CategoryKey = key;
