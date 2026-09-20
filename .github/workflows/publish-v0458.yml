@@ -1,0 +1,25 @@
+name: Publish Streaming Browser Card v0.4.58
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/publish-v0458.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm version and publish release for HACS
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          grep -q '^ \* v0\.4\.58$' streaming-browser-card.js
+          node --check streaming-browser-card.js
+          if ! gh release view v0.4.58 >/dev/null 2>&1; then
+            gh release create v0.4.58 --target "$(git rev-parse HEAD)" --title 'v0.4.58' --notes 'Simplified title popup with Nuvio remote, separate HDMI display routing, and an always-visible loaded-version label.'
+          fi
