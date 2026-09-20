@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant: LG webOS, Android TV and Roku TV
- * v0.4.83
+ * v0.4.84
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.83";
+const STREAMING_BROWSER_VERSION = "0.4.84";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -4984,15 +4984,42 @@ class StreamingBrowserCard extends HTMLElement {
         min-height: 36px;
       }
 
-      /* Icon-only source actions stay compact and tappable on mobile. */
-      .mini-btn.icon-action {
-        width: 44px;
-        min-width: 44px;
-        height: 44px;
-        padding: 0;
-        flex: 0 0 44px;
+      /* Compact action captions v0.4.84 */
+      .provider-actions .mini-btn.icon-action {
+        box-sizing: border-box;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        width: 74px;
+        min-width: 74px;
+        height: 72px;
+        min-height: 72px;
+        padding: 6px 4px;
+        flex: 0 0 74px;
+        border-radius: 14px;
+        text-align: center;
+        line-height: 1.15;
       }
-      .mini-btn.icon-action ha-icon { --mdc-icon-size: 24px; }
+      .provider-actions .mini-btn.icon-action ha-icon {
+        --mdc-icon-size: 26px;
+        flex: none;
+      }
+      .provider-actions .provider-action-caption {
+        display: block;
+        max-width: 100%;
+        font-size: 11px;
+        line-height: 1.15;
+        font-weight: 550;
+        white-space: nowrap;
+      }
+      @media(max-width:600px) {
+        .provider-actions .mini-btn.icon-action {
+          width: 64px; min-width: 64px; flex-basis: 64px;
+          height: 68px; min-height: 68px;
+        }
+      }
 
       .mini-btn.title {
         background:
@@ -5116,6 +5143,19 @@ class StreamingBrowserCard extends HTMLElement {
         const sourceStatus = isSeries ? "" : loading
           ? this._t("local_link_loading")
           : !url ? this._t("local_link_missing") : "";
+        // The label is the resolved destination of this particular action,
+        // not the type of content selected in TMDB. A series URL must never be
+        // advertised as an exact episode when one is selected.
+        const exactKind = !url ? "app" : isSeries
+          ? (exact?.scope === "episode" && validEpisodeLink(exact) ? "episode" : "app")
+          : "movie";
+        const es = this._locale().startsWith("es");
+        const captions = es
+          ? { episode: "Episodio", season: "Temporada", series: "Serie", movie: "Película", app: "App" }
+          : { episode: "Episode", season: "Season", series: "Series", movie: "Movie", app: "App" };
+        const exactTv = Boolean(url) && this._platform() !== "roku";
+        const tvCaption = captions[exactTv ? exactKind : "app"];
+        const deviceCaption = captions[exactKind];
         return `
           <div class="provider-card">
             <span class="provider-brand ${provider.logo_path ? "" : "provider-brand-fallback"}"
@@ -5127,18 +5167,17 @@ class StreamingBrowserCard extends HTMLElement {
             <div class="provider-main">
               ${sourceStatus ? `<span class="provider-source">${this._esc(sourceStatus)}</span>` : ""}
               <div class="provider-actions">
-                ${url ? `
-                  ${this._platform() !== "roku" ? `<button type="button" class="mini-btn title icon-action"
-                    data-title-provider="${this._esc(name)}"
-                    aria-label="${this._esc(this._t("open_on_tv"))}"
-                    title="${this._esc(this._t("open_on_tv"))}"><ha-icon icon="mdi:television-play" aria-hidden="true"></ha-icon></button>` : ""}
-                  <a class="mini-btn icon-action" href="${this._esc(url)}" target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label="${this._esc(this._t("open_this_device"))}"
-                    title="${this._esc(this._t("open_this_device"))}"><ha-icon icon="mdi:cellphone-play" aria-hidden="true"></ha-icon></a>
-                ` : ""}
-                ${tvSource ? `<button type="button" class="mini-btn"
-                  data-open-provider="${this._esc(name)}">${this._esc(this._t("open_app"))}</button>` : ""}
+                ${(exactTv || tvSource) ? `<button type="button"
+                  class="mini-btn ${exactTv ? "title " : ""}icon-action"
+                  ${exactTv ? `data-title-provider="${this._esc(name)}"` : `data-open-provider="${this._esc(name)}"`}
+                  aria-label="${this._esc(this._t("open_on_tv"))}: ${this._esc(tvCaption)}"
+                  title="${this._esc(this._t("open_on_tv"))}: ${this._esc(tvCaption)}"
+                ><ha-icon icon="mdi:television-play" aria-hidden="true"></ha-icon><span class="provider-action-caption">${this._esc(tvCaption)}</span></button>` : ""}
+                ${url ? `<a class="mini-btn icon-action" href="${this._esc(url)}" target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="${this._esc(this._t("open_this_device"))}: ${this._esc(deviceCaption)}"
+                  title="${this._esc(this._t("open_this_device"))}: ${this._esc(deviceCaption)}"
+                ><ha-icon icon="mdi:cellphone-play" aria-hidden="true"></ha-icon><span class="provider-action-caption">${this._esc(deviceCaption)}</span></a>` : ""}
               </div>
             </div>
           </div>`;
