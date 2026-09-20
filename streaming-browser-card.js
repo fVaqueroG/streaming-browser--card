@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.56
+ * v0.4.57
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -86,6 +86,7 @@ class StreamingBrowserCard extends HTMLElement {
     this._lastTvSourcesKey = "";
     this._selectedProfile = null;
     this._watchmodeCache = new Map();
+    this._remoteExpanded = false;
   }
 
   static async getConfigElement() {
@@ -508,6 +509,13 @@ class StreamingBrowserCard extends HTMLElement {
     this._render();
   }
 
+  disconnectedCallback() {
+    if (this._remoteExpanded) {
+      this._remoteExpanded = false;
+      document.getElementById("nuvio-remote-portal")?.remove();
+    }
+  }
+
   getCardSize() {
     return 9;
   }
@@ -745,6 +753,60 @@ class StreamingBrowserCard extends HTMLElement {
     }
 
     return value;
+  }
+
+  async _toggleNuvioRemote() {
+    if (this._remoteExpanded) {
+      this._remoteExpanded = false;
+      document.getElementById("nuvio-remote-portal")?.remove();
+      this._updateNuvioRemoteButton();
+      return;
+    }
+    if (document.getElementById("nuvio-remote-portal")) {
+      this._toast("Close the other TV remote before opening this one.");
+      return;
+    }
+    try {
+      let RemoteCard = customElements.get("nuvio-card");
+      if (!RemoteCard) {
+        await import("/nuvio/nuvio-card.js");
+        RemoteCard = customElements.get("nuvio-card");
+      }
+      if (typeof RemoteCard?.prototype?.syncRemotePortal !== "function") {
+        throw new Error("The Nuvio remote is not available.");
+      }
+      const card = this;
+      this._remoteExpanded = true;
+      RemoteCard.prototype.syncRemotePortal.call({
+        _config: { show_remote: true, remote_side: card._config.remote_side || "left" },
+        get _remoteExpanded() { return card._remoteExpanded; },
+        set _remoteExpanded(value) { card._remoteExpanded = Boolean(value); },
+        remoteKey: async (key) => {
+          try {
+            await card._hass.callService("nuvio", "remote_key", { key },
+              { entity_id: card._config.tv_entity });
+          } catch (err) {
+            card._toast("TV remote: " + card._formatError(err));
+          }
+        },
+        removeRemotePortal: () => document.getElementById("nuvio-remote-portal")?.remove(),
+        updateRemoteButtons: () => card._updateNuvioRemoteButton(),
+      });
+      this._updateNuvioRemoteButton();
+    } catch (err) {
+      this._remoteExpanded = false;
+      this._updateNuvioRemoteButton();
+      this._toast("TV remote: " + this._formatError(err));
+    }
+  }
+
+  _updateNuvioRemoteButton() {
+    this.shadowRoot?.querySelectorAll(".streaming-remote-toggle").forEach((button) => {
+      button.setAttribute("aria-pressed", String(this._remoteExpanded));
+      button.style.background = this._remoteExpanded
+        ? "var(--primary-color)" : "var(--secondary-background-color)";
+      button.style.color = this._remoteExpanded ? "white" : "var(--primary-text-color)";
+    });
   }
 
   _sleep(ms) {
@@ -2642,6 +2704,7 @@ class StreamingBrowserCard extends HTMLElement {
     source,
     options = {}
   ) {
+    if (this._config.manual_profile_selection !== false) return;
     const profileName = this._selectedProfile;
 
     if (!profileName) return;
@@ -4746,6 +4809,10 @@ class StreamingBrowserCard extends HTMLElement {
         }
 
         .top {
+          position: sticky;
+          top: 0;
+          z-index: 20;
+          background: var(--card-background-color);
           display: flex;
           align-items: center;
           gap: 12px;
@@ -5130,6 +5197,13 @@ class StreamingBrowserCard extends HTMLElement {
               }
             </div>
 
+            <button
+              class="streaming-remote-toggle"
+              type="button" title="TV remote" aria-label="TV remote"
+              aria-pressed="${this._remoteExpanded ? "true" : "false"}"
+              style="width:38px;height:38px;flex:0 0 38px;border:0;border-radius:50%;background:var(--secondary-background-color);color:var(--primary-text-color);display:grid;place-items:center;cursor:pointer;"
+            ><ha-icon icon="mdi:remote-tv" style="--mdc-icon-size:19px"></ha-icon></button>
+
             <input
               class="search"
               type="search"
@@ -5138,7 +5212,7 @@ class StreamingBrowserCard extends HTMLElement {
             >
           </div>
 
-          ${this._renderProfileSelector()}
+          ${this._config.manual_profile_selection === false ? this._renderProfileSelector() : ""}
 
           <div class="switcher">
             <button
@@ -5199,11 +5273,13 @@ class StreamingBrowserCard extends HTMLElement {
               `
           }
 
+          ${this._config.manual_profile_selection === false ? `
           <div class="note">
             ${this._t("active_profile")}
             <b>${this._esc(this._selectedProfile || this._t("none"))}</b>.
             ${this._t("footer_note")}
           </div>
+          ` : ""}
 
           ${
             this._details
@@ -5234,6 +5310,10 @@ class StreamingBrowserCard extends HTMLElement {
   _bindEvents() {
     const root = this.shadowRoot;
     if (!root) return;
+    root.querySelector(".streaming-remote-toggle")?.addEventListener(
+      "click", () => this._toggleNuvioRemote()
+    );
+    this._updateNuvioRemoteButton();
 
     root
       .querySelectorAll("[data-profile]")
