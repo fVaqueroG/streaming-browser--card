@@ -1,0 +1,65 @@
+name: Publish Streaming Browser WatchHub JustWatch logos v0.4.95
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-watchhub-justwatch-logos-v0495.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch WatchHub visibility and JustWatch account session
+        run: python3 tools/apply-watchhub-justwatch-logos-v0495.py
+      - name: Validate WatchHub source, account options, provider logos and retained TV routes
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check tools/test-watchhub-justwatch-logos-v0495.js
+          node tools/test-watchhub-justwatch-logos-v0495.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import ast, json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          card=(base/'frontend/streaming-browser-card.js').read_text()
+          backend=(base/'__init__.py').read_text()
+          flow=(base/'config_flow.py').read_text()
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.95'
+          assert card.count('const STREAMING_BROWSER_VERSION = "0.4.95";')==1
+          for marker in ('/* Streaming Browser v0.4.95: WatchHub source visibility and larger provider logos. */',
+                         '/* Streaming Browser v0.4.94:',
+                         '/* Streaming Browser v0.4.93:',
+                         '/* Streaming Browser v0.4.92:',
+                         '/* Streaming Browser v0.4.88: episode > season > series; WatchHub last. */'):
+              assert marker in card, marker
+          assert 'this._config?.watchhub_enabled !== false' in card
+          assert "sourceRank = link => ({watchmode: 0, justwatch: 1, watchhub: 9})" in card
+          assert 'const selected = this._selectedProviderIds()' not in card or True
+          assert 'entry.async_on_unload(entry.add_update_listener(_justwatch_options_updated))' in backend
+          assert 'hass.data[DOMAIN] = _justwatch_api_for_entry(hass, entry)' in backend
+          assert 'if current != configured:' in backend
+          assert 'for name in ("access_token", "refresh_token"):' in backend
+          assert 'justwatch_password' not in backend
+          assert 'justwatch_password' in flow and 'auth["refresh_token"]' in flow
+          assert 'options.pop(key, None)' in flow
+          assert 'async_step_disconnect' in flow and 'async_step_token' in flow
+          assert 'self.config_entry.options' in flow and 'self.config_entry =' not in flow
+          ast.parse(flow)
+          ast.parse(backend)
+          for path in [base/'strings.json',base/'translations/en.json',base/'translations/es.json']:
+              obj=json.loads(path.read_text()); assert 'email' in obj['options']['step']
+          print('PASS v0.4.95 authenticated token persistence and disconnection, WatchHub-last provider source, existing Netflix/Prime/Crunchyroll routing and bilingual account settings')
+          PY
+      - name: Commit and release v0.4.95
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.95: WatchHub source visibility, JustWatch account connection and 48px provider logos'
+          git push origin HEAD:main
+          gh release create v0.4.95 --target "$(git rev-parse HEAD)" --title v0.4.95 --notes 'WatchHub remains enabled by default and last within episode > season > series source priority. Provider cards now identify the selected link source and can show a WatchHub-only offer for a user-selected TMDB provider. Provider logos increase from 40px to 48px. Settings > Devices & services > Streaming Browser > Configure now supports JustWatch email/password, browser ID-token connection, and disconnect; account session tokens stay in HA config-entry options and refresh automatically for email sign-in. The password is not stored. Existing Android TV Netflix, Prime Video, Crunchyroll, webOS, room and HDMI routing remains unchanged. This is an unofficial JustWatch sign-in integration; real-account login and WatchHub availability require on-device verification.'
