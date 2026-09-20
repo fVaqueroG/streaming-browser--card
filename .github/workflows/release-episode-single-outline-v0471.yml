@@ -1,4 +1,4 @@
-name: One selected-episode outline v0.4.71
+name: Episode outline and sticky header v0.4.71
 on:
   push:
     branches: [main]
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Patch episode selection border
+      - name: Patch episode selection border and sticky title header
         run: python3 tools/episode-single-outline-v0471.py
       - name: Validate card, layout and integration version
         shell: bash
@@ -28,21 +28,24 @@ jobs:
           const Card=registry.get('streaming-browser-card');
           if(!Card||!registry.get('streaming-browser-card-editor'))throw Error('Card/editor missing');
           if(!window.customCards.some(card=>card.type==='streaming-browser-card'))throw Error('Named card missing');
-          const prototype=Card.prototype;
-          const styles=prototype._detailStyles.call({});
-          const wrapper=styles.match(/\.episode-row-container\.selected\s*\{([^}]+)\}/)?.[1]||'';
-          if(!/border\s*:\s*2px solid var\(--primary-color\)/.test(wrapper)||!/border-radius\s*:\s*12px/.test(wrapper))throw Error('Shared 2px blue selected border missing');
-          const child=styles.match(/\.episode-row-container\.selected \.episode-row\.active\s*\{([^}]+)\}/)?.[1]||'';
-          if(!/border\s*:\s*0/.test(child)||!/box-shadow\s*:\s*none/.test(child))throw Error('Nested blue episode row outline remains');
-          const links=styles.match(/\.episode-inline-actions\s*\{([^}]+)\}/)?.[1]||'';
-          if(!/border\s*:\s*0/.test(links)||!/border-top\s*:\s*1px solid var\(--divider-color\)/.test(links))throw Error('Expanded links still have their own blue outline');
-          const mock={_t:s=>s,_esc:s=>String(s),_img:()=>'',_config:{region:'MX'},_locale:()=> 'en',_renderProviderCards:()=>''};
+          const proto=Card.prototype, styles=proto._detailStyles.call({});
+          const css=pattern=>styles.match(pattern)?.[1]||'';
+          const wrapper=css(/\.episode-row-container\.selected\s*\{([^}]+)\}/);
+          if(!/border\s*:\s*2px solid var\(--primary-color\)/.test(wrapper)||!/border-radius\s*:\s*12px/.test(wrapper))throw Error('Shared 2px selected border missing');
+          const child=css(/\.episode-row-container\.selected \.episode-row\.active\s*\{([^}]+)\}/);
+          if(!/border\s*:\s*0/.test(child)||!/box-shadow\s*:\s*none/.test(child))throw Error('Nested episode row accent outline remains');
+          const links=css(/\.episode-inline-actions\s*\{([^}]+)\}/);
+          if(!/border\s*:\s*0/.test(links)||!/border-top\s*:\s*1px solid var\(--divider-color\)/.test(links))throw Error('Expanded links have a second accent border');
+          const sticky=css(/\.detail-sticky-header\s*\{([^}]+)\}/);
+          if(!/position\s*:\s*sticky/.test(sticky)||!/top\s*:\s*0/.test(sticky)||!/z-index\s*:\s*8/.test(sticky))throw Error('Sticky title header CSS missing');
+          const mock={_t:s=>s,_esc:s=>String(s),_img:()=>'',_config:{region:'MX'},_locale:()=> 'en',_renderProviderCards:()=>'',_detailProviders:()=>[],_remoteExpanded:false};
           const detail={seriesSeasons:[{season_number:1}],selectedSeason:1,selectedEpisode:{episode_number:3},episodes:[{episode_number:2,name:'Two'},{episode_number:3,name:'Three'}],episodeSourcesLoading:false,episodeSources:[{web_url:'https://example.com'}],providersLoading:false};
-          const html=prototype._renderEpisodeBrowser.call(mock,detail);
-          const selected=html.match(/<div class="episode-row-container selected">/g)||[];
-          const ordinary=html.match(/<div class="episode-row-container ">/g)||[];
-          if(selected.length!==1||ordinary.length!==1||!html.includes('class="episode-inline-actions"'))throw Error('Only selected episode must have shared border');
-          console.log('PASS: single continuous 2px border for episode + links; no nested accent outline; card and editor intact');
+          const html=proto._renderEpisodeBrowser.call(mock,detail);
+          if((html.match(/<div class="episode-row-container selected">/g)||[]).length!==1||(html.match(/<div class="episode-row-container ">/g)||[]).length!==1||!html.includes('class="episode-inline-actions"'))throw Error('Exactly one episode should have the shared border');
+          const full={...detail,loading:false,type:'tv',item:{name:'Test series'},details:{name:'Test series',genres:[],overview:'Test overview'},providers:{}};
+          const modal=proto._renderDetails.call({...mock,_details:full,_renderEpisodeBrowser:()=>html});
+          if((modal.match(/<header class="detail-sticky-header">/g)||[]).length!==1||!modal.includes('detail-sticky-title')||!modal.includes('aria-label="TV remote"')||!modal.includes('aria-label="Close title details"'))throw Error('Missing sticky title/remote/close controls in details modal');
+          console.log('PASS: 2px shared episode border; compact sticky detail header; episode markup, card and editor');
           JS
       - name: Publish HACS Integration v0.4.71
         env:
@@ -52,6 +55,6 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
-          git commit -m 'Use one uniform outline for selected episode and its sources v0.4.71'
+          git commit -m 'Unify selected episode outline and pin details header v0.4.71'
           git push origin HEAD:main
-          gh release create v0.4.71 --target "$(git rev-parse HEAD)" --title v0.4.71 --notes 'Make the selected episode and expanded streaming links one continuous panel with a single uniform 2px accent border. Remove the duplicate row and links outlines, keep a neutral separator, preserve detail scrolling and existing card configuration. Update HACS Integrations, restart Home Assistant, and fully reload the dashboard.'
+          gh release create v0.4.71 --target "$(git rev-parse HEAD)" --title v0.4.71 --notes 'Use one continuous, uniform 2px accent outline around the selected episode and its links. Keep the title plus close/remote controls visible in a compact sticky header while scrolling the episodes, and preserve the existing detail scrolling fix and card settings. Update via HACS Integrations, restart Home Assistant, and reload the dashboard.'
