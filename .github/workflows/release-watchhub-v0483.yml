@@ -31,7 +31,7 @@ jobs:
           assert card.count('const STREAMING_BROWSER_VERSION = "0.4.83";')==1
           assert card.count('/* Streaming Browser v0.4.83: optional WatchHub official-app link source. */')==1
           assert '/* Compact Nuvio-sized remote v0.4.82 */' in card
-          assert '/* Streaming Browser v0.4.80: single power toggle.' in card
+          assert '/* Streaming Browser v0.4.80: replace separate power buttons' in card
           assert 'ws_episode_links' in backend and 'ws_watchhub_links' in backend
           print('PASS integration version, Watchmode, JustWatch, power toggle, room routing and Nuvio-sized remote preserved')
           PY
