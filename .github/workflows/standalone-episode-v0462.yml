@@ -1,0 +1,61 @@
+name: Streaming Browser independent episode links v0.4.62
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/standalone-episode-v0462.yml"]
+permissions:
+  contents: write
+jobs:
+  validate-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Vendor JustWatch client for standalone runtime
+        shell: bash
+        run: |
+          # Copy the existing personally maintained lookup code into THIS
+          # project, once. The installed integration imports no Nuvio modules.
+          curl --fail --location --silent --show-error --retry 3 \
+            'https://raw.githubusercontent.com/fVaqueroG/home-assistant-nuvio/main/custom_components/nuvio/justwatch.py' \
+            -o custom_components/streaming_browser/justwatch.py
+          curl --fail --location --silent --show-error --retry 3 \
+            'https://raw.githubusercontent.com/fVaqueroG/home-assistant-nuvio/main/custom_components/nuvio/providers.py' \
+            -o custom_components/streaming_browser/providers.py
+          test -s custom_components/streaming_browser/justwatch.py
+          test -s custom_components/streaming_browser/providers.py
+          grep -q 'async_provider_offers' custom_components/streaming_browser/justwatch.py
+      - name: Apply versioned card migration
+        run: python3 tools/independent-episode-v0462.py
+      - name: Syntax and independent episode contract checks
+        shell: bash
+        run: |
+          node --check streaming-browser-card.js
+          python3 -m py_compile custom_components/streaming_browser/{__init__,justwatch,providers}.py
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('streaming-browser-card.js').read_text()
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.62";' in s
+          assert 'streaming_browser/episode_links' in s
+          assert 'data-episode-index=' in s
+          assert 'episode-inline-actions' in s
+          assert 'this._renderProviderCards(detail, this._detailProviders(), true)' in s
+          assert 'series ? (detail.selectedEpisode && !detail.episodeSourcesLoading' in s
+          assert '/nuvio/nuvio-card.js' not in s
+          assert '"nuvio", "remote_key"' not in s
+          assert 'this._details?.type === "tv"' in s
+          backend=Path('custom_components/streaming_browser/__init__.py').read_text()
+          assert 'streaming_browser/episode_links' in backend
+          assert 'season=msg["season"]' in backend and 'episode=msg["episode"]' in backend
+          print('PASS: independent backend, exact-episode guards, inline UI, native remote and JS/Python syntax')
+          PY
+      - name: Commit and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add streaming-browser-card.js custom_components/streaming_browser/justwatch.py custom_components/streaming_browser/providers.py
+          git commit -m 'v0.4.62: standalone JustWatch episode links, inline playback actions and independent TV remote'
+          git push origin HEAD:main
+          gh release create v0.4.62 --target "$(git rev-parse HEAD)" --title v0.4.62 --notes 'Independent, optional Streaming Browser Home Assistant backend resolves exact episode-level links through anonymous JustWatch lookup. Episode provider buttons expand directly beneath the selected episode. The TV remote no longer imports Nuvio or calls nuvio services. Install the bundled optional custom component separately as documented.'
