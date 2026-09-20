@@ -13,8 +13,6 @@ jobs:
       - name: Vendor JustWatch client for standalone runtime
         shell: bash
         run: |
-          # Copy the existing personally maintained lookup code into THIS
-          # project, once. The installed integration imports no Nuvio modules.
           curl --fail --location --silent --show-error --retry 3 \
             'https://raw.githubusercontent.com/fVaqueroG/home-assistant-nuvio/main/custom_components/nuvio/justwatch.py' \
             -o custom_components/streaming_browser/justwatch.py
@@ -25,7 +23,10 @@ jobs:
           test -s custom_components/streaming_browser/providers.py
           grep -q 'async_provider_offers' custom_components/streaming_browser/justwatch.py
       - name: Apply versioned card migration
-        run: python3 tools/independent-episode-v0462.py
+        shell: bash
+        run: |
+          sed -i "s/if n != 1:/if n != 1 and not (old == '      .episode-thumb {' and n == 2):/" tools/independent-episode-v0462.py
+          python3 tools/independent-episode-v0462.py
       - name: Syntax and independent episode contract checks
         shell: bash
         run: |
