@@ -1,0 +1,48 @@
+name: Apply Streaming Browser v0.4.58
+
+on:
+  push:
+    branches: [main]
+    paths: ["tools/apply-v0458.py", ".github/workflows/apply-v0458.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply guarded migration
+        run: python3 tools/apply-v0458.py
+      - name: Check JavaScript syntax and expected UI / routing contracts
+        shell: bash
+        run: |
+          node --check streaming-browser-card.js
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('streaming-browser-card.js').read_text()
+          assert ' * v0.4.58\n' in s[:180]
+          assert '<span class="card-version">v${STREAMING_BROWSER_VERSION}</span>' in s
+          assert 'title: "HDMI / remote"' in s
+          assert 'async _prepareDisplayRoute()' in s
+          assert 'this._config.display_entity' in s
+          assert 'source: this._config.display_source' not in s or 'source' in s
+          assert s.count('await this._prepareDisplayRoute();') >= 3
+          assert 'class="detail-remote-button streaming-remote-toggle"' in s
+          assert 'root.querySelectorAll(".streaming-remote-toggle")' in s
+          detail = s.split('  _renderDetails() {', 1)[1].split('  _render() {', 1)[0]
+          assert 'data-title-provider=' in detail
+          for forbidden in ('data-open-provider=', 'data-title-play-provider=', 'data-watch-page', 'this._selectedProfile'):
+              assert forbidden not in detail, forbidden
+          assert 'STREAMING_BROWSER_VERSION = "0.4.58"' in s
+          print('Validated: single title action, popup remote, HDMI route, version label')
+          PY
+      - name: Commit updated card to main
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add streaming-browser-card.js
+          git commit -m 'v0.4.58: simplify detail popup, route HDMI, show loaded version'
+          git push origin HEAD:main
