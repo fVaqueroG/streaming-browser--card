@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.96";
+const STREAMING_BROWSER_VERSION = "0.4.97";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -9795,4 +9795,85 @@ console.info(
         (this._formatError?.(error) || String(error)));
     }
   };
+})();
+
+/* Streaming Browser v0.4.97: close a different foreground streaming app before switching.
+ * Never stop an app when the selected provider is already foreground.
+ * Only force-stop recognized streaming apps on Android TV when ADB is configured;
+ * on other platforms use HOME to leave the current app before opening the next.
+ */
+(() => {
+  const Card = StreamingBrowserCard;
+  const oldPrepareRoute = Card.prototype._prepareDisplayRoute;
+  const catalog = [
+    {key: 'netflix', pkg: 'com.netflix.ninja', pattern: /netflix/i},
+    {key: 'prime', pkg: 'com.amazon.amazonvideo.livingroom', pattern: /(?:prime\s*video|amazon\s*prime|amazonvideo|amazonvideo\.livingroom)/i},
+    {key: 'crunchyroll', pkg: 'com.crunchyroll.crunchyroid', pattern: /crunchyroll/i},
+    {key: 'disney', pkg: 'com.disney.disneyplus', pattern: /disney/i},
+    {key: 'max', pkg: 'com.wbd.stream', pattern: /(?:^|[.\s])(?:hbo\s*)?max(?:$|[.\s])|com\.wbd\.stream|com\.hbo\.hbomax/i},
+    {key: 'youtube', pkg: 'com.google.android.youtube.tv', pattern: /youtube/i},
+    {key: 'plex', pkg: 'com.plexapp.android', pattern: /plex/i},
+    {key: 'paramount', pkg: 'com.cbs.ott', pattern: /paramount|com\.cbs\.ott/i},
+    {key: 'apple', pkg: 'com.apple.atve.androidtv.appletv', pattern: /apple\s*tv|com\.apple\.atve/i},
+  ];
+  const identify = value => catalog.find(app => app.pattern.test(String(value || ''))) || null;
+  const currentApp = card => card._platform() === 'android_tv'
+    ? card._androidActivity?.() || ''
+    : card._platform() === 'webos'
+      ? card._tvState?.()?.attributes?.source || ''
+      : card._tvState?.()?.attributes?.app_id ||
+        card._tvState?.()?.attributes?.source || '';
+  const leavePrevious = async (card, targetName) => {
+    const target = identify(targetName);
+    const previous = identify(currentApp(card));
+    // Unknown or system foreground apps must not be force-stopped.
+    // If already in the same streaming app, retain its running session.
+    if (!target || !previous || target.key === previous.key) return;
+    if (card._platform() === 'android_tv' && card._androidAdbEntity?.()) {
+      await card._androidAdbCommand('am force-stop ' + previous.pkg);
+      return;
+    }
+    // webOS/Roku/standard Android TV remotes can leave the foreground
+    // app with HOME, but cannot guarantee OS-level process termination.
+    if (card._platform() === 'android_tv' || card._platform() === 'roku') {
+      const remote = String(card._config?.remote_entity || '');
+      if (remote.startsWith('remote.')) {
+        await card._hass.callService('remote', 'send_command', {
+          entity_id: remote, command: 'HOME',
+        });
+      }
+    } else if (card._platform() === 'webos') {
+      await card._sendRemoteButton('HOME');
+    }
+  };
+  // Existing power/HDMI preparation runs first. The close operation
+  // happens just before each selected app's launch, not on idle renders.
+  Card.prototype._prepareDisplayRoute = async function(...args) {
+    await oldPrepareRoute.apply(this, args);
+    if (!this._appSwitchTarget || this._appSwitchChecked) return;
+    this._appSwitchChecked = true;
+    await leavePrevious(this, this._appSwitchTarget);
+  };
+  const wrap = (name, destination) => {
+    const original = Card.prototype[name];
+    if (typeof original !== 'function') return;
+    Card.prototype[name] = async function(...args) {
+      const priorTarget = this._appSwitchTarget;
+      const priorChecked = this._appSwitchChecked;
+      this._appSwitchTarget = destination(...args);
+      this._appSwitchChecked = false;
+      try { return await original.apply(this, args); }
+      finally {
+        this._appSwitchTarget = priorTarget;
+        this._appSwitchChecked = priorChecked;
+      }
+    };
+  };
+  // Cover Play on TV, Open app, and the platform-specific playback
+  // helpers without modifying Netflix's verified source=30 intent.
+  wrap('_openExactTitle', provider => provider);
+  wrap('_launchProvider', provider => provider);
+  wrap('_playCrunchyrollWatch', () => 'Crunchyroll');
+  wrap('_openOfficialCrunchyrollApp', () => 'Crunchyroll');
+  wrap('_primeOpenGti', () => 'Prime Video');
 })();
