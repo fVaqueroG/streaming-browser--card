@@ -23,6 +23,6 @@ assert(remote.includes('await this._sendRemoteButton(key)'), 'platform-specific 
 assert(remote.includes('volumeEntity = this._config.display_entity || this._config.tv_entity'), 'display TV volume routing remains');
 assert(card.includes('/* Streaming Browser v0.4.78: room and connection routing.'));
 assert(card.includes('/* Streaming Browser v0.4.79: optional per-connection power helper.'));
-assert(card.includes('/* Streaming Browser v0.4.80: single power toggle.'));
+assert(card.includes('/* Streaming Browser v0.4.80: replace separate power buttons with a single state-driven switch.'));
 assert(card.includes('const STREAMING_BROWSER_VERSION = "0.4.82";'));
 console.log('PASS Nuvio 176/166px popup and 132/122px D-pad; all controls and existing room/power/volume routes preserved');
