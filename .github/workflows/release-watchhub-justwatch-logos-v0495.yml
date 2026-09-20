@@ -29,14 +29,13 @@ jobs:
           assert json.loads((base/'manifest.json').read_text())['version']=='0.4.95'
           assert card.count('const STREAMING_BROWSER_VERSION = "0.4.95";')==1
           for marker in ('/* Streaming Browser v0.4.95: WatchHub source visibility and larger provider logos. */',
-                         '/* Streaming Browser v0.4.94:',
-                         '/* Streaming Browser v0.4.93:',
-                         '/* Streaming Browser v0.4.92:',
-                         '/* Streaming Browser v0.4.88: episode > season > series; WatchHub last. */'):
+                         '/* Streaming Browser v0.4.88: episode > season > series; WatchHub last. */',
+                         '/* Streaming Browser v0.4.91: Crunchyroll Android TV opens its installed app, never a generic web intent. */'):
               assert marker in card, marker
+          for token in ('com.netflix.ninja', 'com.crunchyroll.crunchyroid', 'app.primevideo.com'):
+              assert token in card, token
           assert 'this._config?.watchhub_enabled !== false' in card
           assert "sourceRank = link => ({watchmode: 0, justwatch: 1, watchhub: 9})" in card
-          assert 'const selected = this._selectedProviderIds()' not in card or True
           assert 'entry.async_on_unload(entry.add_update_listener(_justwatch_options_updated))' in backend
           assert 'hass.data[DOMAIN] = _justwatch_api_for_entry(hass, entry)' in backend
           assert 'if current != configured:' in backend
