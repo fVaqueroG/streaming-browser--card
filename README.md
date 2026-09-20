@@ -101,3 +101,8 @@ Restores attempting existing provider-specific Netflix/Prime TV links that v0.4.
 ## v0.4.88: restore v0.4.82 TV links
 
 Restores the actual v0.4.82 Watchmode/JustWatch source-selection and Netflix, Prime Video and general TV link-launch methods from the historical release tag. Existing WatchHub remains an optional fallback only when an old source is empty, rather than replacing working links. The compact TV button now attempts the v0.4.82 content route when a valid link exists. Rooms, power helper, compact controls, and optional ADB remote are retained. TV app acceptance of external links still depends on the device and app.
+
+
+## v0.4.89: Netflix episode TV navigation
+
+Netflix episode Play on TV no longer routes the selected `/watch/<episodeId>?trackId=...` HTTPS link through Android TV's generic activity handler (which can merely open Netflix). Android TV uses the Netflix-native episode content ID, via the optional ADB media player/remote if configured or the standard Android TV Remote otherwise. LG webOS sends the original provider episode URL, including its existing trackId, to Netflix `contentTarget` before attempting an episode-specific webOS launch fallback. Play in device retains the unchanged source URL; Watchmode/JustWatch/WatchHub and episode > season > series priority are unchanged. A successful Home Assistant service call does not guarantee that a particular Netflix TV app build supports exact episode navigation.
