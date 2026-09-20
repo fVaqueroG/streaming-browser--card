@@ -1,0 +1,42 @@
+name: Publish Streaming Browser compact remote v0.4.82
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-compact-remote-v0482.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Match Nuvio remote dimensions without dropping controls
+        run: python3 tools/apply-compact-remote-v0482.py
+      - name: Validate layout and existing command handlers
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node tools/test-compact-remote-v0482.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          manifest=json.loads((base/'manifest.json').read_text())
+          card=(base/'frontend/streaming-browser-card.js').read_text()
+          assert manifest['version']=='0.4.82'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.82";' in card
+          assert card.count('/* Compact Nuvio-sized remote v0.4.82 */')==1
+          print('PASS compact remote bundled; card and integration versions match')
+          PY
+      - name: Commit tested integration and publish v0.4.82
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.82: match compact Nuvio remote dimensions and retain all controls'
+          git push origin HEAD:main
+          gh release create v0.4.82 --target "$(git rev-parse HEAD)" --title v0.4.82 --notes 'Shrink Streaming Browser TV remote to match Nuvio: 176px wide on desktop/166px on mobile, with 132px/122px D-pad. Preserve full numeric keypad, Wake, Back, Home, Play/Pause, Mute, volume, Roku/Android/webOS dispatch, room and smart-plug routing. Update HACS Integration, restart Home Assistant and reload the dashboard.'
