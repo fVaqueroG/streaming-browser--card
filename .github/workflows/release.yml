@@ -1,49 +1,48 @@
-name: Publish card release
-
+name: Publish Streaming Browser integration release
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
-      - "streaming-browser-card.js"
+      - "custom_components/streaming_browser/**"
       - ".github/workflows/release.yml"
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
   release:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Read card version
+      - uses: actions/checkout@v4
+      - name: Verify single HACS package and version alignment
         id: version
         shell: bash
         run: |
-          VERSION="$(grep -m1 -oE 'v[0-9]+\.[0-9]+\.[0-9]+' streaming-browser-card.js)"
-          if [ -z "$VERSION" ]; then
-            echo "Could not find a semantic version in streaming-browser-card.js"
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Detected version: $VERSION"
-
-      - name: Create GitHub Release
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          meta=json.loads((base/'manifest.json').read_text())
+          assert meta['domain']=='streaming_browser' and meta['config_flow']
+          source=(base/'frontend/streaming-browser-card.js').read_text()
+          found=re.search(r'const STREAMING_BROWSER_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)";',source)
+          assert found, 'Bundled card version label missing'
+          assert found.group(1)==meta['version'], 'Bump BOTH manifest.version and bundled JS version before release'
+          assert (base/'config_flow.py').exists() and (base/'justwatch.py').exists()
+          with open('/tmp/streaming-browser-version','w') as file:
+              file.write(meta['version'])
+          print('PASS: matched integration and card versions', meta['version'])
+          PY
+          echo "version=v$(cat /tmp/streaming-browser-version)" >> "$GITHUB_OUTPUT"
+      - name: Create matching HACS integration release if new
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
-        shell: bash
         run: |
           if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "Release $VERSION already exists; nothing to do."
+            echo "Already released: $VERSION"
             exit 0
           fi
-
-          gh release create "$VERSION" \
-            --target "$GITHUB_SHA" \
-            --title "$VERSION" \
-            --generate-notes
+          gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --generate-notes
