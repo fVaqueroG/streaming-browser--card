@@ -1,0 +1,55 @@
+name: Publish Streaming Browser V2 aligned genre v0.4.102
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v2-aligned-genre-v04102.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Align V2 genre selector under Movies and Series
+        run: python3 tools/align-v2-genre-under-mode-v04102.py
+      - name: Validate V1 isolation, V2 layout and retained routing
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          v1=(base/'frontend/streaming-browser-card.js').read_text()
+          v2=(base/'frontend/streaming-browser-card-v2.js').read_text()
+          backend=(base/'__init__.py').read_text()
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.102'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.98";' in v1
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.102";' in v2
+          assert '.v2-provider-strip .switcher { display:grid;' in v2
+          assert 'grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px 6px;' in v2
+          assert '.v2-provider-strip .switcher .genre-select { grid-column:1 / -1;' in v2
+          assert 'width:100%; min-width:0; max-width:none; min-height:38px;' in v2
+          assert '.v2-provider-strip .switcher { flex-basis:min(100%,176px);' in v2
+          assert 'choiceBar.append(allChip);' in v2
+          assert 'scrollable.append(chips);' in v2
+          assert 'strip.append(switcher, choiceBar);' in v2
+          assert 'scrollable.scrollLeft = oldProviderScroll' in v2
+          assert 'streaming-browser-card-v2.js' in backend and 'streaming-browser-card.js' in backend
+          assert 'this._roomCurrent()' in v2 and 'this._selectRoomRoute' in v2
+          print('PASS aligned genre beneath both mode buttons, fixed All and filters, scrollable provider logos, independent V1 and retained TV routing')
+          PY
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js
+      - name: Commit and publish v0.4.102
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.102: align V2 genre selector with Movies and Series buttons'
+          git push origin HEAD:main
+          gh release create v0.4.102 --target "$(git rev-parse HEAD)" --title v0.4.102 --notes 'V2-only aligned fixed controls: Movies and Series on the first row, a genre selector directly beneath spanning exactly both button widths. The fixed All icon-and-label chip stays separate from horizontally scrolling provider icons, whose scroll offset is retained. Responsive phone/tablet layout, room selector, V1 card, playback and source routes remain unchanged. Update through HACS, restart HA and reload dashboard.'
