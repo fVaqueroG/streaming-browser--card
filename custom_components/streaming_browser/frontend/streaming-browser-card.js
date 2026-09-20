@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.97";
+const STREAMING_BROWSER_VERSION = "0.4.98";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -606,12 +606,9 @@ class StreamingBrowserCard extends HTMLElement {
   }
 
   getGridOptions() {
-    return {
-      rows: 9,
-      columns: 12,
-      min_rows: 5,
-      min_columns: 6,
-    };
+    // In a Sections view take all columns of the section, at every breakpoint.
+    // Height is content-driven: catalog rows and episode lists grow naturally.
+    return { columns: "full", min_columns: 12 };
   }
 
   async _initialize() {
@@ -4686,6 +4683,10 @@ class StreamingBrowserCard extends HTMLElement {
       .overlay {
         position: fixed;
         inset: 0;
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
         z-index: 9999;
         background: rgba(0,0,0,.68);
         display: flex;
@@ -4696,8 +4697,11 @@ class StreamingBrowserCard extends HTMLElement {
       }
 
       .detail {
-        width: min(860px,96vw);
-        max-height: 88vh;
+        /* Fluid modal: use the available viewport minus overlay padding. */
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        max-height: min(92vh, 92dvh);
         overflow: auto;
         background: var(--card-background-color);
         color: var(--primary-text-color);
@@ -5637,11 +5641,19 @@ class StreamingBrowserCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
+        /* Streaming Browser v0.4.98: container-responsive full-width layout. */
         :host {
           display: block;
+          box-sizing: border-box;
+          width: 100%;
+          min-width: 0;
+          max-width: 100%;
         }
 
         ha-card {
+          width: 100%;
+          min-width: 0;
+          max-width: 100%;
           overflow: hidden;
           background:
             var(
@@ -5655,9 +5667,17 @@ class StreamingBrowserCard extends HTMLElement {
         }
 
         .wrap {
-          padding: 18px;
+          width: 100%;
+          min-width: 0;
+          max-width: 100%;
+          padding: clamp(12px, 1.8vw, 24px);
           position: relative;
           min-height: 260px;
+        }
+        .catalog, .catalog-section, .catalog-row {
+          width: 100%;
+          min-width: 0;
+          max-width: 100%;
         }
 
         .top {
@@ -5713,7 +5733,8 @@ class StreamingBrowserCard extends HTMLElement {
 
         .search {
           flex: 1 1 260px;
-          max-width: 520px;
+          min-width: 0;
+          max-width: 100%;
           background: var(--secondary-background-color);
           border: 1px solid var(--divider-color);
           color: var(--primary-text-color);

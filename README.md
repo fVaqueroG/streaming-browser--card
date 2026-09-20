@@ -139,3 +139,8 @@ For account-authenticated JustWatch links, go to Settings → Devices & services
 
 ## v0.4.96: Netflix episode > season > series fallback
 On Android TV connections with a configured ADB media player, a Netflix TV Play request uses an exact /watch/ episode ID when available. If missing, it opens a valid season-specific Netflix /title/ URL for manual selection; otherwise it opens the series /title/ URL. It never relabels a generic series URL as a season or episode, and does not send keyevent 23, Enter, Play, or restart the app. If no Netflix URL is returned by the lookup sources, the card reports that the title link is unavailable rather than guessing a Netflix ID. The exact-title/movie intent retains source=30. Season/series navigation is a new route and its Netflix Android TV behavior requires an on-device test.
+
+
+## v0.4.98: adaptive card width on tablets and phones
+
+Streaming Browser requests full section width in Home Assistant Sections views and uses 100% of its allocated container, with a fluid detail popup instead of the former 860px cap. Search, catalog rows, and wrapper fit the available width without causing horizontal page overflow; phone styling, remote and playback integrations are unchanged. Home Assistant Masonry/sidebar/stack layouts still own their parent column width: for true screen-wide viewing, place this card alone in a Panel view, or use a full-width section with the card set to Full width on its Layout tab.
