@@ -1,0 +1,48 @@
+name: Publish Streaming Browser WatchHub official links v0.4.83
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-watchhub-v0483.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bundle region-aware WatchHub resolver and visual editor option
+        run: python3 tools/apply-watchhub-v0483.py
+      - name: Validate WatchHub provider URLs, episode matching and legacy integration
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check tools/streaming-browser-watchhub-v0483.js
+          node tools/test-watchhub-v0483.js
+          python3 tools/test-watchhub-v0483.py
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          card=(base/'frontend/streaming-browser-card.js').read_text()
+          backend=(base/'__init__.py').read_text()
+          manifest=json.loads((base/'manifest.json').read_text())
+          assert manifest['version']=='0.4.83'
+          assert card.count('const STREAMING_BROWSER_VERSION = "0.4.83";')==1
+          assert card.count('/* Streaming Browser v0.4.83: optional WatchHub official-app link source. */')==1
+          assert '/* Compact Nuvio-sized remote v0.4.82 */' in card
+          assert '/* Streaming Browser v0.4.80: single power toggle.' in card
+          assert 'ws_episode_links' in backend and 'ws_watchhub_links' in backend
+          print('PASS integration version, Watchmode, JustWatch, power toggle, room routing and Nuvio-sized remote preserved')
+          PY
+      - name: Commit validated implementation and publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/__init__.py custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.83: optional WatchHub official app links for movies and exact episodes'
+          git push origin HEAD:main
+          gh release create v0.4.83 --target "$(git rev-parse HEAD)" --title v0.4.83 --notes 'Add optional WatchHub externalUrl official-app navigation links to Streaming Browser, with country-specific lookup and strict IMDb movie/episode identification. No Nuvio installation or streaming account credentials needed. The exact-title visual editor includes a WatchHub toggle, enabled by default. Watchmode and JustWatch remain fallback sources, and the existing room, smart-plug, HDMI and compact TV remote behavior is retained. Update Streaming Browser in HACS, restart Home Assistant and refresh the dashboard.'
