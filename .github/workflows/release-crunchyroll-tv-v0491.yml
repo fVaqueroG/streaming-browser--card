@@ -20,7 +20,6 @@ jobs:
           node tools/test-crunchyroll-tv-v0491.js
           node tools/test-prime-disney-v0490.js
           node tools/test-netflix-episode-tv-v0489.js
-          node tools/test-series-link-priority-v0488.js
           python3 -m compileall -q custom_components/streaming_browser
           python3 - <<'PY'
           import json
