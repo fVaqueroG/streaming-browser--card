@@ -43,10 +43,14 @@ async def _register_card(hass: HomeAssistant) -> None:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(_CARD_URL, str(_CARD_FILE), cache_headers=False)]
     )
+    # Load the versioned module globally: the Add card picker needs its custom
+    # element and window.customCards metadata even without an existing card.
+    # The Lovelace resource below imports the identical URL, so the browser's
+    # module cache prevents duplicate evaluation and conflicting definitions.
+    frontend.add_extra_js_url(hass, _RESOURCE_URL)
 
     lovelace = hass.data.get(LOVELACE_DATA)
     if lovelace is None or lovelace.resource_mode != MODE_STORAGE:
-        frontend.add_extra_js_url(hass, _RESOURCE_URL)
         return
 
     collection = lovelace.resources

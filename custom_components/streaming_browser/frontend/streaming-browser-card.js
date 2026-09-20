@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.65
+ * v0.4.66
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.65";
+const STREAMING_BROWSER_VERSION = "0.4.66";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -94,7 +94,7 @@ class StreamingBrowserCard extends HTMLElement {
     this._remotePortal = null;
   }
 
-  static async getConfigElement() {
+  static getConfigElement() {
     return document.createElement(
       "streaming-browser-card-editor"
     );
@@ -6653,27 +6653,27 @@ if (!customElements.get("streaming-browser-card")) {
   );
 }
 
-window.customCards = window.customCards || [];
-
-if (
-  !window.customCards.some(
-    (card) =>
-      card.type === "streaming-browser-card"
-  )
-) {
-  window.customCards.push({
-    type: "streaming-browser-card",
-    name: "Streaming Browser Card",
-    description:
-      "Browse categorized TMDB catalogs in scrollable rows, select a profile, run secure PIN scripts, and launch streaming apps.",
-    preview: false,
-    documentationURL:
-      "https://developer.themoviedb.org/",
-  });
+// Make Streaming Browser searchable by name in Home Assistant's Add card picker.
+// Refresh metadata from a previously loaded resource without adding duplicates.
+window.customCards = Array.isArray(window.customCards) ? window.customCards : [];
+const streamingBrowserPickerEntry = {
+  type: "streaming-browser-card",
+  name: "Streaming Browser Card",
+  description: "Browse streaming movies and series; open titles on your TV or this device.",
+  preview: false,
+  documentationURL: "https://github.com/fVaqueroG/streaming-browser--card",
+};
+const streamingBrowserPreviousPickerEntry = window.customCards.find(
+  (card) => card?.type === streamingBrowserPickerEntry.type
+);
+if (streamingBrowserPreviousPickerEntry) {
+  Object.assign(streamingBrowserPreviousPickerEntry, streamingBrowserPickerEntry);
+} else {
+  window.customCards.push(streamingBrowserPickerEntry);
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.62 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.66 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );

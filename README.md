@@ -1,6 +1,11 @@
 # Streaming Browser — Home Assistant Integration
 
-**Current version: v0.4.64.** The dashboard card and independent episode-link backend are now **one HACS Integration**. All runtime files are bundled inside `custom_components/streaming_browser/`; the card's JavaScript is served automatically from `/streaming_browser/streaming-browser-card.js?v=0.4.63`. No manual file copying or `configuration.yaml` entry is required for a new install.
+## v0.4.66: Add card by name with its visual editor
+
+After updating **Streaming Browser** in HACS under **Integrations** and restarting Home Assistant, refresh the dashboard. In **Edit dashboard > Add card**, search for **Streaming Browser Card**, select its named card, and complete the visual editor. Do not select a Manual card or paste YAML. The integration loads the same versioned JavaScript globally for card-picker discovery and as a dashboard resource. Existing dashboard card settings remain intact.
+
+
+**Current version: v0.4.66.** The dashboard card and independent episode-link backend are now **one HACS Integration**. All runtime files are bundled inside `custom_components/streaming_browser/`; the card's JavaScript is served automatically from `/streaming_browser/streaming-browser-card.js?v=0.4.63`. No manual file copying or `configuration.yaml` entry is required for a new install.
 
 ## v0.4.65: Editor setup and automatic resource migration
 
