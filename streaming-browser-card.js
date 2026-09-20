@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.61
+ * v0.4.62
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.61";
+const STREAMING_BROWSER_VERSION = "0.4.62";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -89,6 +89,7 @@ class StreamingBrowserCard extends HTMLElement {
     this._selectedProfile = null;
     this._watchmodeCache = new Map();
     this._remoteExpanded = false;
+    this._remotePortal = null;
   }
 
   static async getConfigElement() {
@@ -585,7 +586,8 @@ class StreamingBrowserCard extends HTMLElement {
   disconnectedCallback() {
     if (this._remoteExpanded) {
       this._remoteExpanded = false;
-      document.getElementById("nuvio-remote-portal")?.remove();
+      this._remotePortal?.remove();
+      this._remotePortal = null;
     }
   }
 
@@ -717,7 +719,9 @@ class StreamingBrowserCard extends HTMLElement {
             "loading_episodes": "Loading episodes…",
             "no_episodes": "No episodes were reported for this season.",
             "episode_load_error": "Could not load episodes: {error}",
-            "episode_link_note": "These streaming links may open the series page rather than this exact episode. Select the episode in the provider app if necessary.",
+            "episode_link_note": "Episode links are shown only when available for the selected episode.",
+            "install_episode_backend": "Install the independent Streaming Browser Episode Links component and restart Home Assistant.",
+            "no_exact_episode_links": "No exact episode links were returned for this episode and region.",
             "open_this_device": "Open on this device",
             "local_link_loading": "Looking up title link…",
             "local_link_missing": "No exact provider link is available for this title.",
@@ -812,7 +816,9 @@ class StreamingBrowserCard extends HTMLElement {
             "loading_episodes": "Cargando episodios…",
             "no_episodes": "No hay episodios reportados para esta temporada.",
             "episode_load_error": "No se pudieron cargar los episodios: {error}",
-            "episode_link_note": "Estos enlaces pueden abrir la página de la serie en vez del episodio exacto. Si es necesario, selecciona el episodio en la app de la plataforma.",
+            "episode_link_note": "Se muestran enlaces únicamente cuando están disponibles para el episodio seleccionado.",
+            "install_episode_backend": "Instala el componente independiente Streaming Browser Episode Links y reinicia Home Assistant.",
+            "no_exact_episode_links": "No se encontraron enlaces directos para este episodio y región.",
             "open_this_device": "Abrir en este dispositivo",
             "local_link_loading": "Buscando enlace del título…",
             "local_link_missing": "No hay un enlace exacto de este proveedor para el título.",
@@ -857,46 +863,62 @@ class StreamingBrowserCard extends HTMLElement {
   async _toggleNuvioRemote() {
     if (this._remoteExpanded) {
       this._remoteExpanded = false;
-      document.getElementById("nuvio-remote-portal")?.remove();
+      this._remotePortal?.remove();
+      this._remotePortal = null;
       this._updateNuvioRemoteButton();
-      return;
-    }
-    if (document.getElementById("nuvio-remote-portal")) {
-      this._toast("Close the other TV remote before opening this one.");
       return;
     }
     try {
-      let RemoteCard = customElements.get("nuvio-card");
-      if (!RemoteCard) {
-        await import("/nuvio/nuvio-card.js");
-        RemoteCard = customElements.get("nuvio-card");
-      }
-      if (typeof RemoteCard?.prototype?.syncRemotePortal !== "function") {
-        throw new Error("The Nuvio remote is not available.");
-      }
       await this._prepareDisplayRoute();
-      const card = this;
+      const portal = document.createElement("div");
+      portal.className = "streaming-browser-remote-portal";
+      const right = this._config?.remote_side === "right";
+      portal.innerHTML = `
+        <style>
+          .sbr-remote {position:fixed;z-index:100500;top:70px;${right ? "right" : "left"}:16px;
+            width:min(310px,calc(100vw - 32px));max-height:calc(100dvh - 85px);overflow:auto;
+            padding:14px;border:1px solid #4b4b4b;border-radius:19px;
+            color:white;background:linear-gradient(150deg,#282828,#111);
+            box-shadow:0 14px 45px #0009;font:500 14px system-ui,sans-serif}
+          .sbr-head {display:flex;align-items:center;justify-content:space-between;gap:9px;margin-bottom:12px}
+          .sbr-remote button {font:inherit;cursor:pointer;color:white;background:#373737;
+            border:1px solid #555;border-radius:12px;min-height:41px}
+          .sbr-remote button:active {background:#147da7}
+          .sbr-x {width:36px;height:36px;min-height:36px!important;border-radius:50%!important}
+          .sbr-pad {width:194px;height:194px;margin:8px auto;display:grid;
+            grid-template:repeat(3,1fr)/repeat(3,1fr);gap:5px}
+          .sbr-pad button {border-radius:50%;font-size:21px}
+          .sbr-pad .sbr-ok {background:#1595cf;border-color:#1595cf;font-size:15px;font-weight:700}
+          .sbr-row {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+          .sbr-numbers {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:12px}
+        </style>
+        <section class="sbr-remote" role="dialog" aria-label="TV remote">
+          <header class="sbr-head"><strong>Control · ${this._esc(this._hass?.states?.[this._config.tv_entity]?.attributes?.friendly_name || this._config.tv_entity)}</strong>
+          <button type="button" class="sbr-x" data-close-remote aria-label="Close remote">×</button></header>
+          <div class="sbr-row"><button data-remote="WAKE">⏻ Wake</button>
+            <button data-remote="BACK">↶ Back</button><button data-remote="HOME">⌂ Home</button></div>
+          <div class="sbr-pad"><span></span><button data-remote="UP" aria-label="Up">▲</button><span></span>
+            <button data-remote="LEFT" aria-label="Left">◀</button><button data-remote="ENTER" class="sbr-ok">OK</button><button data-remote="RIGHT" aria-label="Right">▶</button>
+            <span></span><button data-remote="DOWN" aria-label="Down">▼</button><span></span></div>
+          <div class="sbr-row"><button data-remote="PLAY">▶ Play</button><button data-remote="PAUSE">Ⅱ Pause</button><button data-remote="MUTE">🔇 Mute</button></div>
+          <div class="sbr-numbers">${[1,2,3,4,5,6,7,8,9,"⌫",0,"↵"].map((n) => `<button data-remote="${n === "⌫" ? "BACK" : n === "↵" ? "ENTER" : n}">${n}</button>`).join("")}</div>
+        </section>`;
+      portal.querySelector("[data-close-remote]")?.addEventListener("click", () => this._toggleNuvioRemote());
+      portal.querySelectorAll("[data-remote]").forEach((button) => button.addEventListener("click", async () => {
+        try {
+          const key = button.dataset.remote;
+          if (key === "WAKE") await this._ensureTvOn();
+          else if (key === "MUTE") await this._hass.callService("media_player", "volume_mute", {entity_id:this._config.tv_entity,is_volume_muted:true});
+          else await this._sendRemoteButton(key);
+        } catch (err) { this._toast(`TV remote: ${this._formatError(err)}`); }
+      }));
+      document.body.appendChild(portal);
+      this._remotePortal = portal;
       this._remoteExpanded = true;
-      RemoteCard.prototype.syncRemotePortal.call({
-        _config: { show_remote: true, remote_side: card._config.remote_side || "left" },
-        get _remoteExpanded() { return card._remoteExpanded; },
-        set _remoteExpanded(value) { card._remoteExpanded = Boolean(value); },
-        remoteKey: async (key) => {
-          try {
-            await card._hass.callService("nuvio", "remote_key", { key },
-              { entity_id: card._config.tv_entity });
-          } catch (err) {
-            card._toast("TV remote: " + card._formatError(err));
-          }
-        },
-        removeRemotePortal: () => document.getElementById("nuvio-remote-portal")?.remove(),
-        updateRemoteButtons: () => card._updateNuvioRemoteButton(),
-      });
       this._updateNuvioRemoteButton();
     } catch (err) {
       this._remoteExpanded = false;
-      this._updateNuvioRemoteButton();
-      this._toast("TV remote: " + this._formatError(err));
+      this._toast(`TV remote: ${this._formatError(err)}`);
     }
   }
 
@@ -1744,8 +1766,10 @@ class StreamingBrowserCard extends HTMLElement {
     this._render();
     if (this._details?.details && !this._details.error) {
       const currentDetail = this._details;
-      currentDetail.localSourcesLoading = true;
-      void this._primeLocalTitleLinks(currentDetail);
+      if (currentDetail.type !== "tv") {
+        currentDetail.localSourcesLoading = true;
+        void this._primeLocalTitleLinks(currentDetail);
+      }
       if (currentDetail.type === "tv" && currentDetail.selectedSeason !== null) {
         void this._loadSeasonEpisodes(currentDetail, currentDetail.selectedSeason);
       }
@@ -1790,7 +1814,41 @@ class StreamingBrowserCard extends HTMLElement {
     const episode = detail.episodes?.[index];
     if (!episode) return;
     detail.selectedEpisode = episode;
+    detail.episodeSources = [];
+    detail.episodeSourcesError = "";
+    detail.episodeSourcesLoading = true;
     this._render();
+    void this._loadIndependentEpisodeLinks(detail, episode);
+  }
+
+  async _loadIndependentEpisodeLinks(detail, episode) {
+    const season = Number(detail.selectedSeason);
+    const number = Number(episode.episode_number);
+    try {
+      const response = await this._hass.callWS({
+        type: "streaming_browser/episode_links",
+        tmdb_id: Number(detail.item.id),
+        title: String(detail.details?.name || detail.item.name || ""),
+        season, episode: number,
+        region: this._config.region || "MX",
+        language: this._languageCode(),
+      });
+      if (this._details !== detail || detail.selectedEpisode !== episode ||
+          Number(detail.selectedSeason) !== season) return;
+      detail.episodeSources = (Array.isArray(response?.links) ? response.links : [])
+        .filter((link) => link?.scope === "episode" &&
+          Number(link.season) === season && Number(link.episode) === number &&
+          typeof link.web_url === "string" && /^https:\/\//i.test(link.web_url));
+    } catch (err) {
+      if (this._details !== detail || detail.selectedEpisode !== episode) return;
+      detail.episodeSources = [];
+      detail.episodeSourcesError = this._formatError(err);
+    } finally {
+      if (this._details === detail && detail.selectedEpisode === episode) {
+        detail.episodeSourcesLoading = false;
+        this._render();
+      }
+    }
   }
 
   async _primeLocalTitleLinks(detail) {
@@ -3941,8 +3999,11 @@ class StreamingBrowserCard extends HTMLElement {
       await this._prepareDisplayRoute();
       const tv = await this._ensureTvOn();
 
-      const sources =
-        await this._watchmodeSourcesForCurrentTitle();
+      const detail = this._details;
+      const series = detail?.type === "tv";
+      const sources = series
+        ? (detail.selectedEpisode && !detail.episodeSourcesLoading ? detail.episodeSources || [] : [])
+        : await this._watchmodeSourcesForCurrentTitle();
 
       const match =
         this._pickWatchmodeSource(
@@ -4164,6 +4225,10 @@ class StreamingBrowserCard extends HTMLElement {
       }
 
     } catch (err) {
+      if (this._details?.type === "tv") {
+        this._toast(this._t("title_open_failed", { error: this._formatError(err) }));
+        return; // Never open the series home as an episode-link fallback.
+      }
       const fallback =
         this._config
           .exact_title_fallback_to_app !==
@@ -4445,6 +4510,10 @@ class StreamingBrowserCard extends HTMLElement {
         background:var(--secondary-background-color); color:var(--primary-text-color); }
       .episode-row.active { border-color:var(--primary-color);
         box-shadow:inset 0 0 0 1px var(--primary-color); }
+      .episode-row-container { border-bottom:1px solid var(--divider-color); }
+      .episode-inline-actions { padding:12px 12px 17px;background:var(--secondary-background-color);
+        border:1px solid var(--primary-color);border-radius:0 0 12px 12px;margin:0 0 9px; }
+      .episode-inline-actions .provider-grid { margin-top:8px; }
       .episode-thumb { width:118px; aspect-ratio:16/9; flex:0 0 118px;
         border-radius:8px; object-fit:cover; background:var(--card-background-color); }
       .episode-fallback { display:grid; place-items:center; }
@@ -4610,7 +4679,15 @@ class StreamingBrowserCard extends HTMLElement {
       const thumb = this._img(episode.still_path, "w300");
       const runtime = episode.runtime ? `${episode.runtime} min` : "";
       const meta = [episode.air_date, runtime].filter(Boolean).join(" · ");
-      return `<button type="button" class="episode-row ${active ? "active" : ""}"
+      const inlineActions = active ? `<div class="episode-inline-actions">
+        <strong>${this._t("where_to_watch")} ${this._esc(this._config.region)}</strong>
+        ${detail.episodeSourcesLoading ? `<p class="episode-link-note">${this._t("local_link_loading")}</p>` : ""}
+        ${detail.episodeSourcesError ? `<p class="episode-link-note">${this._esc(detail.episodeSourcesError)} · ${this._t("install_episode_backend")}</p>` : ""}
+        ${!detail.episodeSourcesLoading && !detail.episodeSourcesError && !detail.episodeSources?.length
+            ? `<p class="episode-link-note">${this._t("no_exact_episode_links")}</p>` : ""}
+        <div class="provider-grid">${this._renderProviderCards(detail, this._detailProviders(), true)}</div>
+      </div>` : "";
+      return `<div class="episode-row-container"><button type="button" class="episode-row ${active ? "active" : ""}"
         data-episode-index="${index}" aria-pressed="${String(Boolean(active))}">
         ${thumb ? `<img class="episode-thumb" loading="lazy" src="${this._esc(thumb)}" alt="">`
           : `<span class="episode-thumb episode-fallback"><ha-icon icon="mdi:movie-open"></ha-icon></span>`}
@@ -4618,20 +4695,15 @@ class StreamingBrowserCard extends HTMLElement {
           ${meta ? `<small>${this._esc(meta)}</small>` : ""}
           ${episode.overview ? `<p>${this._esc(episode.overview)}</p>` : ""}
         </span><ha-icon icon="mdi:chevron-right"></ha-icon>
-      </button>`;
+      </button>${inlineActions}</div>`;
     }).join("");
     const status = detail.episodesLoading
       ? `<p class="episode-link-note">${this._t("loading_episodes")}</p>`
       : detail.seasonError
         ? `<p class="episode-link-note">${this._t("episode_load_error", { error: this._esc(detail.seasonError) })}</p>`
         : rows || `<p class="episode-link-note">${this._t("no_episodes")}</p>`;
-    const chosen = selected
-      ? `<div class="episode-selected"><strong>${this._t("season")} ${detail.selectedSeason} · ${this._t("episode")} ${Number(selected.episode_number)}: ${this._esc(selected.name || "")}</strong>
-          ${selected.overview ? `<p>${this._esc(selected.overview)}</p>` : ""}</div>
-          <p class="episode-link-note">${this._t("episode_link_note")}</p>`
-      : `<p class="episode-link-note">${this._t("choose_episode")}</p>`;
     return `<div class="provider-title">${this._t("episodes")}</div>
-      <div class="season-tabs">${tabs}</div><div class="episode-list">${status}</div>${chosen}`;
+      <div class="season-tabs">${tabs}</div><div class="episode-list">${status}</div>`;
   }
 
   _renderDetails() {
@@ -4700,62 +4772,10 @@ class StreamingBrowserCard extends HTMLElement {
     const providers = this._detailProviders();
     const isSeries = detail.type === "tv";
     const episodeBrowser = isSeries ? this._renderEpisodeBrowser(detail) : "";
-    const showProviderActions = !isSeries || Boolean(detail.selectedEpisode);
+    const showProviderActions = !isSeries;
     const link = detail.providers?.link;
 
-    const providerCards = showProviderActions && providers.length
-      ? providers
-          .map((provider) => {
-            const source = this._sourceForProvider(provider.provider_name);
-            const disabled = source ? "" : "disabled";
-            const platform = this._platform() === "android_tv" ? "Android TV" : "LG webOS";
-            const localMatch = Array.isArray(detail.localSources)
-              ? this._pickWatchmodeSource(provider.provider_name, detail.localSources)
-              : null;
-            // Use only the exact HTTP(S) provider link; never send it to HA's
-            // media_player or use the generic TMDB availability page here.
-            const localUrl = typeof localMatch?.web_url === "string" &&
-              /^https?:\/\//i.test(localMatch.web_url)
-              ? localMatch.web_url : "";
-            const localAction = localUrl
-              ? `<a class="mini-btn local-device"
-                  href="${this._esc(localUrl)}" target="_blank" rel="noopener noreferrer"
-                  title="${this._esc(this._t("local_device_hint"))}">
-                  <ha-icon icon="mdi:cellphone" style="--mdc-icon-size:17px"></ha-icon>
-                  ${this._t("open_this_device")}
-                </a>`
-              : `<button class="mini-btn local-device" type="button" disabled
-                  title="${this._esc(detail.localSourcesLoading
-                    ? this._t("local_link_loading")
-                    : detail.localSourceError || this._t("local_link_missing"))}">
-                  <ha-icon icon="mdi:cellphone" style="--mdc-icon-size:17px"></ha-icon>
-                  ${this._t("open_this_device")}
-                </button>`;
-            return `
-              <div class="provider-card">
-                ${this._providerLogo(provider)}
-                <div class="provider-info">
-                  <div class="provider-name">${this._esc(provider.provider_name)}</div>
-                  <div class="provider-source">${source
-                    ? `${platform} · ${this._esc(source)}`
-                    : "App not matched on playback device"}</div>
-                  <div class="provider-actions">
-                    <button class="mini-btn title"
-                      data-title-provider="${this._esc(provider.provider_name)}" ${disabled}>
-                      <ha-icon icon="mdi:television" style="--mdc-icon-size:17px"></ha-icon>
-                      ${this._t("open_on_tv")}
-                    </button>
-                    ${localAction}
-                  </div>
-                </div>
-              </div>`;
-          })
-          .join("")
-      : `
-        <div style="opacity:.65">
-          ${this._t("no_providers")}
-        </div>
-      `;
+    const providerCards = this._renderProviderCards(detail, providers, isSeries);
 
     return `
       <div class="overlay" data-overlay>
@@ -6589,7 +6609,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.61 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.62 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
