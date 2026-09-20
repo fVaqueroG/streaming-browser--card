@@ -1,0 +1,33 @@
+name: Publish Streaming Browser named card v0.4.66
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish-card-picker-v0466.yml"
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply card-picker and editor fixes
+        run: python3 tools/card-picker-v0466.py
+      - name: Verify syntax and integration
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          node tools/test-card-picker-v0466.js
+          python3 tools/test-card-picker-v0466.py
+      - name: Commit verified integration and publish v0.4.66
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card.js
+          git commit -m 'v0.4.66: expose named Streaming Browser card with visual editor'
+          git push origin HEAD:main
+          gh release create v0.4.66 --target "$(git rev-parse HEAD)" --title v0.4.66 --notes 'Streaming Browser Card is discoverable by name in the Add card picker and opens its visual editor. Both the global picker and dashboard resource use the same bundled versioned JS. Update the HACS Integration, restart Home Assistant, and reload the dashboard.'
