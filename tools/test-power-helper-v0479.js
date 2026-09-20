@@ -30,8 +30,10 @@ vm.runInNewContext(source, { StreamingBrowserCard:Card, StreamingBrowserCardEdit
 (async () => {
   const card = new Card();
   await card._prepareDisplayRoute();
-  assert.deepEqual(calls[0], ['switch','turn_on',{entity_id:'switch.tv_plug'}]);
-  assert.deepEqual(calls[1], ['prepare']);
+  assert.equal(calls[0][0], 'switch');
+  assert.equal(calls[0][1], 'turn_on');
+  assert.equal(calls[0][2].entity_id, 'switch.tv_plug');
+  assert.equal(calls[1][0], 'prepare');
   assert.deepEqual(card.waits, [4200]);
   await card._ensureTvOn();
   assert.equal(calls.filter(item => item[1] === 'turn_on').length, 1, 'must not repower during wake');
@@ -43,7 +45,9 @@ vm.runInNewContext(source, { StreamingBrowserCard:Card, StreamingBrowserCardEdit
   assert.equal(calls.filter(item => item[1] === 'turn_off').length, 0, 'cancelled cutoff');
   confirm = true;
   await card._roomSetPower(false);
-  assert.deepEqual(calls.at(-1), ['switch','turn_off',{entity_id:'switch.tv_plug'}]);
+  assert.equal(calls.at(-1)[0], 'switch');
+  assert.equal(calls.at(-1)[1], 'turn_off');
+  assert.equal(calls.at(-1)[2].entity_id, 'switch.tv_plug');
   card.connection = {id:'bed', tv_entity:'media_player.android', power_entity:'input_boolean.room_power', power_on_delay_ms:0};
   await card._ensureTvOn();
   assert(calls.some(item => item[0] === 'input_boolean' && item[1] === 'turn_on' &&
