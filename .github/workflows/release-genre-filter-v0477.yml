@@ -1,0 +1,77 @@
+name: Streaming Browser TMDB genre dropdown v0.4.77
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-genre-filter-v0477.yml'
+permissions:
+  contents: write
+jobs:
+  verify-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch genre dropdown and release metadata
+        run: python3 tools/release-genre-filter-v0477.py
+      - name: Verify JavaScript, Python, genre filters and dropdown controls
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          node <<'JS'
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const assert = require('node:assert/strict');
+          const code = fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card.js', 'utf8');
+          const registered = {};
+          class Element { attachShadow() { this.shadowRoot = {innerHTML:'', querySelector:()=>null, querySelectorAll:()=>[]}; } }
+          const context = {HTMLElement:Element, customElements:{get:n=>registered[n], define:(n,c)=>{registered[n]=c;}}, console, setTimeout, clearTimeout};
+          vm.createContext(context);
+          vm.runInContext(code, context);
+          const Card = registered['streaming-browser-card'];
+          assert(Card && registered['streaming-browser-card-editor'], 'Card picker and visual editor must remain registered');
+          const card = new Card();
+          card._config = {region:'MX', language:'en-US', selected_provider_ids:[8,119], include_rent_buy:false};
+          card._matchedProviders = {movie:[{provider_id:8},{provider_id:119}],tv:[{provider_id:8},{provider_id:119}]};
+          card._provider = 'all';
+          card._mode = 'movie';
+          card._genres.movie = [{id:'27',name:'Horror'},{id:'35',name:'Comedy'},{id:'53',name:'Thriller'}];
+          card._genres.tv = [{id:'18',name:'Drama'},{id:'9648',name:'Mystery'}];
+          card._genreByMode.movie = '27';
+          let defs = card._catalogDefinitions();
+          assert(defs.length === 3 && defs.every(d=>d.params.with_genres==='27'));
+          assert(defs.every(d=>d.params.with_watch_providers==='8|119'), 'Genre must combine with provider filtering');
+          card._genreByMode.movie = 'all';
+          assert(card._catalogDefinitions().every(d=>!('with_genres' in d.params)), 'All genres must omit with_genres');
+          card._genreByMode.movie = '35';
+          card._mode = 'tv';
+          card._genreByMode.tv = '18';
+          assert(card._catalogDefinitions().every(d=>d.params.with_genres==='18'), 'TV mode uses its own genre');
+          card._mode = 'movie';
+          assert(card._genreByMode.movie==='35', 'Switching modes preserves the prior movie selection');
+          assert(code.includes('class="genre-select"') && code.includes('root.querySelector(".genre-select")?.addEventListener("change"'), 'Dropdown must be rendered and interactive');
+          assert(code.includes('`/genre/${mode}/list`') && code.includes('this._apiWithTimeout(`/genre/${mode}/list`, {}, 8000)'), 'Genres should come from TMDB');
+          assert(code.includes('"all_genres": "All genres"') && code.includes('"all_genres": "Todos los géneros"'), 'Localized All genres option required');
+          console.log('PASS: named card + editor, mode-specific genre selection, server-side TMDB provider+genre discovery, All genres and selector event');
+          JS
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root = Path('custom_components/streaming_browser')
+          js = (root/'frontend/streaming-browser-card.js').read_text()
+          assert json.loads((root/'manifest.json').read_text())['version'] == '0.4.77'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.77";' in js
+          assert 'v0.4.77 — Genre dropdown' in Path('README.md').read_text()
+          print('PASS: integration/frontend/README release version and documentation')
+          PY
+      - name: Publish HACS Integration v0.4.77
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'Add TMDB genre filter next to Movies and Series in v0.4.77'
+          git push origin HEAD:main
+          gh release create v0.4.77 --target "$(git rev-parse HEAD)" --title v0.4.77 --notes 'Add a localized TMDB Genre dropdown next to Movies and Series, with All genres and mode-specific selections. Filter Popular, Top Rated, Recent Releases by both the selected streaming provider(s) and TMDB genre, using server-side discovery and incremental pagination. Movie and TV genre lists load separately. Existing card/editor settings and playback actions remain unchanged. Update HACS Integrations, restart Home Assistant and fully reload the dashboard.'
