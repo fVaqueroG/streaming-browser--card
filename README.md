@@ -159,3 +159,8 @@ V1 resource registration no longer depends on the optional V2 bundle being prese
 ## v0.4.101 — V2 fixed source filters
 
 In the V2 card only, Movies, Series and the genre selector remain fixed in the header, and the grid icon plus **All** label remain inside a separate fixed All provider chip. Only the remaining provider logos scroll horizontally. Scrolling is preserved on refresh/re-render. On narrow devices the fixed filters and provider choices may wrap to two rows. V1 and both TV playback paths remain unchanged.
+
+
+## v0.4.102 — V2 aligned fixed filters
+
+V2 places the genre selector directly beneath Movies and Series, spanning exactly the combined width of the two buttons. This aligned filter group stays fixed while provider logos scroll; the separate grid-icon-over-**All** button remains fixed as well. The filter group adapts on tablets and phones. V1, room routing and playback are unchanged.

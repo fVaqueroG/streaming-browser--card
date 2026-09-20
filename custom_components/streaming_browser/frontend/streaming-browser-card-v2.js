@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.101";
+const STREAMING_BROWSER_VERSION = "0.4.102";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -9933,9 +9933,17 @@ console.info(
     /* Filters and All do not belong to the horizontally scrollable logo track. */
     .v2-provider-strip { display:flex; flex-wrap:wrap; align-items:center; min-width:0;
       gap:clamp(8px,1.2vw,16px); overflow:visible; padding:2px 1px 10px; }
-    .v2-provider-strip .switcher { flex:0 0 auto; flex-wrap:nowrap; margin:0;
-      max-width:100%; min-width:0; }
-    .v2-provider-strip .mode { min-height:62px; min-width:78px; }
+    /* Movies and Series share the top row; genre spans precisely both columns.
+       The whole group stays outside the horizontally scrolling provider logos. */
+    .v2-provider-strip .switcher { display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px 6px;
+      flex:0 0 clamp(166px,18vw,202px); width:clamp(166px,18vw,202px);
+      max-width:100%; min-width:0; margin:0; align-items:stretch; }
+    .v2-provider-strip .switcher .mode { min-width:0; width:100%;
+      min-height:56px; padding:8px 6px; margin:0; }
+    .v2-provider-strip .switcher .genre-select { grid-column:1 / -1;
+      width:100%; min-width:0; max-width:none; min-height:38px;
+      margin:0; box-sizing:border-box; }
     .v2-provider-choice { flex:1 1 250px; min-width:0; max-width:100%;
       display:flex; align-items:center; gap:8px; }
     .v2-provider-choice > .chip[data-provider="all"] { flex:0 0 70px;
@@ -9987,8 +9995,11 @@ console.info(
       .v2-header .top .tvstate { display:none; }
       .v2-header .sbr-room-controls { flex:0 1 155px; }
       .v2-provider-strip { gap:9px; }
-      .v2-provider-strip .mode { min-height:56px; padding:7px 9px; }
-      .v2-provider-strip .genre-select { min-width:110px; max-width:135px; margin:0; }
+      .v2-provider-strip .switcher { flex-basis:min(100%,176px);
+        width:min(100%,176px); }
+      .v2-provider-strip .switcher .mode { min-height:48px; padding:7px 5px; }
+      .v2-provider-strip .switcher .genre-select { min-width:0;
+        max-width:none; width:100%; margin:0; }
       .v2-provider-strip .chip { width:59px; min-width:59px; height:57px; }
       .v2-provider-strip .chip img { width:32px; height:32px; }
       .v2-category-tab { padding:9px 12px; min-height:40px; font-size:12px; }
