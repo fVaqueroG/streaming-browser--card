@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.105";
+const STREAMING_BROWSER_VERSION = "0.4.106";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -7325,7 +7325,9 @@ console.info(
     if (this._providers.movie.length || this._providers.tv.length) {
       this._matchProvidersToTv();
     }
-    this._render();
+    this._v2ForceFullRender = true;
+    try { this._render(); }
+    finally { this._v2ForceFullRender = false; }
     this.shadowRoot?.querySelectorAll('.catalog-row[data-section]').forEach((row) => {
       if (positions.has(row.dataset.section)) row.scrollLeft = positions.get(row.dataset.section);
     });
@@ -7338,7 +7340,7 @@ console.info(
     cardRender.apply(this, args);
     const available = roomList(this._roomConfig);
     const top = this.shadowRoot?.querySelector('.top');
-    if (!available.length || !top) return;
+    if (!available.length || !top || top.querySelector('.sbr-room-controls')) return;
     const room = this._roomCurrent();
     if (!room) return;
     const currentConnection = this._roomConnection(room);
@@ -10191,6 +10193,9 @@ console.info(
   // original listeners and DOM identities; NEVER call the global _bindEvents
   // after an incremental update (that would duplicate search/profile handlers).
   Card.prototype._v2BindCatalog = function(body) {
+    body.querySelectorAll('[data-profile]').forEach(button =>
+      button.addEventListener('click', () =>
+        this._setSelectedProfile(button.dataset.profile)));
     body.querySelectorAll('.poster[data-index][data-section]').forEach(poster =>
       poster.addEventListener('click', () =>
         this._openDetails(poster.dataset.section, Number(poster.dataset.index))));

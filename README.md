@@ -179,3 +179,8 @@ V2 distributes Popular, Top Rated and Recent into three equal-width tabs spannin
 ## v0.4.105 — V2 incremental card updates
 
 V2 retains the actual header, Movies/Series, genre selector, All and provider scroll nodes during filter/category changes, and updates only changed selection states and catalog titles. Room selectors and search stay mounted and keep their focus/scroll state. Provider buttons are rebuilt only if the available provider list changes. Catalog poster/scroll handlers are bound only on replaced catalog nodes; toast updates do not rebuild the catalog. Detail dialog and card configuration can still take the existing full-render path. V1 is unchanged.
+
+
+## v0.4.106 — V2 incremental room-control fix
+
+Complete v0.4.105 partial-rendering support: reused room controls are no longer inserted a second time by the legacy routing wrapper; newly updated profile selector buttons keep their event handlers. Switching rooms performs a targeted full route refresh when connection options can differ, while movie/series/genre/provider/category selections and title catalog updates keep the fixed header mounted. V1 and streaming playback logic are unchanged.
