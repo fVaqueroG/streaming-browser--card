@@ -1,6 +1,6 @@
 /*
- * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.73
+ * Streaming Browser Card for Home Assistant: LG webOS, Android TV and Roku TV
+ * v0.4.74
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.73";
+const STREAMING_BROWSER_VERSION = "0.4.74";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -128,7 +128,7 @@ class StreamingBrowserCard extends HTMLElement {
       display_source: "HDMI input on display TV",
       display_source_delay_ms: "HDMI switch delay (ms)",
       remote_side: "Remote position",
-      remote_entity: "Android TV remote",
+      remote_entity: "Playback device remote (Android TV / Roku)",
       adb_entity: "Android TV ADB media player",
       tmdb_api_key: "TMDB API key (v3)",
       region: "Region",
@@ -150,9 +150,9 @@ class StreamingBrowserCard extends HTMLElement {
 
     const helpers = {
       platform:
-        "Choose LG webOS or Android TV Remote.",
+        "Choose LG webOS, Android TV Remote or Roku TV. For Roku, install Home Assistant’s Roku integration first.",
       display_entity:
-        "Optional display television for a separate HDMI playback device. Select the LG/webOS television here, not the Android TV box.",
+        "Optional display TV for a separate HDMI player, including a Roku TV. Select the display TV here, not the external player.",
       display_source:
         "Select an HDMI input reported by the selected display TV. Turn on the display TV if no inputs are shown.",
       display_source_delay_ms:
@@ -160,7 +160,7 @@ class StreamingBrowserCard extends HTMLElement {
       remote_side:
         "Position of the same floating controller used in Nuvio.",
       remote_entity:
-        "Required for Android TV. Use the remote entity from the Android TV Remote integration.",
+        "Required for Android TV and Roku. Choose the matching remote entity from the Android TV Remote or Roku integration.",
       adb_entity:
         "Optional for Android TV generally, but required for Netflix profile auto-selection because Android TV Remote key commands do not work inside Netflix.",
       tmdb_api_key:
@@ -207,6 +207,7 @@ class StreamingBrowserCard extends HTMLElement {
                   options: [
                     { value: "webos", label: "LG webOS" },
                     { value: "android_tv", label: "Android TV Remote" },
+                    { value: "roku", label: "Roku TV / Roku player" },
                   ],
                 },
               },
@@ -939,7 +940,12 @@ class StreamingBrowserCard extends HTMLElement {
           const key = button.dataset.remote;
           if (key === "WAKE") await this._ensureTvOn();
           else if (key === "MUTE" || key === "VOLUME_UP" || key === "VOLUME_DOWN") {
-            // On an HDMI setup, adjust the display TV's speakers rather than the player.
+            // Roku TV volume/mute uses ECP remote keys; an external HDMI player
+            // uses the configured display TV's Home Assistant volume services.
+            if (this._platform() === "roku" && !this._config.display_entity) {
+              await this._sendRemoteButton(key);
+              return;
+            }
             const volumeEntity = this._config.display_entity || this._config.tv_entity;
             if (key === "MUTE") {
               const muted = this._hass.states?.[volumeEntity]?.attributes?.is_volume_muted;
@@ -2221,8 +2227,9 @@ class StreamingBrowserCard extends HTMLElement {
   // ---------------------------------------------------------------------------
 
   _platform() {
-    return this._config?.platform === "android_tv"
-      ? "android_tv"
+    const platform = this._config?.platform;
+    return platform === "android_tv" || platform === "roku"
+      ? platform
       : "webos";
   }
 
@@ -3020,7 +3027,33 @@ class StreamingBrowserCard extends HTMLElement {
     await this._sendRemoteButton("PLAY");
   }
 
+  _rokuRemoteCommand(button) {
+    const key = String(button ?? "").toUpperCase();
+    const commands = {
+      UP: "up", DOWN: "down", LEFT: "left", RIGHT: "right",
+      ENTER: "select", CENTER: "select", HOME: "home", BACK: "back",
+      BACKSPACE: "backspace", PLAY: "play", PAUSE: "play",
+      VOLUME_UP: "volume_up", VOLUME_DOWN: "volume_down",
+      MUTE: "volume_mute",
+    };
+    // Roku offers a Play/Pause toggle key, not separate Play and Pause keys.
+    if (/^[0-9]$/.test(key)) return `Lit_${key}`;
+    const command = commands[key];
+    if (!command) throw new Error(`Unsupported Roku remote button: ${key}`);
+    return command;
+  }
+
   async _sendRemoteButton(button) {
+    if (this._platform() === "roku") {
+      if (!this._config.remote_entity) {
+        throw new Error("Select the Roku remote entity in Streaming Browser card settings.");
+      }
+      await this._hass.callService("remote", "send_command", {
+        entity_id: this._config.remote_entity,
+        command: this._rokuRemoteCommand(button),
+      });
+      return;
+    }
     if (this._platform() === "android_tv") {
       if (!this._config.remote_entity) {
         throw new Error("remote_entity is required for Android TV");
@@ -3730,6 +3763,28 @@ class StreamingBrowserCard extends HTMLElement {
         return;
       }
 
+      if (this._platform() === "roku") {
+        const appAlreadyOpen = this._norm(currentSource) === this._norm(source);
+        if (!appAlreadyOpen) {
+          this._toast(this._t("opening_app", { source }));
+          await this._hass.callService("media_player", "select_source", {
+            entity_id: this._config.tv_entity, source,
+          });
+          // Let Roku finish launching before any explicit profile/navigation steps.
+          await this._sleep(Math.max(0, Number(this._config.profile_launch_delay_ms ?? 3000)));
+        }
+        await this._applyProfile(providerName, source, {
+          appJustOpened: !appAlreadyOpen,
+          appReadyWaited: !appAlreadyOpen,
+        });
+        if (autoPlay) {
+          await this._sleep(Math.max(0, Number(this._config.auto_play_delay_ms ?? 4000)));
+          await this._sendProviderPlay(providerName, source);
+        }
+        this._toast(this._t("app_opened", { source, profile: "" }));
+        return;
+      }
+
       const appAlreadyOpen =
         this._norm(currentSource) === this._norm(source);
 
@@ -4103,6 +4158,15 @@ class StreamingBrowserCard extends HTMLElement {
       return;
     }
 
+    if (this._platform() === "roku") {
+      // A Watchmode/JustWatch web URL is not a Roku channel-specific content ID.
+      // Do not send it to webOS, or claim that launching an app played the title.
+      this._toast(this._locale() === "es"
+        ? "Roku necesita un ID de contenido de la app para abrir este título. Usa Abrir app."
+        : "Roku needs an app-specific content ID for exact title playback. Use Open app.");
+      return;
+    }
+
     try {
       await this._prepareDisplayRoute();
       const tv = await this._ensureTvOn();
@@ -4367,6 +4431,10 @@ class StreamingBrowserCard extends HTMLElement {
     const link = this._details?.providers?.link;
 
     if (!link || !this._hass) return;
+    if (this._platform() === "roku") {
+      this._toast("Roku cannot open a web availability page; choose an installed streaming app.");
+      return;
+    }
 
     try {
       await this._hass.callService("webostv", "command", {
@@ -4888,10 +4956,10 @@ class StreamingBrowserCard extends HTMLElement {
               ${sourceStatus ? `<span class="provider-source">${this._esc(sourceStatus)}</span>` : ""}
               <div class="provider-actions">
                 ${url ? `
-                  <button type="button" class="mini-btn title icon-action"
+                  ${this._platform() !== "roku" ? `<button type="button" class="mini-btn title icon-action"
                     data-title-provider="${this._esc(name)}"
                     aria-label="${this._esc(this._t("open_on_tv"))}"
-                    title="${this._esc(this._t("open_on_tv"))}"><ha-icon icon="mdi:television-play" aria-hidden="true"></ha-icon></button>
+                    title="${this._esc(this._t("open_on_tv"))}"><ha-icon icon="mdi:television-play" aria-hidden="true"></ha-icon></button>` : ""}
                   <a class="mini-btn icon-action" href="${this._esc(url)}" target="_blank"
                     rel="noopener noreferrer"
                     aria-label="${this._esc(this._t("open_this_device"))}"
@@ -6836,7 +6904,7 @@ if (streamingBrowserPreviousPickerEntry) {
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.73 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.74 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );

@@ -285,3 +285,10 @@ The example backend files are provided in `examples/backend/`.
 ## Updating
 
 When a new version is committed to this repository, HACS can detect the repository update. Keep the card version string in `streaming-browser-card.js` updated with each release.
+
+
+## Roku TV and Roku streaming players (v0.4.74)
+
+Install the official **Roku** integration in Home Assistant. Select **Roku TV / Roku player** under the Streaming Browser card's **Platform**, its `media_player` entity as **Playback device**, and the same Roku device's `remote` entity as **Playback device remote**. The TMDB catalogs, installed-source matching, app launching, circular D-pad, volume and playback controls work on Roku TVs. Roku set-top boxes may not support volume control; configure **Display TV** and its HDMI input when using a separate Roku player. When Roku is itself the display for another HDMI player, select the Roku TV as the display device and its HDMI input in that player's card settings. Enable Roku's **Control by mobile apps** / network access if remote keys do not work. TV power-on from full standby depends on the Roku model and its network-standby settings.
+
+**Exact-title limitations:** Roku `media_player.select_source` opens a streaming app, not the selected movie/episode. Roku exact playback requires that streaming app's own app ID and content ID through Roku's `media_player.play_media` app/deep-link interface. Browser URLs from the existing provider lookup cannot be treated as Roku content IDs. Accordingly, Roku provider cards expose **Open app** and **Open on this device** (when a provider URL exists), but do not display a misleading exact-title **Open on TV** action. The Roku Play and Pause remote icons both send Roku's Play/Pause toggle; digit keys enter text only when an on-screen keyboard is active.
