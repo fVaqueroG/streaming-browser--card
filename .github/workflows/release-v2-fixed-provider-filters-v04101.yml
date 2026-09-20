@@ -1,0 +1,60 @@
+name: Publish Streaming Browser V2 static filters v0.4.101
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v2-fixed-provider-filters-v04101.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Move All outside horizontally scrolling source icons in V2
+        run: python3 tools/fix-v2-static-filters-v04101.py
+      - name: Verify both cards and static V2 controls
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          v1=(base/'frontend/streaming-browser-card.js').read_text()
+          v2=(base/'frontend/streaming-browser-card-v2.js').read_text()
+          backend=(base/'__init__.py').read_text()
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.101'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.98";' in v1
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.101";' in v2
+          assert 'class StreamingBrowserCard extends HTMLElement' in v1
+          assert 'class StreamingBrowserV2Card extends HTMLElement' in v2
+          assert "const oldProviderScroll = this.shadowRoot?.querySelector('.v2-provider-scroll')?.scrollLeft" in v2
+          assert 'scrollable.scrollLeft = oldProviderScroll' in v2
+          assert "choiceBar.append(allChip);" in v2
+          assert 'scrollable.append(chips);' in v2
+          assert 'strip.append(switcher, choiceBar);' in v2
+          assert '.v2-provider-choice > .chip[data-provider="all"] { flex:0 0 70px;' in v2
+          assert '.v2-provider-scroll { flex:1 1 auto;' in v2
+          assert '.v2-provider-strip { display:flex; flex-wrap:wrap;' in v2
+          assert 'overflow-x:auto; overscroll-behavior-inline:contain;' not in v2.split('.v2-provider-strip {',1)[1].split('}',1)[0]
+          assert 'streaming-browser-card-v2.js' in backend and 'streaming-browser-card.js' in backend
+          assert 'this._roomCurrent()' in v2 and 'this._selectRoomRoute' in v2
+          assert '/* Streaming Browser v0.4.95:' in v2
+          assert '/* Streaming Browser v0.4.94:' in v2
+          assert '/* Streaming Browser v0.4.92:' in v2
+          print('PASS V2-only fixed Movies/Series/genre and All, scrollable logos with preserved offset, independent V1 and provider routing')
+          PY
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js
+      - name: Commit and publish v0.4.101
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.101: keep V2 Movies/Series/genre and All fixed while scrolling provider logos'
+          git push origin HEAD:main
+          gh release create v0.4.101 --target "$(git rev-parse HEAD)" --title v0.4.101 --notes 'V2-only layout fix: Movies, Series, genre selector and the grid-icon-over-All provider button remain outside the horizontally scrolling provider logos. Only logos scroll, and their scroll position persists on re-render. Narrow-screen controls can wrap to a separate fixed row. V1 JavaScript and both cards playback/source logic stay unchanged. Update through HACS, restart Home Assistant and reload the dashboard.'
