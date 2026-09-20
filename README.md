@@ -154,3 +154,8 @@ V1 (`custom:streaming-browser-card`) remains installed and unchanged. A separate
 ## v0.4.100 — V1 resource registration in subviews
 
 V1 resource registration no longer depends on the optional V2 bundle being present during Home Assistant startup. V1's static endpoint, global JavaScript and Lovelace module are always registered when its file exists; V2 is registered separately only when installed. Both custom card types remain unchanged. If a subview uses Panel layout and displays a transient configuration error on a cold visit, Home Assistant frontend may render before custom resources load; use a full-width Sections subview or reload the page after checking that both resource URLs load.
+
+
+## v0.4.101 — V2 fixed source filters
+
+In the V2 card only, Movies, Series and the genre selector remain fixed in the header, and the grid icon plus **All** label remain inside a separate fixed All provider chip. Only the remaining provider logos scroll horizontally. Scrolling is preserved on refresh/re-render. On narrow devices the fixed filters and provider choices may wrap to two rows. V1 and both TV playback paths remain unchanged.

@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.99";
+const STREAMING_BROWSER_VERSION = "0.4.101";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -9930,13 +9930,21 @@ console.info(
       min-width:100px; font-size:0; }
     .v2-header .sbr-room-controls .sbr-route-label select { font-size:13px;
       border-radius:22px; min-height:36px; padding:7px 12px; }
-    .v2-provider-strip { display:flex; align-items:center; min-width:0;
-      gap:clamp(10px,2vw,28px); overflow-x:auto; overscroll-behavior-inline:contain;
-      scrollbar-width:thin; padding:2px 1px 10px; }
-    .v2-provider-strip .switcher { flex:0 0 auto; flex-wrap:nowrap; margin:0; }
+    /* Filters and All do not belong to the horizontally scrollable logo track. */
+    .v2-provider-strip { display:flex; flex-wrap:wrap; align-items:center; min-width:0;
+      gap:clamp(8px,1.2vw,16px); overflow:visible; padding:2px 1px 10px; }
+    .v2-provider-strip .switcher { flex:0 0 auto; flex-wrap:nowrap; margin:0;
+      max-width:100%; min-width:0; }
     .v2-provider-strip .mode { min-height:62px; min-width:78px; }
-    .v2-provider-strip .chips { flex:0 0 auto; overflow:visible;
-      padding:0; gap:8px; align-items:center; }
+    .v2-provider-choice { flex:1 1 250px; min-width:0; max-width:100%;
+      display:flex; align-items:center; gap:8px; }
+    .v2-provider-choice > .chip[data-provider="all"] { flex:0 0 70px;
+      position:relative; z-index:1; }
+    .v2-provider-scroll { flex:1 1 auto; min-width:0; max-width:100%;
+      overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain;
+      touch-action:pan-x; scrollbar-width:thin; padding:1px 1px 8px; }
+    .v2-provider-scroll .chips { display:flex; width:max-content; min-width:100%;
+      flex-wrap:nowrap; overflow:visible; padding:0; gap:8px; align-items:center; }
     .v2-provider-strip .chip { width:70px; min-width:70px; height:64px;
       padding:6px; display:flex; align-items:center; justify-content:center;
       gap:3px; border-radius:13px; }
@@ -9993,6 +10001,8 @@ console.info(
   Card.prototype._render = function(...args) {
     const previousBody = this.shadowRoot?.querySelector('.v2-body');
     const oldScroll = previousBody?.scrollTop || 0;
+    const oldProviderScroll = this.shadowRoot?.querySelector('.v2-provider-scroll')?.scrollLeft
+      ?? this._v2ProviderScrollLeft ?? 0;
     previousRender.apply(this, args);
     const root = this.shadowRoot;
     const wrap = root?.querySelector('ha-card > .wrap');
@@ -10010,15 +10020,27 @@ console.info(
     header.className = 'v2-header';
     const strip = document.createElement('div');
     strip.className = 'v2-provider-strip';
-    strip.append(switcher, chips);
-    header.append(top, strip);
-
-    // The full 'All' caption belongs INSIDE its own icon-above-label chip.
+    // Move All outside the logo scroller; preserve its existing click handler.
+    const choiceBar = document.createElement('div');
+    choiceBar.className = 'v2-provider-choice';
+    const scrollable = document.createElement('div');
+    scrollable.className = 'v2-provider-scroll';
     const allChip = chips.querySelector('.chip[data-provider="all"]');
     if (allChip) {
       allChip.innerHTML = '<ha-icon icon="mdi:apps" aria-hidden="true"></ha-icon><span>All</span>';
       allChip.setAttribute('aria-label', this._t('all_sources'));
+      choiceBar.append(allChip);
     }
+    scrollable.append(chips);
+    choiceBar.append(scrollable);
+    strip.append(switcher, choiceBar);
+    header.append(top, strip);
+    // A Home Assistant state update can re-render the header while browsing.
+    // Restore logo-only scroll position without moving the fixed filters/All.
+    scrollable.scrollLeft = oldProviderScroll;
+    scrollable.addEventListener('scroll', () => {
+      this._v2ProviderScrollLeft = scrollable.scrollLeft;
+    }, { passive: true });
     chips.querySelectorAll('.chip[data-provider]:not([data-provider="all"])').forEach(chip => {
       const name = chip.querySelector('span')?.textContent?.trim() || chip.title || '';
       chip.querySelectorAll(':scope > span').forEach(span => span.remove());
