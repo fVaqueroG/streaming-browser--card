@@ -1,0 +1,53 @@
+name: Streaming Browser icon-only source actions v0.4.72
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-provider-action-icons-v0472.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch TV and device action buttons
+        run: python3 tools/provider-action-icons-v0472.py
+      - name: Validate card, accessible icon controls and version
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          node <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm');
+          const source=fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card.js','utf8');
+          const manifest=JSON.parse(fs.readFileSync('custom_components/streaming_browser/manifest.json','utf8'));
+          if(manifest.version!=='0.4.72'||!source.includes('STREAMING_BROWSER_VERSION = "0.4.72"'))throw Error('Version mismatch');
+          const registry=new Map(),window={customCards:[]};
+          vm.runInNewContext(source,{HTMLElement:class{},window,customElements:{get:k=>registry.get(k),define:(k,v)=>registry.set(k,v)},console});
+          const Card=registry.get('streaming-browser-card');
+          if(!Card||!registry.get('streaming-browser-card-editor')||!window.customCards.some(c=>c.type==='streaming-browser-card'))throw Error('Card picker or visual editor absent');
+          const mock={_t:k=>({open_on_tv:'Open on TV',open_this_device:'Open on this device',open_app:'Open app',local_link_loading:'Loading...',local_link_missing:'Missing'})[k]||k,_esc:v=>String(v),_pickWatchmodeSource:()=>({web_url:'https://example.com/episode'}),_sourceForProvider:()=> 'Netflix',_providerLogo:()=> ''};
+          const provider=[{provider_name:'Netflix',groups:['flatrate']}];
+          for(const [isSeries,detail] of [[false,{localSources:[{web_url:'https://example.com/movie'}],localSourcesLoading:false}],[true,{selectedEpisode:{episode_number:3},selectedSeason:1,episodeSources:[{scope:'episode',season:1,episode:3,web_url:'https://example.com/episode'}],episodeSourcesLoading:false}]]){
+            const html=Card.prototype._renderProviderCards.call(mock,detail,provider,isSeries);
+            if(!html.includes('icon="mdi:television-play"')||!html.includes('icon="mdi:cellphone-play"'))throw Error('Requested source-action icons missing');
+            if(!html.includes('data-title-provider="Netflix"')||!html.includes('href="https://example.com/episode"')||!html.includes('target="_blank"')||!html.includes('rel="noopener noreferrer"'))throw Error('Playback or browser action changed');
+            if(!html.includes('aria-label="Open on TV"')||!html.includes('aria-label="Open on this device"'))throw Error('Accessible button names missing');
+            if(html.includes('>Open on TV</button>')||html.includes('>Open on this device</a>'))throw Error('Old visible button labels remain');
+            if(!html.includes('data-open-provider="Netflix"'))throw Error('Open app action lost');
+          }
+          if(!source.includes('.mini-btn.icon-action ha-icon { --mdc-icon-size: 24px; }'))throw Error('Icon sizing missing');
+          console.log('PASS: icon-only movie/episode links, accessible labels, existing actions, card picker/editor, v0.4.72');
+          JS
+      - name: Publish verified HACS Integration v0.4.72
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'Use TV and cellphone play icons in provider actions v0.4.72'
+          git push origin HEAD:main
+          gh release create v0.4.72 --target "$(git rev-parse HEAD)" --title v0.4.72 --notes 'Replace the visible Open on TV and Open on this device button text with mdi:television-play and mdi:cellphone-play. Keep accessible labels/tooltips, movie and episode-specific targets, existing Open app actions, visual editor and saved card configuration. Update HACS Integrations, restart Home Assistant, and fully reload the dashboard.'
