@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.102";
+const STREAMING_BROWSER_VERSION = "0.4.103";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -9931,35 +9931,48 @@ console.info(
     .v2-header .sbr-room-controls .sbr-route-label select { font-size:13px;
       border-radius:22px; min-height:36px; padding:7px 12px; }
     /* Filters and All do not belong to the horizontally scrollable logo track. */
-    .v2-provider-strip { display:flex; flex-wrap:wrap; align-items:center; min-width:0;
+    /* One source square matches the complete fixed Movies/Series + genre stack. */
+    .v2-provider-strip { --v2-mode-height:56px; --v2-genre-height:38px;
+      --v2-filter-gap:7px;
+      --v2-source-size:calc(var(--v2-mode-height) + var(--v2-filter-gap) + var(--v2-genre-height));
+      display:flex; flex-wrap:wrap; align-items:stretch; min-width:0;
       gap:clamp(8px,1.2vw,16px); overflow:visible; padding:2px 1px 10px; }
     /* Movies and Series share the top row; genre spans precisely both columns.
        The whole group stays outside the horizontally scrolling provider logos. */
     .v2-provider-strip .switcher { display:grid;
-      grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px 6px;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      column-gap:6px; row-gap:var(--v2-filter-gap);
       flex:0 0 clamp(166px,18vw,202px); width:clamp(166px,18vw,202px);
       max-width:100%; min-width:0; margin:0; align-items:stretch; }
     .v2-provider-strip .switcher .mode { min-width:0; width:100%;
-      min-height:56px; padding:8px 6px; margin:0; }
+      height:var(--v2-mode-height); min-height:var(--v2-mode-height);
+      padding:8px 6px; margin:0; }
     .v2-provider-strip .switcher .genre-select { grid-column:1 / -1;
-      width:100%; min-width:0; max-width:none; min-height:38px;
+      width:100%; min-width:0; max-width:none;
+      height:var(--v2-genre-height); min-height:var(--v2-genre-height);
       margin:0; box-sizing:border-box; }
     .v2-provider-choice { flex:1 1 250px; min-width:0; max-width:100%;
-      display:flex; align-items:center; gap:8px; }
-    .v2-provider-choice > .chip[data-provider="all"] { flex:0 0 70px;
-      position:relative; z-index:1; }
+      display:flex; align-items:stretch; gap:8px; }
+    .v2-provider-choice > .chip[data-provider="all"] {
+      flex:0 0 var(--v2-source-size); position:relative; z-index:1; }
     .v2-provider-scroll { flex:1 1 auto; min-width:0; max-width:100%;
-      overflow-x:auto; overflow-y:hidden; overscroll-behavior-inline:contain;
-      touch-action:pan-x; scrollbar-width:thin; padding:1px 1px 8px; }
+      height:var(--v2-source-size); overflow-x:auto; overflow-y:hidden;
+      overscroll-behavior-inline:contain; touch-action:pan-x;
+      scrollbar-width:none; padding:0; }
+    .v2-provider-scroll::-webkit-scrollbar { display:none; }
     .v2-provider-scroll .chips { display:flex; width:max-content; min-width:100%;
-      flex-wrap:nowrap; overflow:visible; padding:0; gap:8px; align-items:center; }
-    .v2-provider-strip .chip { width:70px; min-width:70px; height:64px;
-      padding:6px; display:flex; align-items:center; justify-content:center;
-      gap:3px; border-radius:13px; }
+      height:var(--v2-source-size); flex-wrap:nowrap; overflow:visible;
+      padding:0; gap:8px; align-items:stretch; }
+    .v2-provider-strip .chip { width:var(--v2-source-size);
+      min-width:var(--v2-source-size); height:var(--v2-source-size);
+      min-height:var(--v2-source-size); flex:0 0 var(--v2-source-size);
+      aspect-ratio:1 / 1; padding:8px; display:flex; align-items:center;
+      justify-content:center; gap:4px; border-radius:13px; }
     .v2-provider-strip .chip:not([data-provider="all"]) span { display:none; }
-    .v2-provider-strip .chip img { width:38px; height:38px; border-radius:8px; }
+    .v2-provider-strip .chip img { width:54px; height:54px;
+      max-width:100%; max-height:100%; border-radius:9px; object-fit:contain; }
     .v2-provider-strip .chip[data-provider="all"] { flex-direction:column; }
-    .v2-provider-strip .chip[data-provider="all"] ha-icon { --mdc-icon-size:24px; }
+    .v2-provider-strip .chip[data-provider="all"] ha-icon { --mdc-icon-size:32px; }
     .v2-provider-strip .chip[data-provider="all"] span { font-size:11px;
       font-weight:650; line-height:1; white-space:nowrap; }
     .v2-categories { display:flex; gap:8px; overflow-x:auto;
@@ -9994,14 +10007,14 @@ console.info(
       .v2-header .top .title { flex:1 1 125px; }
       .v2-header .top .tvstate { display:none; }
       .v2-header .sbr-room-controls { flex:0 1 155px; }
-      .v2-provider-strip { gap:9px; }
+      .v2-provider-strip { --v2-mode-height:48px; gap:9px; }
       .v2-provider-strip .switcher { flex-basis:min(100%,176px);
         width:min(100%,176px); }
-      .v2-provider-strip .switcher .mode { min-height:48px; padding:7px 5px; }
+      .v2-provider-strip .switcher .mode { height:var(--v2-mode-height);
+        min-height:var(--v2-mode-height); padding:7px 5px; }
       .v2-provider-strip .switcher .genre-select { min-width:0;
         max-width:none; width:100%; margin:0; }
-      .v2-provider-strip .chip { width:59px; min-width:59px; height:57px; }
-      .v2-provider-strip .chip img { width:32px; height:32px; }
+      .v2-provider-strip .chip img { width:48px; height:48px; }
       .v2-category-tab { padding:9px 12px; min-height:40px; font-size:12px; }
       .v2-body { padding:10px 9px; }
     }

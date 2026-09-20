@@ -164,3 +164,8 @@ In the V2 card only, Movies, Series and the genre selector remain fixed in the h
 ## v0.4.102 — V2 aligned fixed filters
 
 V2 places the genre selector directly beneath Movies and Series, spanning exactly the combined width of the two buttons. This aligned filter group stays fixed while provider logos scroll; the separate grid-icon-over-**All** button remains fixed as well. The filter group adapts on tablets and phones. V1, room routing and playback are unchanged.
+
+
+## v0.4.103 — V2 aligned square sources
+
+V2 uses equal square All/provider buttons. Their top/bottom edges match the fixed Movies/Series row and full-width Genre selector beneath it, respectively. Buttons are 101 × 101 px on tablets/desktops (56 + 7 + 38), and 93 × 93 px on phones (48 + 7 + 38). All remains fixed; only provider icons scroll horizontally. Room and playback routing, catalog tabs and V1 JavaScript are unchanged.
