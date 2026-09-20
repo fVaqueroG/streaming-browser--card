@@ -1,0 +1,43 @@
+name: Publish Streaming Browser rooms and HDMI routing v0.4.78
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-room-routing-v0478.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bundle room selector, multi-connection visual editor, and HDMI routing
+        run: python3 tools/apply-room-routing-v0478.py
+      - name: Validate compatibility, JavaScript syntax and integration
+        run: |
+          node --check tools/streaming-browser-room-routing-v0478.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node tools/test-room-routing-v0478.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base = Path('custom_components/streaming_browser')
+          assert json.loads((base / 'manifest.json').read_text())['version'] == '0.4.78'
+          card = (base / 'frontend/streaming-browser-card.js').read_text()
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.78"' in card
+          assert card.count('/* Streaming Browser v0.4.78: room and connection routing.') == 1
+          assert card.count('customElements.define(\n    "streaming-browser-card",\n    StreamingBrowserCard\n  );') == 1
+          print('PASS bundled v0.4.78, HACS integration version and single card registration')
+          PY
+      - name: Commit and publish tested v0.4.78 integration
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.78: room selector and per-room TV HDMI connections'
+          git push origin HEAD:main
+          gh release create v0.4.78 --target "$(git rev-parse HEAD)" --title v0.4.78 --notes 'Add customizable room selector and multiple playback/HDMI connections per room in the Streaming Browser visual editor. Choose an LG webOS, Android TV or Roku device and associated display TV and HDMI input. HDMI inputs are discovered from the selected TV source_list; route changes retain the catalog and the remote follows the selected device. Legacy single-TV cards remain supported. Update the HACS Streaming Browser integration, restart Home Assistant and reload the dashboard.'
