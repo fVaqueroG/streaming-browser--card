@@ -1,0 +1,83 @@
+name: Fix Streaming Browser visual editor v0.4.59
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/fix-editor-v0459.py"
+      - ".github/workflows/fix-editor-v0459.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  fix-editor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update editor and version
+        run: python3 tools/fix-editor-v0459.py
+      - name: Check syntax and live HDMI selector behavior
+        shell: bash
+        run: |
+          node --check streaming-browser-card.js
+          node <<'JS'
+          const fs = require('fs');
+          const vm = require('vm');
+          const text = fs.readFileSync('streaming-browser-card.js', 'utf8');
+          const registry = {};
+          const ctx = {
+            HTMLElement: class {},
+            customElements: {get: key => registry[key], define: (key, value) => {registry[key] = value;}},
+            window: {customCards: []},
+            console,
+          };
+          vm.runInNewContext(text, ctx);
+          const Card = registry['streaming-browser-card'];
+          const Editor = registry['streaming-browser-card-editor'];
+          const tv1 = 'media_player.lg';
+          const tv2 = 'media_player.other';
+          const hass = {states: {
+            [tv1]: {attributes: {source_list: ['Live TV', 'Netflix', 'HDMI 1', 'HDMI 2', 'HDMI3 (ARC)']}},
+            [tv2]: {attributes: {source_list: ['HDMI 4', 'YouTube']}},
+          }};
+          const options = (schema) => schema.find(s => s.title === 'HDMI / remote')
+            .schema.find(s => s.name === 'display_source').selector.select.options.map(o => o.value);
+          const config = {display_entity: tv1, display_source: 'HDMI 2', tmdb_api_key: 'test'};
+          const baseSchema = Card.getConfigForm(hass, config).schema;
+          const choices = options(baseSchema);
+          if (JSON.stringify(choices) !== JSON.stringify(['HDMI 1', 'HDMI 2', 'HDMI3 (ARC)'])) throw Error('HDMI selector must contain only TV HDMI inputs: '+choices);
+          if (options(Card.getConfigForm(hass, {...config, display_entity: tv2, display_source: ''}).schema).join(',') !== 'HDMI 4') throw Error('HDMI selector did not follow selected display TV');
+          if (options(Card.getConfigForm({states:{[tv1]:{attributes:{source_list:[]}}}}, config).schema).join(',') !== 'HDMI 2') throw Error('Saved source is lost when display TV is offline');
+          let schemaWrites = 0;
+          const form = {hass: null, data: config, set schema(value) {schemaWrites++; this._schema = value;}, get schema() {return this._schema;}};
+          const editor = Object.create(Editor.prototype);
+          editor._config = config;
+          editor._hass = hass;
+          editor._providers = [];
+          editor._providersLoading = false;
+          editor._renderProviders = () => {};
+          editor._loadProviders = () => {};
+          editor.shadowRoot = {
+            querySelector: selector => selector === '#base ha-form' ? form : null,
+            set innerHTML(_) {throw Error('Expanded form was destroyed');},
+          };
+          editor.setConfig({...config});
+          const writesAfterFirst = schemaWrites;
+          editor.hass = {...hass};
+          editor._render();
+          editor.setConfig({...config, display_source: 'HDMI 1'});
+          if (schemaWrites !== writesAfterFirst) throw Error('Schema recreated on unrelated state/config changes');
+          editor.setConfig({...config, display_entity: tv2, display_source: ''});
+          if (options(form.schema).join(',') !== 'HDMI 4') throw Error('Editor form did not update HDMI inputs for new display TV');
+          if (!text.includes('STREAMING_BROWSER_VERSION = "0.4.59"')) throw Error('Version label not bumped');
+          console.log('Passed: editor stays mounted, HDMI dropdown follows the display TV, saved input preserved, v0.4.59');
+          JS
+      - name: Commit validated card
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add streaming-browser-card.js
+          git commit -m 'v0.4.59: preserve visual-editor sections and list HDMI inputs from display TV'
+          git push origin HEAD:main
