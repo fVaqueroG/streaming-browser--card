@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Synchronize guarded migration with v0.4.59 console banner
+        shell: bash
+        run: |
+          sed -i 's/STREAMING-BROWSER-CARD %c v0\.4\.56 /STREAMING-BROWSER-CARD %c v0.4.59 /g' tools/add-local-device-v0460.py
       - name: Apply guarded update
         run: python3 tools/add-local-device-v0460.py
       - name: Syntax and popup behavior tests
@@ -35,7 +39,7 @@ jobs:
           const card = new Card();
           card._config = { region: 'MX', language: 'en-US', platform: 'webos' };
           card._detailProviders = () => [{ provider_name: 'Amazon Prime Video' }];
-          card._sourceForProvider = () => null; // Local links are independent of TV app matching.
+          card._sourceForProvider = () => null;
           const item = { id: 1, media_type: 'movie' };
           const detail = { item, type: 'movie', providers: {},
             details: { title: 'Test title', genres: [], overview: '' },
@@ -52,7 +56,6 @@ jobs:
           assert.doesNotMatch(html, /data-open-provider=|data-title-play-provider=|data-watch-page/);
           assert.match(html, /data-title-provider="Amazon Prime Video" disabled/);
           assert.match(html, /class="mini-btn local-device"\s+href=/);
-          // On lookup errors, never send a generic availability URL or trigger TV actions.
           delete detail.localSources;
           detail.localSourcesLoading = true;
           html = card._renderDetails();
