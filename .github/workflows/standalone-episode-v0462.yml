@@ -25,7 +25,14 @@ jobs:
       - name: Apply versioned card migration
         shell: bash
         run: |
-          sed -i "s/if n != 1:/if n != 1 and not (old == '      .episode-thumb {' and n == 2):/" tools/independent-episode-v0462.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/independent-episode-v0462.py')
+          s=p.read_text()
+          s=s.replace('if n != 1:', "if n != 1 and not (old == '      .episode-thumb {' and n == 2):")
+          s=s.replace('These links may open the series page instead of the exact episode. Select the episode in the provider app if necessary.', 'These streaming links may open the series page rather than this exact episode. Select the episode in the provider app if necessary.')
+          p.write_text(s)
+          PY
           python3 tools/independent-episode-v0462.py
       - name: Syntax and independent episode contract checks
         shell: bash
