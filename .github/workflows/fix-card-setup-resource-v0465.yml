@@ -1,0 +1,109 @@
+name: Streaming Browser v0.4.65 card setup and resource updates
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fix-card-setup-resource-v0465.yml"
+permissions:
+  contents: write
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix new-card setup and migrate stale HACS dashboard resources
+        run: python3 tools/fix-card-setup-resources-v0465.py
+      - name: Check card editor and package syntax
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          node - <<'JS'
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const source = fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card.js', 'utf8');
+          const registered = new Map();
+          const context = {
+            HTMLElement: class { attachShadow() { return { innerHTML:'', querySelector() { return null; } }; } },
+            customElements: {
+              get(name) { return registered.get(name); },
+              define(name, element) { registered.set(name, element); }
+            },
+            window: { customCards: [] },
+            document: { createElement(name) { return { tagName: name }; } },
+            console
+          };
+          vm.runInNewContext(source, context);
+          const Card = registered.get('streaming-browser-card');
+          const Editor = registered.get('streaming-browser-card-editor');
+          if (!Card || !Editor) throw new Error('Card/editor not registered');
+          const stub = Card.getStubConfig();
+          if (stub.tv_entity !== '' || stub.tmdb_api_key !== '') throw new Error('Stub contains fake configuration');
+          const card = new Card();
+          card.setConfig({});
+          if (!card.shadowRoot.innerHTML.includes('Set up Streaming Browser')) throw new Error('Incomplete card setup not supported');
+          if (Card.getConfigElement.constructor.name !== 'AsyncFunction') throw new Error('Visual editor registration unavailable');
+          const config = { tv_entity:'media_player.test', tmdb_api_key:'test-key', platform:'webos' };
+          card.setConfig(config);
+          if (card._config.tv_entity !== config.tv_entity || card._config.tmdb_api_key !== config.tmdb_api_key)
+            throw new Error('Saved configuration not preserved');
+          console.log('PASS: new-card stub, incomplete setup, visual editor registration, existing config');
+          JS
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,ast,asyncio,logging,types
+          base=Path('custom_components/streaming_browser')
+          js=(base/'frontend/streaming-browser-card.js').read_text()
+          manifest=json.loads((base/'manifest.json').read_text())
+          assert manifest['version']=='0.4.65' and 'STREAMING_BROWSER_VERSION = "0.4.65"' in js
+          assert manifest['config_flow'] is True and (base/'config_flow.py').is_file()
+          assert 'streaming_browser/episode_links' in js
+          src=(base/'__init__.py').read_text()
+          fn=next(n for n in ast.parse(src).body if isinstance(n,ast.AsyncFunctionDef) and n.name=='_register_card')
+          class Collection:
+              def __init__(self,items): self.items=list(items)
+              async def async_get_info(self): return None
+              def async_items(self): return list(self.items)
+              async def async_delete_item(self,id): self.items=[r for r in self.items if r['id']!=id]
+              async def async_update_item(self,id,payload):
+                  next(r for r in self.items if r['id']==id).update(payload)
+              async def async_create_item(self,payload): self.items.append({'id':'created',**payload})
+          async def run():
+              legacy='/hacsfiles/streaming-browser--card/streaming-browser-card.js?version=old'
+              current='/streaming_browser/streaming-browser-card.js?v=0.4.64'
+              expected='/streaming_browser/streaming-browser-card.js?v=0.4.65'
+              col=Collection([{'id':'legacy','url':legacy,'type':'module'}, {'id':'current','url':current,'type':'module'}, {'id':'duplicate','url':current,'type':'module'}])
+              paths=[]
+              hass=types.SimpleNamespace(data={'lovelace':types.SimpleNamespace(resource_mode='storage',resources=col)},
+                    http=types.SimpleNamespace(async_register_static_paths=lambda items: register_paths(paths,items)))
+              env={'HomeAssistant':object,'_CARD_FILE':base/'frontend/streaming-browser-card.js',
+                   '_CARD_URL':'/streaming_browser/streaming-browser-card.js','_RESOURCE_URL':expected,
+                   '_LEGACY_CARD_URLS':{'/hacsfiles/streaming-browser--card/streaming-browser-card.js','/local/community/streaming-browser--card/streaming-browser-card.js'},
+                   '_LOGGER':logging.getLogger('test'),'StaticPathConfig':lambda *args,**kwargs:args,
+                   'LOVELACE_DATA':'lovelace','MODE_STORAGE':'storage', 'frontend':types.SimpleNamespace(add_extra_js_url=lambda *a:None),
+                   'CONF_URL':'url','CONF_TYPE':'type','CONF_ID':'id','CONF_RESOURCE_TYPE_WS':'type'}
+              exec(compile(ast.Module(body=[fn],type_ignores=[]),'<test>','exec'),env)
+              await env['_register_card'](hass)
+              assert len(col.items)==1 and col.items[0]['url']==expected and col.items[0]['id']=='current',col.items
+              assert len(paths)==1
+              await env['_register_card'](hass)
+              assert len(col.items)==1 and col.items[0]['url']==expected
+              empty=Collection([])
+              hass.data['lovelace'].resources=empty
+              await env['_register_card'](hass)
+              assert empty.items[0]['url']==expected
+              print('PASS: stale resource removal, resource URL version bump, deduplication, idempotence, fresh registration')
+          async def register_paths(paths,items):paths.extend(items)
+          asyncio.run(run())
+          PY
+      - name: Commit and release paired integration and card
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json README.md
+          git commit -m 'v0.4.65: restore visual editor setup and automatically migrate HACS dashboard resource'
+          git push origin HEAD:main
+          gh release create v0.4.65 --target "$(git rev-parse HEAD)" --title v0.4.65 --notes 'Fix first-time visual card configuration (empty playback device/TMDB key no longer crash), preserve existing dashboard card settings and migrate stale HACS Dashboard resource to the versioned Streaming Browser Integration resource on Home Assistant startup. Update the HACS Integration, restart Home Assistant and refresh the dashboard.'
