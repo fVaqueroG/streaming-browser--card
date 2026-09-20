@@ -1,3 +1,4 @@
+# Retest the rendered numeric keypad and native remote command wiring.
 name: Publish Streaming Browser Nuvio-style remote v0.4.81
 on:
   push:
