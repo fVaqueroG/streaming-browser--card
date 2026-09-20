@@ -1,10 +1,12 @@
 {
   "domain": "streaming_browser",
-  "name": "Streaming Browser Episode Links",
-  "version": "0.4.62",
+  "name": "Streaming Browser",
+  "version": "0.4.63",
   "documentation": "https://github.com/fVaqueroG/streaming-browser--card",
+  "issue_tracker": "https://github.com/fVaqueroG/streaming-browser--card/issues",
   "codeowners": [],
-  "dependencies": [],
+  "config_flow": true,
+  "dependencies": ["frontend", "http", "lovelace", "websocket_api"],
   "requirements": [],
   "iot_class": "cloud_polling"
 }
