@@ -1,0 +1,59 @@
+name: Publish independent Streaming Browser V2 v0.4.99
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-streaming-browser-v2-v0499.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build separate V2 bundle and register both cards
+        run: python3 tools/install-streaming-browser-v2-v0499.py
+      - name: Check JavaScript, Python and independent card registration
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check tools/streaming-browser-v2-layout-v0499.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('custom_components/streaming_browser')
+          v1=(p/'frontend/streaming-browser-card.js').read_text()
+          v2=(p/'frontend/streaming-browser-card-v2.js').read_text()
+          py=(p/'__init__.py').read_text()
+          assert json.loads((p/'manifest.json').read_text())['version']=='0.4.99'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.98";' in v1
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.99";' in v2
+          assert '"streaming-browser-card-v2"' in v2 and '"streaming-browser-card"' in v1
+          assert 'streaming-browser-card-v2-editor' in v2 and 'streaming-browser-card-editor' in v1
+          assert 'getGridOptions()' in v2 and 'StreamingBrowserV2Card' in v2
+          assert 'const Card = StreamingBrowserV2Card;' in v2
+          assert 'All</span>' in v2 and 'v2-categories' in v2 and 'v2-see-all' in v2
+          assert 'this._roomCurrent()' in v2 and 'this._selectRoomRoute' in v2
+          assert '/* Streaming Browser v0.4.95:' in v2
+          assert '/* Streaming Browser v0.4.94:' in v2
+          assert '/* Streaming Browser v0.4.92:' in v2
+          assert 'streaming_browser/episode_links' in py and '_V2_CARD_URL' in py
+          assert 'await _ensure_v2_resource(collection)' in py
+          assert 'frontend.add_extra_js_url(hass, _V2_RESOURCE_URL)' in py
+          assert 'StaticPathConfig(_V2_CARD_URL, str(_V2_CARD_FILE), cache_headers=False)' in py
+          assert v2 != v1 and 'class StreamingBrowserCard extends HTMLElement' in v1
+          print('PASS separate V1/V2 cards/editors, room routing, source handlers, sticky responsive category tabs and All icon label')
+          PY
+      - name: Commit and publish v0.4.99
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js
+          git commit -m 'v0.4.99: independently registered V2 sticky header and tabbed catalogs'
+          git push origin HEAD:main
+          gh release create v0.4.99 --target "$(git rev-parse HEAD)" --title v0.4.99 --notes 'Add custom:streaming-browser-card-v2 as a separately registered UI and editor; preserve custom:streaming-browser-card V1 and its JavaScript without modification. V2 retains room and device selection, playback/WatchHub/JustWatch links, icon-only provider chips, All chip with icon over the word All inside the button, fixed header, Popular/Top Rated/Recent Releases tabs, responsive tablet width and See all expandable poster grid. Existing configurations can be copied to V2. HACS install, Home Assistant restart and dashboard reload required.'
