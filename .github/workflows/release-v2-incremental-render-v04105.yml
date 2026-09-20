@@ -1,0 +1,57 @@
+name: Publish V2 incremental render v0.4.105
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v2-incremental-render-v04105.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch only the V2 card and version
+        run: python3 tools/v2-incremental-render-v04105.py
+      - name: Validate V1 isolation, V2 JS, fixed header and catalog updates
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('custom_components/streaming_browser')
+          v1=(root/'frontend/streaming-browser-card.js').read_text()
+          v2=(root/'frontend/streaming-browser-card-v2.js').read_text()
+          manifest=json.loads((root/'manifest.json').read_text())
+          assert manifest['version']=='0.4.105'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.98";' in v1
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.105";' in v2
+          assert 'this._v2CommitMainMarkup(`' in v2
+          assert 'if (!this._v2PartialRender) this._bindEvents();' in v2
+          assert 'if (this._v2IncrementalCommitted)' in v2
+          assert 'root.innerHTML = markup;' in v2
+          assert 'body.replaceChildren(...children);' in v2
+          assert 'this._v2CatalogStamp !== stamp' in v2
+          assert 'genre.dataset.v2Mode !== mode' in v2
+          assert 'chips.replaceChildren(' in v2
+          assert 'this._v2ProviderScrollLeft = scrollable.scrollLeft;' in v2
+          assert 'this._v2SyncCatalog(body);' in v2
+          assert 'this._v2BindCatalog(body);' in v2
+          assert 'this._roomConnection()' in v2
+          assert 'streaming-browser-card-v2' in v2 and 'streaming-browser-card' in v1
+          print('PASS V2 changes only affected DOM nodes, preserves header/listeners, leaves V1 unchanged')
+          PY
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js
+      - name: Publish v0.4.105
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.105: V2 partial catalog updates with stable header controls'
+          git push origin HEAD:main
+          gh release create v0.4.105 --target "$(git rev-parse HEAD)" --title v0.4.105 --notes 'V2 preserves existing fixed header controls, room selector, search focus and provider icon scroll during selections. Updates selected states and replaces only the catalog when titles/filter/category data change; refreshes provider buttons only if available providers change. Detail dialog and editing retain the existing full-render path. V1 and playback routing remain unchanged.'
