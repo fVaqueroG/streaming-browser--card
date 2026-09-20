@@ -1,0 +1,48 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurar Streaming Browser",
+        "description": "Instala la tarjeta del panel y habilita los enlaces independientes a episodios. Se conservará tu configuración actual."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Streaming Browser ya está configurado."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Cuenta de JustWatch",
+        "description": "Opcional. Los enlaces públicos de JustWatch y WatchHub funcionan sin cuenta. La sesión se guarda en Home Assistant, no en la tarjeta.",
+        "menu_options": {
+          "email": "Conectar JustWatch con correo y contraseña",
+          "token": "Conectar con token del navegador (caduca)",
+          "disconnect": "Desconectar la cuenta de JustWatch"
+        }
+      },
+      "email": {
+        "title": "Conectar JustWatch",
+        "description": "Inicia sesión. La contraseña se intercambia por una sesión renovable y no se guarda.",
+        "data": {
+          "justwatch_email": "Correo de JustWatch",
+          "justwatch_password": "Contraseña de JustWatch"
+        }
+      },
+      "token": {
+        "title": "Token de JustWatch del navegador",
+        "description": "Para cuentas con inicio de sesión social, introduce un token ID válido del navegador. Caducará y no puede renovarse automáticamente.",
+        "data": {
+          "justwatch_access_token": "Token ID de JustWatch"
+        }
+      },
+      "disconnect": {
+        "title": "Desconectar JustWatch",
+        "description": "Elimina la sesión guardada en Streaming Browser. Los enlaces públicos seguirán funcionando."
+      }
+    },
+    "error": {
+      "invalid_auth": "JustWatch rechazó el inicio de sesión o no se pudo completar. Comprueba tus credenciales y conexión."
+    }
+  }
+}
