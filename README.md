@@ -1,5 +1,10 @@
 # Streaming Browser — Home Assistant Integration
 
+## v0.4.68: Fix title detail provider cards
+
+Fix the missing `_renderProviderCards()` method that caused `this._renderProviderCards is not a function` when opening movie or series details. The restored renderer uses TMDB provider availability and the existing TV/app controls, exposes exact provider links on this device when available, and shows episode-specific links only for the selected episode. Update the Streaming Browser HACS **Integration**, restart Home Assistant and fully reload the dashboard; saved card configuration is unaffected.
+
+
 ## v0.4.66: Add card by name with its visual editor
 
 After updating **Streaming Browser** in HACS under **Integrations** and restarting Home Assistant, refresh the dashboard. In **Edit dashboard > Add card**, search for **Streaming Browser Card**, select its named card, and complete the visual editor. Do not select a Manual card or paste YAML. The integration loads the same versioned JavaScript globally for card-picker discovery and as a dashboard resource. Existing dashboard card settings remain intact.

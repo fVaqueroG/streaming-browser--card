@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.67
+ * v0.4.68
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.67";
+const STREAMING_BROWSER_VERSION = "0.4.68";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -4693,6 +4693,55 @@ class StreamingBrowserCard extends HTMLElement {
     `;
   }
 
+  // A title detail and the selected episode use the SAME provider-card layout,
+  // but only the matching title/episode link may be opened. Never substitute a
+  // whole-series URL for an episode-specific URL.
+  _renderProviderCards(detail, providers, isSeries = false) {
+    if (isSeries && !detail?.selectedEpisode) return "";
+    const loading = isSeries ? detail.episodeSourcesLoading : detail.localSourcesLoading;
+    const sources = isSeries ? detail.episodeSources || [] : detail.localSources || [];
+    const season = Number(detail.selectedSeason);
+    const episodeNumber = Number(detail.selectedEpisode?.episode_number);
+    const validEpisodeLink = (source) =>
+      source?.scope === "episode" &&
+      Number(source.season) === season &&
+      Number(source.episode) === episodeNumber;
+
+    return (Array.isArray(providers) ? providers : [])
+      .map((provider) => {
+        const name = String(provider?.provider_name || "").trim();
+        if (!name) return "";
+        const exact = loading ? null : this._pickWatchmodeSource(name,
+          isSeries ? sources.filter(validEpisodeLink) : sources);
+        const url = exact && typeof exact.web_url === "string" &&
+          /^https:\/\//i.test(exact.web_url) ? exact.web_url : "";
+        const tvSource = this._sourceForProvider(name);
+        const groups = Array.isArray(provider.groups) ? provider.groups.join(" · ") : "";
+        const sourceStatus = loading
+          ? this._t("local_link_loading")
+          : !url ? this._t("local_link_missing") : "";
+        return `
+          <div class="provider-card">
+            ${this._providerLogo(provider)}
+            <div class="provider-main">
+              <div class="provider-name">${this._esc(name)}</div>
+              ${groups ? `<div class="provider-source">${this._esc(groups)}</div>` : ""}
+              ${sourceStatus ? `<div class="provider-source">${this._esc(sourceStatus)}</div>` : ""}
+              <div class="provider-actions">
+                ${url ? `
+                  <button type="button" class="mini-btn title"
+                    data-title-provider="${this._esc(name)}">${this._esc(this._t("open_on_tv"))}</button>
+                  <a class="mini-btn" href="${this._esc(url)}" target="_blank"
+                    rel="noopener noreferrer">${this._esc(this._t("open_this_device"))}</a>
+                ` : ""}
+                ${tvSource ? `<button type="button" class="mini-btn"
+                  data-open-provider="${this._esc(name)}">${this._esc(this._t("open_app"))}</button>` : ""}
+              </div>
+            </div>
+          </div>`;
+      }).join("");
+  }
+
   _renderEpisodeBrowser(detail) {
     const seasons = detail.seriesSeasons || [];
     if (!seasons.length) return `<div class="episode-link-note">${this._t("no_episodes")}</div>`;
@@ -6673,7 +6722,7 @@ if (streamingBrowserPreviousPickerEntry) {
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.67 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.68 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
