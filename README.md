@@ -149,3 +149,8 @@ Streaming Browser requests full section width in Home Assistant Sections views a
 ## v0.4.99 — optional Streaming Browser Card V2
 
 V1 (`custom:streaming-browser-card`) remains installed and unchanged. A separately served and registered card `custom:streaming-browser-card-v2` provides a sticky header with existing room/connection selectors, search, Movies/Series/genre, icon-only provider chips, and an All provider chip with the icon above the label **All** inside the same button. Popular / Top Rated / Recent Releases are horizontal tabs that show one horizontal catalog at a time. Each selected tab has a See all button at the bottom to expand a responsive poster grid and continue paging, and a Back to carousel button to collapse it. The catalog scrolls internally while the header stays visible. V2 retains the V1 visual editor and link/playback/routing functionality as of this release, with a separate frontend bundle so V1 is not replaced. In a dashboard, add a new card of type `custom:streaming-browser-card-v2`, then copy the V1 configuration or use its visual editor. For a full-screen tablet, use Panel or full-width Sections layout.
+
+
+## v0.4.100 — V1 resource registration in subviews
+
+V1 resource registration no longer depends on the optional V2 bundle being present during Home Assistant startup. V1's static endpoint, global JavaScript and Lovelace module are always registered when its file exists; V2 is registered separately only when installed. Both custom card types remain unchanged. If a subview uses Panel layout and displays a transient configuration error on a cold visit, Home Assistant frontend may render before custom resources load; use a full-width Sections subview or reload the page after checking that both resource URLs load.

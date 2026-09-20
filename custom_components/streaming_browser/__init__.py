@@ -99,22 +99,26 @@ async def _register_card(hass: HomeAssistant) -> None:
     if not _CARD_FILE.is_file():
         _LOGGER.error("Streaming Browser card file is missing: %s", _CARD_FILE)
         return
-    if not _V2_CARD_FILE.is_file():
-        _LOGGER.error("Streaming Browser V2 card file is missing: %s", _V2_CARD_FILE)
-        return
+    # A missing or not-yet-installed V2 bundle must never disable the working V1
+    # card. Browser-cached V1 can otherwise appear on one view while a freshly
+    # opened subview reports that the custom card resource is unavailable.
+    v2_available = _V2_CARD_FILE.is_file()
+    if not v2_available:
+        _LOGGER.warning("Streaming Browser V2 bundle is not installed: %s; registering V1 independently", _V2_CARD_FILE)
     # Re-running setup must repair a missing resource without attempting to
     # register the same aiohttp route twice (which can prevent HA startup).
     if not hass.data.get(_STATIC_REGISTERED_KEY):
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(_CARD_URL, str(_CARD_FILE), cache_headers=False),
-             StaticPathConfig(_V2_CARD_URL, str(_V2_CARD_FILE), cache_headers=False)]
-        )
+        paths = [StaticPathConfig(_CARD_URL, str(_CARD_FILE), cache_headers=False)]
+        if v2_available:
+            paths.append(StaticPathConfig(_V2_CARD_URL, str(_V2_CARD_FILE), cache_headers=False))
+        await hass.http.async_register_static_paths(paths)
         hass.data[_STATIC_REGISTERED_KEY] = True
     # The global module lets the named card appear in Add card even before a
     # dashboard containing it has loaded. Register once for repeated setup.
     if not hass.data.get(_FRONTEND_REGISTERED_KEY):
         frontend.add_extra_js_url(hass, _RESOURCE_URL)
-        frontend.add_extra_js_url(hass, _V2_RESOURCE_URL)
+        if v2_available:
+            frontend.add_extra_js_url(hass, _V2_RESOURCE_URL)
         hass.data[_FRONTEND_REGISTERED_KEY] = True
 
     lovelace = hass.data.get(LOVELACE_DATA)
@@ -156,7 +160,8 @@ async def _register_card(hass: HomeAssistant) -> None:
             {CONF_URL: _RESOURCE_URL, CONF_RESOURCE_TYPE_WS: "module"}
         )
         _LOGGER.info("Streaming Browser card resource created: %s", _RESOURCE_URL)
-        await _ensure_v2_resource(collection)
+        if v2_available:
+            await _ensure_v2_resource(collection)
         return
     primary = matches[0]
     if primary.get(CONF_URL) != _RESOURCE_URL or primary.get(CONF_TYPE) != "module":
@@ -166,7 +171,8 @@ async def _register_card(hass: HomeAssistant) -> None:
     for duplicate in matches[1:]:
         await collection.async_delete_item(duplicate[CONF_ID])
     _LOGGER.info("Streaming Browser card registered as a module resource: %s", _RESOURCE_URL)
-    await _ensure_v2_resource(collection)
+    if v2_available:
+        await _ensure_v2_resource(collection)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
