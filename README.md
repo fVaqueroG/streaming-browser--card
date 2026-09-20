@@ -174,3 +174,8 @@ V2 uses equal square All/provider buttons. Their top/bottom edges match the fixe
 ## v0.4.104 — three equal-width V2 category tabs
 
 V2 distributes Popular, Top Rated and Recent into three equal-width tabs spanning its full width. Recent is a shorter label for the existing Recent Releases catalog; the category query, fixed controls, All and identically sized square provider buttons from v0.4.103 remain unchanged. V1 is unchanged.
+
+
+## v0.4.105 — V2 incremental card updates
+
+V2 retains the actual header, Movies/Series, genre selector, All and provider scroll nodes during filter/category changes, and updates only changed selection states and catalog titles. Room selectors and search stay mounted and keep their focus/scroll state. Provider buttons are rebuilt only if the available provider list changes. Catalog poster/scroll handlers are bound only on replaced catalog nodes; toast updates do not rebuild the catalog. Detail dialog and card configuration can still take the existing full-render path. V1 is unchanged.
