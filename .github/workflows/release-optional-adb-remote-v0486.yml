@@ -1,0 +1,47 @@
+name: Publish Streaming Browser optional ADB remote v0.4.86
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-optional-adb-remote-v0486.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bundle independent ADB remote configuration and selective key routing
+        run: python3 tools/apply-optional-adb-remote-v0486.py
+      - name: Validate app routing, remote fallback and release version
+        run: |
+          node --check tools/streaming-browser-optional-adb-remote-v0486.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node tools/test-optional-adb-remote-v0486.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          base=Path('custom_components/streaming_browser')
+          card=(base/'frontend/streaming-browser-card.js').read_text()
+          manifest=json.loads((base/'manifest.json').read_text())
+          assert manifest['version']=='0.4.86'
+          assert card.count('const STREAMING_BROWSER_VERSION = "0.4.86";')==1
+          assert card.count('/* Streaming Browser v0.4.86: optional ADB remote entity')==1
+          assert '/* Streaming Browser v0.4.85: native Android TV app routing' in card
+          assert '/* Streaming Browser v0.4.83: optional WatchHub official-app link source.' in card
+          assert '/* Compact action captions v0.4.84 */' in card
+          assert 'sbr-power-switch' in card
+          print('PASS frontend/manifest 0.4.86 and existing controls, WatchHub and routing preserved')
+          PY
+      - name: Commit and publish verified release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.86: add optional ADB remote entity per Android TV connection'
+          git push origin HEAD:main
+          gh release create v0.4.86 --target "$(git rev-parse HEAD)" --title v0.4.86 --notes 'Streaming Browser now supports an independent optional Android Debug Bridge remote.* entity in both the single-TV visual editor and each Rooms & connections entry, without requiring an ADB media_player. Standard Android TV Remote stays the primary remote for normal controls; the selected ADB remote sends Netflix-specific keys and handles standard remote command errors. Automatic Netflix profile navigation can use the ADB remote. Other playback, room, power helper and WatchHub settings remain unchanged. Update through HACS, restart Home Assistant, and reload the dashboard.'
