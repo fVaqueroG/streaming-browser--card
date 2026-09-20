@@ -61,3 +61,8 @@ In the card visual editor, expand **Rooms & connections**, then expand the desir
 ## One power switch (v0.4.80)
 
 For room connections with an optional Power helper, the card displays one accessible On/Off switch instead of two separate power buttons. The switch reflects the Home Assistant `switch.*` or `input_boolean.*` entity state, is disabled when the entity is unavailable or a power command is in progress, and remains unchanged if turning off during playback is cancelled. The existing automatic turn-on, startup delay and manual-off confirmation are preserved. Connections without a Power helper have no power switch.
+
+
+## v0.4.81: Nuvio-inspired Streaming Browser remote
+
+The remote keeps the same command dispatch and player selection but now uses a dark, rounded popup with a full-width Wake button, large circular D-pad, 12-key number pad including Backspace and Enter, large Back and Home buttons, and compact Play, Pause, Mute and volume controls. It remains scrollable on short screens and keeps the configured remote position. Update the integration through HACS, restart Home Assistant, and reload the dashboard.

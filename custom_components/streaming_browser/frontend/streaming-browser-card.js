@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant: LG webOS, Android TV and Roku TV
- * v0.4.80
+ * v0.4.81
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.80";
+const STREAMING_BROWSER_VERSION = "0.4.81";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -889,41 +889,69 @@ class StreamingBrowserCard extends HTMLElement {
       const right = this._config?.remote_side === "right";
       portal.innerHTML = `
         <style>
-          .sbr-remote {position:fixed;z-index:100500;top:70px;${right ? "right" : "left"}:16px;
-            width:min(310px,calc(100vw - 32px));max-height:calc(100dvh - 85px);overflow:auto;
-            padding:14px;border:1px solid #4b4b4b;border-radius:19px;
-            color:white;background:linear-gradient(150deg,#282828,#111);
-            box-shadow:0 14px 45px #0009;font:500 14px system-ui,sans-serif}
-          .sbr-head {display:flex;align-items:center;justify-content:space-between;gap:9px;margin-bottom:12px}
-          .sbr-remote button {font:inherit;cursor:pointer;color:white;background:#373737;
-            border:1px solid #555;border-radius:12px;min-height:41px}
-          .sbr-remote button:active {background:#147da7}
-          .sbr-x {width:36px;height:36px;min-height:36px!important;border-radius:50%!important}
-          /* Circular D-pad: a solid four-way ring with an independent OK center. */
-          .sbr-pad {width:min(244px,100%);aspect-ratio:1;position:relative;margin:10px auto 14px;
-            border-radius:50%;background:#37373c;box-shadow:inset 0 0 0 2px #ffffff0c,0 3px 11px #0005}
-          .sbr-pad .sbr-dir {position:absolute;width:34%;height:34%;min-height:0;
-            display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#fff;padding:0}
-          .sbr-pad .sbr-dir ha-icon {--mdc-icon-size:46px}
+          /* Nuvio-inspired remote layout v0.4.81 */
+          .sbr-remote {
+            position:fixed;z-index:100500;top:max(10px,env(safe-area-inset-top));
+            ${right ? "right" : "left"}:max(10px,env(safe-area-inset-${right ? "right" : "left"}));
+            box-sizing:border-box;width:min(390px,calc(100vw - 20px));
+            max-height:calc(100dvh - 20px);overflow-y:auto;overscroll-behavior:contain;
+            padding:20px;border:1px solid #414145;border-radius:30px;
+            color:#fff;background:#202022;box-shadow:0 16px 48px #000b;
+            font:500 15px/1.3 system-ui,sans-serif;
+          }
+          .sbr-remote button {font:inherit;cursor:pointer;color:#fff;background:#303033;
+            border:1px solid #3b3b40;transition:background .12s ease,transform .12s ease}
+          .sbr-remote button:active {background:#47474e;transform:scale(.98)}
+          .sbr-remote button:focus-visible {outline:2px solid var(--primary-color,#58a6ff);outline-offset:3px}
+          .sbr-head {display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 16px}
+          .sbr-head-title {font-size:22px;font-weight:750;line-height:1.2}
+          .sbr-head-subtitle {font-size:11px;opacity:.65;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:245px}
+          .sbr-x {width:52px;height:52px;min-height:52px!important;flex:none;
+            display:grid;place-items:center;border:0!important;border-radius:50%!important;
+            font-size:36px!important;font-weight:600!important;line-height:1;background:#303033!important}
+          .sbr-wake {display:flex;align-items:center;justify-content:center;gap:12px;width:100%;
+            min-height:58px;border:0!important;border-radius:35px!important;font-size:19px!important}
+          .sbr-wake ha-icon {--mdc-icon-size:22px}
+          .sbr-pad {width:min(300px,100%);aspect-ratio:1;position:relative;margin:20px auto 22px;
+            border-radius:50%;background:#35353b;box-shadow:inset 0 0 0 2px #ffffff0b}
+          .sbr-pad .sbr-dir {position:absolute;display:grid;place-items:center;
+            width:34%;height:34%;min-height:0;border:0;border-radius:50%;background:transparent;padding:0}
+          .sbr-pad .sbr-dir ha-icon {--mdc-icon-size:45px}
           .sbr-pad .sbr-up {top:0;left:33%}
           .sbr-pad .sbr-down {bottom:0;left:33%}
           .sbr-pad .sbr-left {top:33%;left:0}
           .sbr-pad .sbr-right {top:33%;right:0}
           .sbr-pad .sbr-ok {position:absolute;top:28%;left:28%;width:44%;height:44%;min-height:0;
-            display:grid;place-items:center;border-radius:50%;border:0;
-            background:#2c2c31;color:#fff;font-size:25px;font-weight:750;
-            box-shadow:0 0 0 10px #2b2b2f55,inset 0 1px 3px #0005}
-          .sbr-pad .sbr-dir:active {background:#ffffff24}
-          .sbr-pad .sbr-ok:active {background:#414148}
-          .sbr-actions {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 12px}
-          .sbr-remote .sbr-icon-btn {display:grid;place-items:center;min-width:0;min-height:44px;
-            padding:7px;border-radius:12px;background:#373737;color:#fff}
-          .sbr-icon-btn ha-icon {--mdc-icon-size:23px}
-          .sbr-numbers {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:12px}
+            display:grid;place-items:center;border:0;border-radius:50%;background:#2c2c30;
+            font-size:23px;font-weight:750;box-shadow:0 0 0 10px #2b2b3055}
+          .sbr-pad .sbr-dir:active {background:#ffffff1c}
+          .sbr-numbers {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+          .sbr-numbers button {min-width:0;min-height:62px;border-radius:20px;font-size:27px;font-weight:650}
+          .sbr-numbers .sbr-key-secondary {font-size:21px;opacity:.9}
+          .sbr-navigation {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:15px 0}
+          .sbr-navigation button {display:flex;align-items:center;justify-content:center;gap:9px;
+            min-width:0;min-height:61px;border-radius:24px;font-size:17px}
+          .sbr-navigation ha-icon {--mdc-icon-size:21px}
+          .sbr-actions {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;
+            padding-top:13px;border-top:1px solid #ffffff1d;margin-top:9px}
+          .sbr-actions .sbr-icon-btn {display:grid;place-items:center;min-width:0;
+            min-height:49px;padding:8px 0;border-radius:15px}
+          .sbr-actions .sbr-icon-btn ha-icon {--mdc-icon-size:23px}
+          @media(max-width:360px) {
+            .sbr-remote {padding:14px;border-radius:22px}
+            .sbr-pad {width:min(252px,100%);margin:14px auto}
+            .sbr-numbers {gap:7px}
+            .sbr-numbers button {min-height:54px}
+          }
         </style>
-        <section class="sbr-remote" role="dialog" aria-label="TV remote">
-          <header class="sbr-head"><strong>Control · ${this._esc(this._hass?.states?.[this._config.tv_entity]?.attributes?.friendly_name || this._config.tv_entity)}</strong>
-          <button type="button" class="sbr-x" data-close-remote aria-label="Close remote">×</button></header>
+        <section class="sbr-remote" role="dialog" aria-label="TV Remote">
+          <header class="sbr-head">
+            <div><div class="sbr-head-title">${this._locale() === "es" ? "Control remoto" : "TV Remote"}</div>
+              <div class="sbr-head-subtitle">${this._esc(this._hass?.states?.[this._config.tv_entity]?.attributes?.friendly_name || this._config.tv_entity || "")}</div></div>
+            <button type="button" class="sbr-x" data-close-remote aria-label="Close remote">×</button>
+          </header>
+          <button type="button" class="sbr-wake" data-remote="WAKE" title="Wake" aria-label="Wake">
+            <ha-icon icon="mdi:sleep-off"></ha-icon>${this._locale() === "es" ? "Despertar" : "Wake"}</button>
           <div class="sbr-pad" role="group" aria-label="Directional pad">
             <button type="button" class="sbr-dir sbr-up" data-remote="UP" title="Up" aria-label="Up"><ha-icon icon="mdi:chevron-up"></ha-icon></button>
             <button type="button" class="sbr-dir sbr-left" data-remote="LEFT" title="Left" aria-label="Left"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
@@ -931,17 +959,23 @@ class StreamingBrowserCard extends HTMLElement {
             <button type="button" class="sbr-dir sbr-right" data-remote="RIGHT" title="Right" aria-label="Right"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
             <button type="button" class="sbr-dir sbr-down" data-remote="DOWN" title="Down" aria-label="Down"><ha-icon icon="mdi:chevron-down"></ha-icon></button>
           </div>
-          <div class="sbr-actions" role="group" aria-label="TV actions">
-            <button type="button" class="sbr-icon-btn" data-remote="WAKE" title="Wake" aria-label="Wake"><ha-icon icon="mdi:sleep-off"></ha-icon></button>
-            <button type="button" class="sbr-icon-btn" data-remote="BACK" title="Back" aria-label="Back"><ha-icon icon="mdi:arrow-left"></ha-icon></button>
-            <button type="button" class="sbr-icon-btn" data-remote="HOME" title="Home" aria-label="Home"><ha-icon icon="mdi:home"></ha-icon></button>
-            <button type="button" class="sbr-icon-btn" data-remote="MUTE" title="Mute" aria-label="Mute"><ha-icon icon="mdi:volume-mute"></ha-icon></button>
+          <div class="sbr-numbers" role="group" aria-label="Number pad">
+            ${[1,2,3,4,5,6,7,8,9,"⌫",0,"↵"].map((n) => `<button type="button" class="${n === "⌫" || n === "↵" ? "sbr-key-secondary" : ""}"
+              data-remote="${n === "⌫" ? "BACK" : n === "↵" ? "ENTER" : n}"
+              title="${n === "⌫" ? "Backspace" : n === "↵" ? "Enter" : n}"
+              aria-label="${n === "⌫" ? "Backspace" : n === "↵" ? "Enter" : n}">${n}</button>`).join("")}
+          </div>
+          <div class="sbr-navigation" role="group" aria-label="Navigation">
+            <button type="button" data-remote="BACK" title="Back" aria-label="Back"><ha-icon icon="mdi:arrow-left"></ha-icon>${this._locale() === "es" ? "Atrás" : "Back"}</button>
+            <button type="button" data-remote="HOME" title="Home" aria-label="Home"><ha-icon icon="mdi:home-outline"></ha-icon>${this._locale() === "es" ? "Inicio" : "Home"}</button>
+          </div>
+          <div class="sbr-actions" role="group" aria-label="Playback and volume">
             <button type="button" class="sbr-icon-btn" data-remote="PLAY" title="Play" aria-label="Play"><ha-icon icon="mdi:play"></ha-icon></button>
             <button type="button" class="sbr-icon-btn" data-remote="PAUSE" title="Pause" aria-label="Pause"><ha-icon icon="mdi:pause"></ha-icon></button>
+            <button type="button" class="sbr-icon-btn" data-remote="MUTE" title="Mute" aria-label="Mute"><ha-icon icon="mdi:volume-mute"></ha-icon></button>
             <button type="button" class="sbr-icon-btn" data-remote="VOLUME_DOWN" title="Volume down" aria-label="Volume down"><ha-icon icon="mdi:volume-minus"></ha-icon></button>
             <button type="button" class="sbr-icon-btn" data-remote="VOLUME_UP" title="Volume up" aria-label="Volume up"><ha-icon icon="mdi:volume-plus"></ha-icon></button>
           </div>
-          <div class="sbr-numbers">${[1,2,3,4,5,6,7,8,9,"⌫",0,"↵"].map((n) => `<button data-remote="${n === "⌫" ? "BACK" : n === "↵" ? "ENTER" : n}">${n}</button>`).join("")}</div>
         </section>`;
       portal.querySelector("[data-close-remote]")?.addEventListener("click", () => this._toggleNuvioRemote());
       portal.querySelectorAll("[data-remote]").forEach((button) => button.addEventListener("click", async () => {
