@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.95";
+const STREAMING_BROWSER_VERSION = "0.4.96";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -9648,5 +9648,151 @@ console.info(
     if (/\/(?:region\/[a-z]{2}\/)?detail(?:\/|$)/i.test(url.pathname) || url.searchParams.has('gti'))
       throw new Error('Unsupported Prime Video title ID; a real amzn1.dv.gti. link is required.');
     return previousAndroidActivity.call(this, activity);
+  };
+})();
+
+
+/* Netflix v0.4.96: exact episode > selected season > series navigation.
+ * Never treat a series title ID as an episode ID or auto-press Enter.
+ */
+(() => {
+  const Card = StreamingBrowserCard;
+  const previousExact = Card.prototype._openExactTitle;
+  const previousDestination = Card.prototype._providerDestination;
+  const isNetflix = name => /netflix/i.test(String(name || ''));
+  const parse = raw => {
+    try {
+      const url = new URL(String(raw || ''));
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
+          !['netflix.com', 'www.netflix.com'].includes(url.hostname.toLowerCase())) return null;
+      const match = /^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(watch|title)\/(\d+)\/?$/i.exec(url.pathname);
+      return match ? {kind: match[1].toLowerCase(), id: match[2]} : null;
+    } catch (_) { return null; }
+  };
+  const episodeMatches = (link, detail) =>
+    link?.scope === 'episode' && Number.isInteger(Number(link.season)) &&
+    Number.isInteger(Number(link.episode)) &&
+    Number(link.season) === Number(detail?.selectedSeason) &&
+    Number(link.episode) === Number(detail?.selectedEpisode?.episode_number);
+  const seasonMatches = (link, detail) =>
+    link?.scope === 'season' && Number.isInteger(Number(link.season)) &&
+    Number(link.season) === Number(detail?.selectedSeason);
+  const select = (card, provider, sources, detail, tier) => {
+    const matches = (Array.isArray(sources) ? sources : []).filter(link => {
+      if (!isNetflix(link?.name)) return false;
+      const target = parse(link.web_url);
+      if (!target) return false;
+      if (tier === 'episode') return target.kind === 'watch' && episodeMatches(link, detail);
+      // Netflix /title/ links are navigation only. Do not play a random
+      // video from a season/series link that happens to contain /watch/.
+      if (target.kind !== 'title') return false;
+      return tier === 'season' ? seasonMatches(link, detail) : link.scope === 'series';
+    });
+    return card._pickWatchmodeSource(provider, matches) || null;
+  };
+  const localized = (card, en, es) => card._locale?.().startsWith('es') ? es : en;
+
+  Card.prototype._providerDestination = function(provider, link, detail, isSeries) {
+    const original = previousDestination.call(this, provider, link, detail, isSeries);
+    if (this._platform() !== 'android_tv' || !isNetflix(provider) ||
+        !this._androidAdbEntity?.() || !isSeries) return original;
+    const target = parse(link?.web_url);
+    if (!target) return original;
+    if (target.kind === 'watch' && episodeMatches(link, detail))
+      return {...original, deviceKind: 'episode', tvCanOpen: true};
+    if (target.kind === 'title' && seasonMatches(link, detail))
+      return {...original, deviceKind: 'season', tvCanOpen: true};
+    if (target.kind === 'title' && link?.scope === 'series')
+      return {...original, deviceKind: 'series', tvCanOpen: true};
+    return original;
+  };
+
+  Card.prototype._openExactTitle = async function(provider, autoPlay = false) {
+    if (this._platform() !== 'android_tv' || !isNetflix(provider))
+      return previousExact.call(this, provider, autoPlay);
+    // Preserve existing non-ADB behavior. Never silently downgrade a
+    // configured but disconnected ADB player to Netflix's home page.
+    if (!this._androidAdbEntity?.()) {
+      if (!this._config?.adb_entity) return previousExact.call(this, provider, autoPlay);
+      this._toast(localized(this, 'Netflix ADB media player is unavailable for this room.',
+        'El reproductor ADB de Netflix no está disponible para esta habitación.'));
+      return;
+    }
+    const detail = this._details;
+    if (!detail || (detail.type === 'tv' && !detail.selectedEpisode)) {
+      this._toast(localized(this, 'Select an episode first.', 'Selecciona primero un episodio.'));
+      return;
+    }
+    const isSeries = detail.type === 'tv';
+    try {
+      let selected = null;
+      let tier = 'movie';
+      if (isSeries) {
+        // Prevent premature series fallback while an exact episode
+        // lookup is still in flight.
+        if (detail.episodeSourcesLoading) {
+          this._toast(localized(this, 'Episode links are still loading; retry shortly.',
+            'Todavía se están buscando enlaces del episodio; inténtalo de nuevo.'));
+          return;
+        }
+        const links = this._seriesLinksForDetail?.(detail) || [
+          ...(detail.episodeSources || []), ...(detail.seriesFallbackSources || [])];
+        for (const level of ['episode', 'season', 'series']) {
+          selected = select(this, provider, links, detail, level);
+          if (selected) { tier = level; break; }
+        }
+        // A series link may also be available from the existing
+        // Watchmode lookup even when episode/season lookup returned none.
+        if (!selected && this._watchmodeSourcesForCurrentTitle) {
+          try {
+            const extra = await this._watchmodeSourcesForCurrentTitle({silent: true});
+            if (this._details !== detail) return;
+            selected = select(this, provider, (extra || []).map(link =>
+              ({...link, scope: 'series'})), detail, 'series');
+            if (selected) tier = 'series';
+          } catch (_) { /* A missing optional lookup must not launch the wrong title. */ }
+        }
+      } else {
+        let links = !detail.localSourcesLoading ? detail.localSources || [] : [];
+        if (!links.some(link => isNetflix(link?.name) && parse(link?.web_url)) &&
+            this._watchmodeSourcesForCurrentTitle) {
+          links = await this._watchmodeSourcesForCurrentTitle({silent: true});
+          if (this._details !== detail) return;
+        }
+        const movies = (Array.isArray(links) ? links : []).filter(link =>
+          isNetflix(link?.name) && parse(link?.web_url));
+        selected = this._pickWatchmodeSource(provider, movies);
+      }
+      const target = selected && parse(selected.web_url);
+      if (!target) {
+        this._toast(localized(this,
+          isSeries ? 'No Netflix episode, season or series link was found for this title.' : 'No playable Netflix movie link was found.',
+          isSeries ? 'No se encontró un enlace de Netflix para el episodio, la temporada o la serie.' : 'No se encontró un enlace de Netflix para la película.'));
+        return;
+      }
+      // Only an exact episode (or a movie) uses /watch/ with source=30.
+      // Season and series links use their own /title/ ID for navigation;
+      // a /title/ URL is not evidence of an exact playable episode.
+      const route = isSeries && tier !== 'episode' ? 'title' : 'watch';
+      await this._prepareDisplayRoute();
+      await this._ensureTvOn();
+      await this._androidAdbCommand(
+        'am start -a android.intent.action.VIEW ' +
+        '-d http://www.netflix.com/' + route + '/' + target.id + ' ' +
+        '--es source 30 -n com.netflix.ninja/.MainActivity'
+      );
+      this._toast(tier === 'episode' || tier === 'movie'
+        ? localized(this, 'Netflix playback requested on this Android TV.',
+            'Se solicitó la reproducción en Netflix en esta Android TV.')
+        : tier === 'season'
+          ? localized(this, 'No exact episode link; opening the season for manual episode selection.',
+              'No hay enlace del episodio; abriendo la temporada para seleccionar el episodio manualmente.')
+          : localized(this, 'No episode or season link; opening the series for manual episode selection.',
+              'No hay enlace del episodio ni de la temporada; abriendo la serie para seleccionar el episodio manualmente.'));
+      // No auto Enter/Play, no profile navigation and no app restart.
+    } catch (error) {
+      this._toast(localized(this, 'Netflix launch failed: ', 'Falló el enlace de Netflix: ') +
+        (this._formatError?.(error) || String(error)));
+    }
   };
 })();
