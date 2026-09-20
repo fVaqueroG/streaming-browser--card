@@ -66,3 +66,8 @@ For room connections with an optional Power helper, the card displays one access
 ## v0.4.81: Nuvio-inspired Streaming Browser remote
 
 The remote keeps the same command dispatch and player selection but now uses a dark, rounded popup with a full-width Wake button, large circular D-pad, 12-key number pad including Backspace and Enter, large Back and Home buttons, and compact Play, Pause, Mute and volume controls. It remains scrollable on short screens and keeps the configured remote position. Update the integration through HACS, restart Home Assistant, and reload the dashboard.
+
+
+## v0.4.82: Nuvio-size remote
+
+The Streaming Browser remote now matches the compact Nuvio remote size: 176px wide (166px on mobile) with a 132px D-pad (122px on mobile). Wake, the complete 12-key pad, Back/Home, Play/Pause, mute and volume all remain, with the extra controls in a compact secondary grid. The popup scrolls on short screens; playback, HDMI, room, and smart-plug routing are unchanged. Update the HACS integration, restart Home Assistant, and reload the dashboard.

@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant: LG webOS, Android TV and Roku TV
- * v0.4.81
+ * v0.4.82
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.81";
+const STREAMING_BROWSER_VERSION = "0.4.82";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -942,6 +942,43 @@ class StreamingBrowserCard extends HTMLElement {
             .sbr-pad {width:min(252px,100%);margin:14px auto}
             .sbr-numbers {gap:7px}
             .sbr-numbers button {min-height:54px}
+          }
+          /* Compact Nuvio-sized remote v0.4.82 */
+          .sbr-remote {
+            top:max(10px,env(safe-area-inset-top));
+            width:176px;max-width:calc(100vw - 20px);
+            max-height:calc(100dvh - 20px);overflow-y:auto;
+            padding:12px;border-radius:24px;font:500 12px/1.25 Roboto,Arial,sans-serif;
+          }
+          .sbr-head {gap:5px;margin:0 0 10px}
+          .sbr-head-title {font-size:13px;line-height:1.2}
+          .sbr-head-subtitle {font-size:9px;max-width:104px;margin-top:2px}
+          .sbr-x {width:30px;height:30px;min-height:30px!important;font-size:21px!important}
+          .sbr-wake {min-height:36px;gap:7px;border-radius:18px!important;font-size:12px!important}
+          .sbr-wake ha-icon {--mdc-icon-size:17px}
+          .sbr-pad {width:132px;max-width:100%;margin:12px auto;
+            background:radial-gradient(circle at center,#2c2c2e 0 34%,#35353a 35% 100%)}
+          .sbr-pad .sbr-dir ha-icon {--mdc-icon-size:32px}
+          .sbr-pad .sbr-ok {font-size:11px;box-shadow:0 0 0 3px #2b2b3055}
+          .sbr-numbers {gap:7px}
+          .sbr-numbers button {min-height:36px;border-radius:12px;font-size:16px}
+          .sbr-numbers .sbr-key-secondary {font-size:16px}
+          .sbr-navigation {gap:8px;margin:10px 0 0}
+          .sbr-navigation button {min-height:40px;border-radius:14px;gap:4px;font-size:12px}
+          .sbr-navigation ha-icon {--mdc-icon-size:15px}
+          .sbr-actions {grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;
+            margin:10px 0 0;padding-top:10px}
+          .sbr-actions .sbr-icon-btn {min-height:36px;padding:5px 0;border-radius:12px}
+          .sbr-actions .sbr-icon-btn ha-icon {--mdc-icon-size:21px}
+          /* Back and Home remain at the bottom, after Streaming Browser's extra controls. */
+          .sbr-remote {display:flex;flex-direction:column}
+          .sbr-navigation {order:5}
+          .sbr-actions {order:4}
+          @media(max-width:700px) {
+            .sbr-remote {width:166px;padding:11px;border-radius:24px}
+            .sbr-pad {width:122px;max-width:100%;margin:12px auto}
+            .sbr-numbers {gap:7px}
+            .sbr-numbers button {min-height:36px}
           }
         </style>
         <section class="sbr-remote" role="dialog" aria-label="TV Remote">
