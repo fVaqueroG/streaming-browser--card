@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.94";
+const STREAMING_BROWSER_VERSION = "0.4.95";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -2122,6 +2122,23 @@ class StreamingBrowserCard extends HTMLElement {
 
     const selectedIds =
       this._selectedProviderIds();
+
+    if (this._config?.watchhub_enabled !== false) {
+      const detail = this._details;
+      const mode = detail?.type === 'tv' ? 'tv' : 'movie';
+      const links = detail?.type === 'tv'
+        ? this._seriesLinksForDetail(detail)
+        : (detail?.localSources || []);
+      const available = (this._providers?.[mode] || []).filter(provider =>
+        selectedIds.has(String(provider.provider_id)));
+      for (const link of links) {
+        if (String(link?.source || '').toLowerCase() !== 'watchhub') continue;
+        const provider = available.find(item =>
+          this._watchmodeProviderScore(item.provider_name, link.name) >= 90);
+        if (provider && !map.has(provider.provider_id))
+          map.set(provider.provider_id, {...provider, groups: []});
+      }
+    }
 
     return [...map.values()]
       .filter((provider) =>
@@ -4889,10 +4906,11 @@ class StreamingBrowserCard extends HTMLElement {
         align-items: center;
       }
 
+      /* Streaming Browser v0.4.95: WatchHub source visibility and larger provider logos. */
       .provider-card img {
-        width: 40px;
-        height: 40px;
-        border-radius: 8px;
+        width: 48px;
+        height: 48px;
+        border-radius: 9px;
         object-fit: contain;
         background: white;
       }
@@ -4902,9 +4920,9 @@ class StreamingBrowserCard extends HTMLElement {
       .provider-brand {
         display: grid;
         place-items: center;
-        flex: 0 0 44px;
-        width: 44px;
-        min-height: 44px;
+        flex: 0 0 52px;
+        width: 52px;
+        min-height: 52px;
         position: relative;
         overflow: visible;
       }
@@ -4958,6 +4976,14 @@ class StreamingBrowserCard extends HTMLElement {
         font-size: 10px;
         opacity: .72;
         margin: 0;
+      }
+      .provider-link-origin {
+        display: inline-flex;
+        border: 1px solid var(--divider-color);
+        border-radius: 8px;
+        padding: 2px 5px;
+        white-space: nowrap;
+        opacity: .86;
       }
       .provider-actions {
         display: flex;
@@ -5144,6 +5170,8 @@ class StreamingBrowserCard extends HTMLElement {
         const sourceStatus = isSeries ? "" : loading
           ? this._t("local_link_loading")
           : !url ? this._t("local_link_missing") : "";
+        const linkOrigin = url ? ({watchhub: 'WatchHub', justwatch: 'JustWatch',
+          watchmode: 'Watchmode'})[String(exact?.source || '').toLowerCase()] || '' : '';
         // The label is the resolved destination of this particular action,
         // not the type of content selected in TMDB. A series URL must never be
         // advertised as an exact episode when one is selected.
@@ -5167,6 +5195,7 @@ class StreamingBrowserCard extends HTMLElement {
             </span>
             <div class="provider-main">
               ${sourceStatus ? `<span class="provider-source">${this._esc(sourceStatus)}</span>` : ""}
+              ${linkOrigin ? `<span class="provider-source provider-link-origin" title="${this._esc(linkOrigin)}">${this._esc(linkOrigin)}</span>` : ""}
               <div class="provider-actions">
                 ${(exactTv || tvSource) ? `<button type="button"
                   class="mini-btn ${exactTv ? "title " : ""}icon-action"

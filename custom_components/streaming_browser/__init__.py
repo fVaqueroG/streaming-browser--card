@@ -40,6 +40,41 @@ _LEGACY_CARD_URLS = frozenset({
 })
 
 
+def _justwatch_api_for_entry(hass: HomeAssistant, entry) -> JustWatchGraphQLApi:
+    """Keep private JustWatch session tokens in HA config-entry options."""
+    options = entry.options if entry is not None else {}
+
+    async def persist(tokens: dict[str, str]) -> None:
+        if entry is None:
+            return
+        updated = dict(entry.options)
+        for name in ("access_token", "refresh_token"):
+            token = str(tokens.get(name) or "").strip()
+            if token:
+                updated["justwatch_" + name] = token
+        if updated != entry.options:
+            hass.config_entries.async_update_entry(entry, options=updated)
+
+    return JustWatchGraphQLApi(
+        async_get_clientsession(hass),
+        access_token=options.get("justwatch_access_token"),
+        refresh_token=options.get("justwatch_refresh_token"),
+        token_updated=persist,
+    )
+
+
+async def _justwatch_options_updated(hass: HomeAssistant, entry) -> None:
+    """Apply new sign-in/disconnect settings without discarding refreshed tokens."""
+    api = hass.data.get(DOMAIN)
+    current = api.session_tokens if isinstance(api, JustWatchGraphQLApi) else {}
+    configured = {
+        "access_token": str(entry.options.get("justwatch_access_token") or ""),
+        "refresh_token": str(entry.options.get("justwatch_refresh_token") or ""),
+    }
+    if current != configured:
+        hass.data[DOMAIN] = _justwatch_api_for_entry(hass, entry)
+
+
 async def _register_card(hass: HomeAssistant) -> None:
     """Serve the exact JS bundled with this installed integration version."""
     if not _CARD_FILE.is_file():
@@ -112,7 +147,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Initialize once for both config entries and legacy YAML setups."""
     if DOMAIN in hass.data:
         return True
-    hass.data[DOMAIN] = JustWatchGraphQLApi(async_get_clientsession(hass))
+    entry = next(iter(hass.config_entries.async_entries(DOMAIN)), None)
+    hass.data[DOMAIN] = _justwatch_api_for_entry(hass, entry)
     websocket_api.async_register_command(hass, ws_episode_links)
     websocket_api.async_register_command(hass, ws_watchhub_links)
     websocket_api.async_register_command(hass, ws_series_fallback_links)
@@ -123,7 +159,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
     """Ensure UI setup repairs a missed startup resource registration."""
     if DOMAIN not in hass.data:
-        return await async_setup(hass, {})
+        if not await async_setup(hass, {}):
+            return False
+    await _justwatch_options_updated(hass, entry)
+    entry.async_on_unload(entry.add_update_listener(_justwatch_options_updated))
     await _register_card(hass)
     return True
 
