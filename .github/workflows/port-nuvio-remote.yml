@@ -13,133 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Add Nuvio remote and simplify profile handling
+      - name: Patch card and check syntax
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('streaming-browser-card.js')
-          s = p.read_text(encoding='utf-8')
-          assert ' * v0.4.56\n' in s[:200], 'Expected v0.4.56; stop rather than overwriting newer work'
-          assert '_toggleNuvioRemote' not in s, 'Remote already added'
-          def change(old, new):
-              global s
-              assert s.count(old) == 1, f'Expected exactly one match for {old[:80]!r}; found {s.count(old)}'
-              s = s.replace(old, new, 1)
-          change(' * v0.4.56\n', ' * v0.4.57\n')
-          change('    this._watchmodeCache = new Map();\n', '    this._watchmodeCache = new Map();\n    this._remoteExpanded = false;\n')
-          change('  connectedCallback() {\n    this._render();\n  }\n', '''  connectedCallback() {
-    this._render();
-  }
-
-  disconnectedCallback() {
-    if (this._remoteExpanded) {
-      this._remoteExpanded = false;
-      document.getElementById("nuvio-remote-portal")?.remove();
-    }
-  }
-''')
-          remote = '''  async _toggleNuvioRemote() {
-    if (this._remoteExpanded) {
-      this._remoteExpanded = false;
-      document.getElementById("nuvio-remote-portal")?.remove();
-      this._updateNuvioRemoteButton();
-      return;
-    }
-    if (document.getElementById("nuvio-remote-portal")) {
-      this._toast("Close the other TV remote before opening this one.");
-      return;
-    }
-    try {
-      let RemoteCard = customElements.get("nuvio-card");
-      if (!RemoteCard) {
-        await import("/nuvio/nuvio-card.js");
-        RemoteCard = customElements.get("nuvio-card");
-      }
-      if (typeof RemoteCard?.prototype?.syncRemotePortal !== "function") {
-        throw new Error("The Nuvio remote is not available.");
-      }
-      const card = this;
-      this._remoteExpanded = true;
-      RemoteCard.prototype.syncRemotePortal.call({
-        _config: { show_remote: true, remote_side: card._config.remote_side || "left" },
-        get _remoteExpanded() { return card._remoteExpanded; },
-        set _remoteExpanded(value) { card._remoteExpanded = Boolean(value); },
-        remoteKey: async (key) => {
-          try {
-            await card._hass.callService("nuvio", "remote_key", { key },
-              { entity_id: card._config.tv_entity });
-          } catch (err) {
-            card._toast("TV remote: " + card._formatError(err));
-          }
-        },
-        removeRemotePortal: () => document.getElementById("nuvio-remote-portal")?.remove(),
-        updateRemoteButtons: () => card._updateNuvioRemoteButton(),
-      });
-      this._updateNuvioRemoteButton();
-    } catch (err) {
-      this._remoteExpanded = false;
-      this._updateNuvioRemoteButton();
-      this._toast("TV remote: " + this._formatError(err));
-    }
-  }
-
-  _updateNuvioRemoteButton() {
-    this.shadowRoot?.querySelectorAll(".streaming-remote-toggle").forEach((button) => {
-      button.setAttribute("aria-pressed", String(this._remoteExpanded));
-      button.style.background = this._remoteExpanded
-        ? "var(--primary-color)" : "var(--secondary-background-color)";
-      button.style.color = this._remoteExpanded ? "white" : "var(--primary-text-color)";
-    });
-  }
-
-'''
-          change('  _sleep(ms) {\n', remote + '  _sleep(ms) {\n')
-          button = '''            <button
-              class="streaming-remote-toggle"
-              type="button" title="TV remote" aria-label="TV remote"
-              aria-pressed="${this._remoteExpanded ? "true" : "false"}"
-              style="width:38px;height:38px;flex:0 0 38px;border:0;border-radius:50%;background:var(--secondary-background-color);color:var(--primary-text-color);display:grid;place-items:center;cursor:pointer;"
-            ><ha-icon icon="mdi:remote-tv" style="--mdc-icon-size:19px"></ha-icon></button>
-
-'''
-          change('            <input\n              class="search"', button + '            <input\n              class="search"')
-          change('  _bindEvents() {\n    const root = this.shadowRoot;\n    if (!root) return;\n', '''  _bindEvents() {
-    const root = this.shadowRoot;
-    if (!root) return;
-    root.querySelector(".streaming-remote-toggle")?.addEventListener(
-      "click", () => this._toggleNuvioRemote()
-    );
-    this._updateNuvioRemoteButton();
-''')
-          change('        .top {\n          display: flex;\n', '''        .top {
-          position: sticky;
-          top: 0;
-          z-index: 20;
-          background: var(--card-background-color);
-          display: flex;
-''')
-          # Default to manual profile selection. Existing automatic handling is
-          # retained only for someone explicitly opting back into legacy mode.
-          change('  async _applyProfile(\n    providerName,\n    source,\n    options = {}\n  ) {\n', '''  async _applyProfile(
-    providerName,
-    source,
-    options = {}
-  ) {
-    if (this._config.manual_profile_selection !== false) return;
-''')
-          change('          ${this._renderProfileSelector()}\n', '          ${this._config.manual_profile_selection === false ? this._renderProfileSelector() : ""}\n')
-          change('          <div class="note">\n            ${this._t("active_profile")}\n            <b>${this._esc(this._selectedProfile || this._t("none"))}</b>.\n            ${this._t("footer_note")}\n          </div>\n', '''          ${this._config.manual_profile_selection === false ? `
-          <div class="note">
-            ${this._t("active_profile")}
-            <b>${this._esc(this._selectedProfile || this._t("none"))}</b>.
-            ${this._t("footer_note")}
-          </div>
-          ` : ""}
-''')
-          p.write_text(s, encoding='utf-8')
-          print('Patched Streaming Browser Card: v0.4.57, shared Nuvio remote, manual profiles')
-          PY
+          echo 'H4sIAAAAAAAC/81YWXPbNhB+56/YcNoR1Ui0kjZpSln2JB4/ZNpmMjn6kmZUiIQkNBTAAqBkxdF/7+KgeFiynUwfqhnLIrD49l7sci7FCgqilzmbAVsVQmp4jY9BARP7I+opLSlZMb4YzqTYKCqHKZFZ/Lfq9QOFVEWM+9lU0ysdUZ6KDEknvVLPh8+Qgig8oaEHP8B6FP8UP3n6J+8B46A+JI9Ho48D6L3n9KqgqaYZpKWUlGtYU6mY4GPIBHChQeDCRjJNgdMNlZAuCV9Q1dvDT7VYLHL6qlwz8YauhKY9e9AwQhZuCUhuRN0aRXO6QkY06wUZnXu8SOTZwHDoJwHgZ5GLGclB2QeOqqo4FSXXhq5vFz173JvAowHMe5eVJoJTWBGdLtEagEahMMtF+mkMc0TI4JrvErhGnA/J0ycfH8hdz+Ipy0TSIidpLc4AHvUDL2LbkIOGYX/G5wYZfvSSqXi6MVKsUIILki4pMkBE+J0UUX/sEe5HWpNJa01UlfAMVZ3AnOSKjjv8U8G5tcUFyfMZST9Ffbhuw+Bx6bF3TpbesYPBgXO4tgvwK2Pq+Bk2h+iQ2NX+HUp5mkykpQmYeEH1pYudF9uXWRRyE3FDd3ho0ofkYf88Ngtr6mQ0Upo/VK4fOEqEt6oSteUp3Aze/5X0FY+yyIhuSvmi1FrwmkxSXUpeq+zE/zrmXcW0IEpH4UUuFMUlCgK/JLz7A7wlZ3QuJC4XlJtUM6dM8sXhLWJpud2zyakGp84FljW0XFoqLVZeUmWkrkQ1da+GNbo9qE/WgqNbN4RpX06j8MSePqkxsHbWMPBt3HcNKfS2oGLewDmPCym0MOvnsQkxt/Xa2hgeYLEK5yVPNZbYsCm3XmKFt0l/KaWQUfgODW4dXlkbjWvKKlkTlpNZ3jRzJRGmotKQOnWMO8a3R6qW5T5QaxVqDW4oEKeY41Et9RQ5ztkC6ymopdh4DokFHnjBp4pluGSt7+njxg58+QJhTuc6hN1gD4zGh468JjF9QHmw9v64eV4dOL8meUkNyKHTaI0XQuSUcE/XgnO0v9Jt4utG9Ilu+zA5a3iwHdvNaHT8lnhjWfu9pXLN8I5xwRUOIPTmQEx8ugb832TuPteAUcn0dsqyjjH1euq2YNcIbYwKJMNLBSIqZb8jmAPwGb7P6ARCeOj3MLXxEnXBaADa0PvfHSOtaTNcEoiskb61CNbYrgA2a5+qwJ24RytkhbH7upJ62Hj3qfj3rNitGtvxgNs74oFddfce59G8s9WSZGLzRgh9Hv9TUrl9S3O8roV8jpkcxnWL6b3gLsSwHyP7S+xFomhmUVvR7pZizLLnWkuGjxjORDIyLCTFxizDOH6LG3xx+ArdW6EC0lssaKZ5WEjbpE0OmnofDucQromMhsiOrYjcDlORC9kPIak2FMXsyMxWjVpRHWRu947wNfw2S+yBGwwqzqb5bgPvqvYI+4xGUzZVOaVFtFK2F+tV5RHdfXOzHzjZqmal/py6jU5xSHMsLpPwmDM71Ka0T0IHFAJWjhwf9yEYgnUk3jE0by53QJrenoTfXR+zm7kKrNlskoS7Lo61/iTcsEwvkx+fFVfjJWWLpXa/5zm9SkYwAvs0ExLbz2TkfwwlyVipkiej78e1l5M7A2Bs/yVH/TjGrhbHgG2ykCwb24FgiM5fqSQ1g4sc46ykEKAQzD62VTo7XZIhQ+ZgvibhKmNJ5Y51WOk7HK6y1JINFftMk0e/FFfh2emJP4u/nH/OumHUCAXGi1K7tv5mKFAi02WIYeYj6SF8/eHmTDGdMZ5drk1rVE8TruGQWFyqzKnLjZ9bbK9mKPpVN1iPGx3M4E7I4DCiXTYr7Qp3W3k7j0nmWP/GlKYcpxrvxTDNWfoJC5i7Xqo6fWNMsOS+kN1Z8+0A0nVirEVRWdJPCz7wwMR9w1BN+kawFUIx00kmGFUo87Z5RSNtAqPmyuchWhvTCR63lhuZAy4lzI16IGuCY3J2tfOjFSmKfPtaijnLaeS0xM5yjT2ffEVWdOCWlChlWj2IwqhjRvHrnVmpSmVzYmvBBjdQgwZo0MUMLGRnvPNt1IrwkuTTwiFPlQ0iPGmbdlu86ng76E6AugqaMdnLuI/G/q4e+tv0d0kwqSTAgnorB1Nnw92NtxE+5TO2rjKcm4p+1k7/ShrsRwjyXdNKkrC/a1Oezs4qYqpSb0YnLs28UKav3+NxHAtxwNxhVTuLj3KdYwZTObWytVmenqDsZ918+DYD/hXcZpLgvhYJ/juDBPeyR9A1R2PhL+d4F5dFbN/XudeCagA33wzincd11PMvr8xLyHRpBih6hWr6qfP9S4z2Ei/3ATizgtcdarNSbgbRDBH/Bb0IX0TNFAAA' | base64 -d | gzip -d > /tmp/port_remote.py
+          python3 /tmp/port_remote.py
           node --check streaming-browser-card.js
       - name: Commit and publish v0.4.57
         shell: bash
@@ -149,6 +27,6 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add streaming-browser-card.js
-          git commit -m 'v0.4.57: use exact Nuvio remote with manual profile selection'
+          git commit -m 'v0.4.57: match Nuvio remote and use manual profiles'
           git push origin HEAD:main
           gh release create v0.4.57 --target "$(git rev-parse HEAD)" --title v0.4.57 --generate-notes
