@@ -1,0 +1,49 @@
+name: Publish Streaming Browser Prime Disney v0.4.90
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-prime-disney-v0490.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply Prime TV target and Disney link classification
+        run: python3 tools/apply-prime-disney-v0490.py
+      - name: Validate syntax and provider regressions
+        run: |
+          node --check tools/streaming-browser-prime-disney-v0490.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node tools/test-prime-disney-v0490.js
+          node tools/test-netflix-episode-tv-v0489.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          source=(base/'frontend/streaming-browser-card.js').read_text()
+          meta=json.loads((base/'manifest.json').read_text())
+          assert meta['version']=='0.4.90'
+          assert source.count('const STREAMING_BROWSER_VERSION = "0.4.90";')==1
+          for marker in ('/* Streaming Browser v0.4.90: Prime TV targeting and Disney+ link specificity. */',
+                         '/* Streaming Browser v0.4.89: Netflix episode TV app-specific launch. */',
+                         '/* Streaming Browser v0.4.88: episode > season > series; WatchHub last. */',
+                         '/* Streaming Browser v0.4.86: optional ADB remote entity',
+                         '/* Compact action captions v0.4.84 */'):
+              assert marker in source,marker
+          print('PASS Netflix, Prime, Disney, WatchHub priority, captions and optional ADB retained')
+          PY
+      - name: Commit and publish v0.4.90
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.90: Prime app-specific TV links and Disney scope labels'
+          git push origin HEAD:main
+          gh release create v0.4.90 --target "$(git rev-parse HEAD)" --title v0.4.90 --notes 'Prime Video Play on TV targets the Prime Android TV app with selected content GTI, using optional ADB media player/remote if configured or standard Android TV Remote otherwise. LG webOS tries the original Prime provider URL as amazon contentTarget before a launcher fallback. Disney+ series, show and browse/entity URLs are no longer labeled Episode just because they were returned from an episode lookup; ambiguous paths are labeled Series, and shared Prime episode/series URLs are downgraded. Original Play in device URLs, Netflix v0.4.89 launch, source priority (episode > season > series; WatchHub last), rooms and controls remain unchanged. Exact playback requires validation on installed TV apps.'
