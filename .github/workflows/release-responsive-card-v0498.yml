@@ -1,0 +1,50 @@
+name: Publish Streaming Browser adaptive width v0.4.98
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-responsive-card-v0498.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install responsive layout fix
+        run: python3 tools/apply-responsive-card-v0498.py
+      - name: Validate responsive layout and retained playback modules
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          card=(base/'frontend/streaming-browser-card.js').read_text(encoding='utf-8')
+          meta=json.loads((base/'manifest.json').read_text(encoding='utf-8'))
+          assert meta['version']=='0.4.98'
+          assert card.count('const STREAMING_BROWSER_VERSION = "0.4.98";')==1
+          assert 'return { columns: "full", min_columns: 12 };' in card
+          assert 'min_columns: 6' not in card
+          assert 'width: min(860px,96vw)' not in card
+          assert '/* Streaming Browser v0.4.98: container-responsive full-width layout. */' in card
+          assert 'max-height: min(92vh, 92dvh)' in card
+          assert 'grid-auto-columns: ${posterWidth}px;' in card
+          for marker in ('/* Streaming Browser v0.4.95: WatchHub source visibility and larger provider logos. */',
+                         '/* Streaming Browser v0.4.88: episode > season > series; WatchHub last. */',
+                         '/* Streaming Browser v0.4.91: Crunchyroll Android TV opens its installed app, never a generic web intent. */'):
+              assert marker in card, marker
+          print('PASS full section width, fluid detail and catalog, retained WatchHub/JustWatch/logo and TV provider routes')
+          PY
+      - name: Commit and release v0.4.98
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.98: adapt card and detail popup to device width'
+          git push origin HEAD:main
+          gh release create v0.4.98 --target "$(git rev-parse HEAD)" --title v0.4.98 --notes 'Streaming Browser now requests full section width, uses its full assigned dashboard container, and expands detail dialogs to the available viewport instead of an 860px cap. Search and catalog rows remain responsive, with unchanged phone controls, remote and playback. Home Assistant dashboard layout still controls the parent container: for full-screen tablets use a Panel view containing Streaming Browser as its only card, or a full-width section/card in Sections view. Update through HACS, restart Home Assistant and reload the dashboard.'
