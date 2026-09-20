@@ -15,6 +15,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.lovelace.const import LOVELACE_DATA, MODE_STORAGE, CONF_RESOURCE_TYPE_WS
 from homeassistant.const import CONF_ID, CONF_TYPE, CONF_URL
 from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .justwatch import JustWatchGraphQLApi, JustWatchApiError
@@ -26,6 +27,9 @@ _CARD_URL = "/streaming_browser/streaming-browser-card.js"
 _CARD_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-card.js"
 _VERSION = str(json.loads((_INTEGRATION_DIR / "manifest.json").read_text(encoding="utf-8"))["version"])
 _RESOURCE_URL = f"{_CARD_URL}?v={_VERSION}"
+_STATIC_REGISTERED_KEY = f"{DOMAIN}_card_static_registered"
+_FRONTEND_REGISTERED_KEY = f"{DOMAIN}_card_frontend_registered"
+_RESOURCE_RETRY_KEY = f"{DOMAIN}_resource_retry_scheduled"
 # URLs installed by the old HACS Dashboard category of this same repository.
 # They define the same custom element and can prevent the new visual editor
 # from loading. Remove only these recognized legacy HACS resource URLs.
@@ -40,17 +44,35 @@ async def _register_card(hass: HomeAssistant) -> None:
     if not _CARD_FILE.is_file():
         _LOGGER.error("Streaming Browser card file is missing: %s", _CARD_FILE)
         return
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(_CARD_URL, str(_CARD_FILE), cache_headers=False)]
-    )
-    # Load the versioned module globally: the Add card picker needs its custom
-    # element and window.customCards metadata even without an existing card.
-    # The Lovelace resource below imports the identical URL, so the browser's
-    # module cache prevents duplicate evaluation and conflicting definitions.
-    frontend.add_extra_js_url(hass, _RESOURCE_URL)
+    # Re-running setup must repair a missing resource without attempting to
+    # register the same aiohttp route twice (which can prevent HA startup).
+    if not hass.data.get(_STATIC_REGISTERED_KEY):
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(_CARD_URL, str(_CARD_FILE), cache_headers=False)]
+        )
+        hass.data[_STATIC_REGISTERED_KEY] = True
+    # The global module lets the named card appear in Add card even before a
+    # dashboard containing it has loaded. Register once for repeated setup.
+    if not hass.data.get(_FRONTEND_REGISTERED_KEY):
+        frontend.add_extra_js_url(hass, _RESOURCE_URL)
+        hass.data[_FRONTEND_REGISTERED_KEY] = True
 
     lovelace = hass.data.get(LOVELACE_DATA)
-    if lovelace is None or lovelace.resource_mode != MODE_STORAGE:
+    if lovelace is None:
+        # Some startup orders initialize the integration before Lovelace's
+        # resources collection. Retry when startup finishes rather than
+        # permanently skipping the resource on the first attempt.
+        if not hass.data.get(_RESOURCE_RETRY_KEY) and not hass.is_running:
+            hass.data[_RESOURCE_RETRY_KEY] = True
+            hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED,
+                lambda _event: hass.async_create_task(_register_card(hass)),
+            )
+        _LOGGER.warning("Streaming Browser resource not yet ready: Lovelace data unavailable; retry is %s",
+                        "scheduled" if hass.data.get(_RESOURCE_RETRY_KEY) else "not available")
+        return
+    if lovelace.resource_mode != MODE_STORAGE:
+        _LOGGER.info("Streaming Browser module loaded globally; Lovelace resources use YAML mode")
         return
 
     collection = lovelace.resources
@@ -73,6 +95,7 @@ async def _register_card(hass: HomeAssistant) -> None:
         await collection.async_create_item(
             {CONF_URL: _RESOURCE_URL, CONF_RESOURCE_TYPE_WS: "module"}
         )
+        _LOGGER.info("Streaming Browser card resource created: %s", _RESOURCE_URL)
         return
     primary = matches[0]
     if primary.get(CONF_URL) != _RESOURCE_URL or primary.get(CONF_TYPE) != "module":
@@ -81,6 +104,7 @@ async def _register_card(hass: HomeAssistant) -> None:
         )
     for duplicate in matches[1:]:
         await collection.async_delete_item(duplicate[CONF_ID])
+    _LOGGER.info("Streaming Browser card registered as a module resource: %s", _RESOURCE_URL)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -94,9 +118,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
-    """Allow setup entirely through the Home Assistant UI, without YAML."""
+    """Ensure UI setup repairs a missed startup resource registration."""
     if DOMAIN not in hass.data:
         return await async_setup(hass, {})
+    await _register_card(hass)
     return True
 
 
