@@ -19,6 +19,7 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .justwatch import JustWatchGraphQLApi, JustWatchApiError
+from .watchhub import provider_links
 
 DOMAIN = "streaming_browser"
 _LOGGER = logging.getLogger(__name__)
@@ -113,6 +114,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         return True
     hass.data[DOMAIN] = JustWatchGraphQLApi(async_get_clientsession(hass))
     websocket_api.async_register_command(hass, ws_episode_links)
+    websocket_api.async_register_command(hass, ws_watchhub_links)
     await _register_card(hass)
     return True
 
@@ -182,3 +184,35 @@ async def ws_episode_links(hass: HomeAssistant, connection, msg: dict) -> None:
     except (JustWatchApiError, ValueError, LookupError, TypeError) as err:
         _LOGGER.debug("Streaming Browser episode lookup failed: %s", err)
         connection.send_error(msg["id"], "episode_links_unavailable", str(err))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "streaming_browser/watchhub_links",
+        vol.Required("imdb_id"): str,
+        vol.Required("media_type"): vol.In(["movie", "series"]),
+        vol.Required("region"): str,
+        vol.Optional("season"): vol.Coerce(int),
+        vol.Optional("episode"): vol.Coerce(int),
+    }
+)
+@websocket_api.async_response
+async def ws_watchhub_links(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Look up official external WatchHub provider links for one exact item."""
+    try:
+        country = str(msg["region"]).strip().upper()
+        if not country or len(country) != 2 or not country.isalpha():
+            raise ValueError("Invalid two-letter region")
+        links = await provider_links(
+            async_get_clientsession(hass),
+            imdb_id=msg["imdb_id"],
+            region=country,
+            media_type=msg["media_type"],
+            season=msg.get("season"),
+            episode=msg.get("episode"),
+        )
+        connection.send_result(msg["id"], {"links": links, "source": "watchhub"})
+    except Exception as err:
+        # The optional third-party source must not interrupt Watchmode/JustWatch.
+        _LOGGER.debug("WatchHub official link lookup unavailable: %s", err)
+        connection.send_error(msg["id"], "watchhub_unavailable", "WatchHub official links unavailable")

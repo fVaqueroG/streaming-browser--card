@@ -71,3 +71,8 @@ The remote keeps the same command dispatch and player selection but now uses a d
 ## v0.4.82: Nuvio-size remote
 
 The Streaming Browser remote now matches the compact Nuvio remote size: 176px wide (166px on mobile) with a 132px D-pad (122px on mobile). Wake, the complete 12-key pad, Back/Home, Play/Pause, mute and volume all remain, with the extra controls in a compact secondary grid. The popup scrolls on short screens; playback, HDMI, room, and smart-plug routing are unchanged. Update the HACS integration, restart Home Assistant, and reload the dashboard.
+
+
+## v0.4.83: Optional WatchHub official-app links
+
+Streaming Browser can now query Stremio WatchHub **externalUrl** provider navigation links as an additional source alongside the existing Watchmode title lookup and JustWatch episode lookup. Enable or disable **Use WatchHub official-app links** in the card visual editor under Exact-title playback (enabled by default). WatchHub requires no streaming account login or Nuvio integration. The card resolves IMDb IDs through its existing TMDB key, requests region-specific WatchHub sources on the Home Assistant backend, and accepts only HTTPS navigation URLs on known official streaming-provider domains. It ignores direct streams/torrents and requires the exact `imdb:season:episode` ID for series. If WatchHub is unavailable, existing links continue working. A provider URL is not proof that the target TV app supports a particular deep-link format or starts playback; the TV app decides how the link is handled. Refresh/restart Home Assistant after HACS update and reload the dashboard.
