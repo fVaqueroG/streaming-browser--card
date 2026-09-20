@@ -9,5 +9,40 @@
     "abort": {
       "single_instance_allowed": "Streaming Browser is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "JustWatch account",
+        "description": "Optional. Anonymous JustWatch and WatchHub links work without an account. Linking uses JustWatch's unofficial sign-in service. Account tokens stay in Home Assistant, not the dashboard.",
+        "menu_options": {
+          "email": "Connect JustWatch with email and password",
+          "token": "Connect with a browser ID token (expires)",
+          "disconnect": "Disconnect JustWatch account"
+        }
+      },
+      "email": {
+        "title": "Connect JustWatch",
+        "description": "Sign in to JustWatch. Your password is exchanged for a renewable account session and is not saved.",
+        "data": {
+          "justwatch_email": "JustWatch email",
+          "justwatch_password": "JustWatch password"
+        }
+      },
+      "token": {
+        "title": "JustWatch browser ID token",
+        "description": "For a social-login account, enter a valid JustWatch browser ID token. It cannot be refreshed automatically and will eventually expire.",
+        "data": {
+          "justwatch_access_token": "JustWatch ID token"
+        }
+      },
+      "disconnect": {
+        "title": "Disconnect JustWatch account",
+        "description": "Remove the saved JustWatch session from Streaming Browser. Anonymous provider links will remain available."
+      }
+    },
+    "error": {
+      "invalid_auth": "JustWatch authentication was rejected or could not be completed. Verify the credentials and connection."
+    }
   }
 }
