@@ -1,0 +1,47 @@
+name: Publish Streaming Browser native TV app routing v0.4.85
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-tv-app-routing-v0485.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bundle native Android TV launch and ADB opt-in corrections
+        run: python3 tools/apply-tv-app-routing-v0485.py
+      - name: Test Netflix episode, Prime URL, Crunchyroll app and optional ADB
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check tools/streaming-browser-tv-app-routing-v0485.js
+          node --check tools/test-tv-app-routing-v0485.js
+          node tools/test-tv-app-routing-v0485.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          card=(base/'frontend/streaming-browser-card.js').read_text()
+          manifest=json.loads((base/'manifest.json').read_text())
+          assert manifest['version']=='0.4.85'
+          assert card.count('const STREAMING_BROWSER_VERSION = "0.4.85";')==1
+          assert card.count('/* Streaming Browser v0.4.85: native Android TV app routing and honest episode destinations. */')==1
+          assert '/* Streaming Browser v0.4.83: optional WatchHub official-app link source. */' in card
+          assert '/* Compact Nuvio-sized remote v0.4.82 */' in card
+          assert 'sbr-power-switch' in card and 'data-remote="VOLUME_UP"' in card
+          print('PASS version, bundled native app routing, WatchHub, power toggle and compact remote')
+          PY
+      - name: Commit tested integration and publish v0.4.85
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.85: Crunchyroll native app, conservative episode routing, optional ADB'
+          git push origin HEAD:main
+          gh release create v0.4.85 --target "$(git rev-parse HEAD)" --title v0.4.85 --notes 'Use the installed Crunchyroll Android TV app via a native app launch instead of an unsupported web intent. Prioritize Netflix /watch/ links for Android TV episodes and stop rewriting them as series title intents. Treat Prime Video generic detail URLs and Netflix series URLs as unverified episode destinations, and avoid the movie-only Netflix webOS launcher for episodes; the button shows App when exact TV episode navigation is not supported. Configure ADB only if desired: standard Android TV Remote is used for normal waking, app launch and navigation; optional ADB is reserved for automatic Netflix profile keys or explicitly failed app launches. These are compatibility and UI corrections, not a guarantee of exact episode playback in closed third-party TV apps. Update through HACS, restart Home Assistant, and reload the dashboard.'
