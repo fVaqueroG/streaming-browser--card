@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.63
+ * v0.4.64
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.63";
+const STREAMING_BROWSER_VERSION = "0.4.64";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -88,6 +88,8 @@ class StreamingBrowserCard extends HTMLElement {
     this._lastTvSourcesKey = "";
     this._selectedProfile = null;
     this._watchmodeCache = new Map();
+    this._detailCache = new Map();
+    this._providerDetailCache = new Map();
     this._remoteExpanded = false;
     this._remotePortal = null;
   }
@@ -1142,8 +1144,8 @@ class StreamingBrowserCard extends HTMLElement {
     return `https://api.themoviedb.org/3${path}?${q.toString()}`;
   }
 
-  async _api(path, params = {}) {
-    const res = await fetch(this._apiUrl(path, params));
+  async _api(path, params = {}, { signal } = {}) {
+    const res = await fetch(this._apiUrl(path, params), { signal });
 
     if (!res.ok) {
       if (res.status === 401) {
@@ -1156,6 +1158,35 @@ class StreamingBrowserCard extends HTMLElement {
     }
 
     return res.json();
+  }
+
+  async _apiWithTimeout(path, params = {}, timeoutMs = 12000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await this._api(path, params, { signal: controller.signal });
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error(`TMDB request timed out after ${Math.round(timeoutMs / 1000)} seconds. Check the TMDB connection or try again.`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async _withTimeout(promise, timeoutMs, label) {
+    let timer;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)} seconds. Select the episode again to retry.`)), timeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async _loadProviderLists() {
@@ -1375,30 +1406,7 @@ class StreamingBrowserCard extends HTMLElement {
   }
 
   _ensureSelectedProvider() {
-    const providers =
-      this._matchedProviders[
-        this._mode
-      ] || [];
-
-    if (!providers.length) {
-      this._provider = null;
-      return;
-    }
-
-    if (
-      this._provider === "all"
-    ) {
-      return;
-    }
-
-    const selectedExists =
-      providers.some(
-        (provider) =>
-          String(provider.provider_id) ===
-          String(this._provider)
-      );
-
-    if (!selectedExists) {
+    if (this._provider == null || this._provider === "") {
       this._provider = "all";
     }
   }
@@ -1449,13 +1457,8 @@ class StreamingBrowserCard extends HTMLElement {
               String(this._provider)
           );
 
-    if (
-      this._provider !== "all" &&
-      !provider
-    ) {
-      throw new Error(
-        this._t("provider_unavailable")
-      );
+    if (this._provider !== "all" && !provider) {
+      return [];
     }
 
     const base = {
@@ -1712,66 +1715,80 @@ class StreamingBrowserCard extends HTMLElement {
   }
 
   async _openDetails(sectionKey, index) {
-    const section = this._sections.find(
-      (item) => item.key === sectionKey
-    );
+    const section = this._sections.find((entry) => entry.key === sectionKey);
     const item = section?.items?.[index];
     if (!item) return;
-
     const type = this._mediaType(item);
-
-    this._details = {
+    const detail = {
       loading: true,
       item,
+      type,
+      providers: {},
+      providersLoading: true,
+      providersError: "",
+      selectedEpisode: null,
+      episodes: [],
+      episodesLoading: false,
+      seasonCache: new Map(),
+      seasonRequest: 0,
     };
-
+    this._details = detail;
     this._render();
 
+    // Provider availability is independent of the title metadata request:
+    // a slow/failed provider endpoint must not hold the whole dialog hostage.
+    void this._loadDetailProviders(detail);
+    const cacheKey = `${type}:${item.id}:${this._languageCode()}`;
     try {
-      const [details, providers] = await Promise.all([
-        this._api(`/${type}/${item.id}`, {
-          append_to_response: "videos",
-        }),
-        this._api(`/${type}/${item.id}/watch/providers`),
-      ]);
-
-      const seasons = type === "tv" && Array.isArray(details.seasons)
-        ? details.seasons.filter((season) => Number.isInteger(Number(season.season_number)))
+      const cached = this._detailCache.get(cacheKey);
+      const info = cached && cached.expires > Date.now()
+        ? cached.value
+        : await this._apiWithTimeout(`/${type}/${item.id}`, {}, 12000);
+      if (this._details !== detail) return;
+      this._detailCache.set(cacheKey, { value: info, expires: Date.now() + 10 * 60 * 1000 });
+      const seasons = type === "tv" && Array.isArray(info.seasons)
+        ? info.seasons.filter((season) => Number.isInteger(Number(season.season_number)))
             .sort((a, b) => Number(a.season_number) - Number(b.season_number))
         : [];
-      const firstRegular = seasons.find((season) => Number(season.season_number) > 0);
-      const firstSeason = firstRegular || seasons[0];
-      this._details = {
+      const firstSeason = seasons.find((season) => Number(season.season_number) > 0) || seasons[0];
+      Object.assign(detail, {
         loading: false,
-        item,
-        type,
-        details,
-        providers: providers.results?.[this._config.region] || {},
+        details: info,
         seriesSeasons: seasons,
         selectedSeason: firstSeason ? Number(firstSeason.season_number) : null,
-        selectedEpisode: null,
-        episodes: [],
-        episodesLoading: false,
-        seasonCache: new Map(),
-        seasonRequest: 0,
-      };
-    } catch (err) {
-      this._details = {
-        loading: false,
-        item,
-        error: this._formatError(err),
-      };
-    }
-
-    this._render();
-    if (this._details?.details && !this._details.error) {
-      const currentDetail = this._details;
-      if (currentDetail.type !== "tv") {
-        currentDetail.localSourcesLoading = true;
-        void this._primeLocalTitleLinks(currentDetail);
+      });
+      this._render();
+      if (type === "tv" && detail.selectedSeason !== null) {
+        void this._loadSeasonEpisodes(detail, detail.selectedSeason);
+      } else if (type !== "tv") {
+        detail.localSourcesLoading = true;
+        void this._primeLocalTitleLinks(detail);
       }
-      if (currentDetail.type === "tv" && currentDetail.selectedSeason !== null) {
-        void this._loadSeasonEpisodes(currentDetail, currentDetail.selectedSeason);
+    } catch (err) {
+      if (this._details !== detail) return;
+      detail.loading = false;
+      detail.error = this._formatError(err);
+      this._render();
+    }
+  }
+
+  async _loadDetailProviders(detail) {
+    const key = `${detail.type}:${detail.item.id}:${this._config.region}`;
+    try {
+      const cached = this._providerDetailCache.get(key);
+      const result = cached && cached.expires > Date.now()
+        ? cached.value
+        : await this._apiWithTimeout(`/${detail.type}/${detail.item.id}/watch/providers`, {}, 8500);
+      if (this._details !== detail) return;
+      this._providerDetailCache.set(key, { value: result, expires: Date.now() + 10 * 60 * 1000 });
+      detail.providers = result?.results?.[this._config.region] || {};
+    } catch (err) {
+      if (this._details !== detail) return;
+      detail.providersError = this._formatError(err);
+    } finally {
+      if (this._details === detail) {
+        detail.providersLoading = false;
+        this._render();
       }
     }
   }
@@ -1790,7 +1807,7 @@ class StreamingBrowserCard extends HTMLElement {
     try {
       let episodes = detail.seasonCache.get(season);
       if (!episodes) {
-        const data = await this._api(`/tv/${detail.item.id}/season/${season}`);
+        const data = await this._apiWithTimeout(`/tv/${detail.item.id}/season/${season}`, {}, 12000);
         episodes = Array.isArray(data?.episodes)
           ? data.episodes.slice().sort((a, b) => Number(a.episode_number) - Number(b.episode_number))
           : [];
@@ -1825,14 +1842,14 @@ class StreamingBrowserCard extends HTMLElement {
     const season = Number(detail.selectedSeason);
     const number = Number(episode.episode_number);
     try {
-      const response = await this._hass.callWS({
+      const response = await this._withTimeout(this._hass.callWS({
         type: "streaming_browser/episode_links",
         tmdb_id: Number(detail.item.id),
         title: String(detail.details?.name || detail.item.name || ""),
         season, episode: number,
         region: this._config.region || "MX",
         language: this._languageCode(),
-      });
+      }), 12000, "Episode provider lookup");
       if (this._details !== detail || detail.selectedEpisode !== episode ||
           Number(detail.selectedSeason) !== season) return;
       detail.episodeSources = (Array.isArray(response?.links) ? response.links : [])
@@ -1853,7 +1870,8 @@ class StreamingBrowserCard extends HTMLElement {
 
   async _primeLocalTitleLinks(detail) {
     try {
-      detail.localSources = await this._watchmodeSourcesForCurrentTitle({ silent: true });
+      detail.localSources = await this._withTimeout(
+        this._watchmodeSourcesForCurrentTitle({ silent: true }), 12000, "Movie provider lookup");
     } catch (err) {
       detail.localSources = [];
       detail.localSourceError = this._formatError(err);
@@ -4396,6 +4414,17 @@ class StreamingBrowserCard extends HTMLElement {
         position: relative;
       }
 
+      .detail-loading-panel { padding: 64px 28px 32px; min-height: 180px; }
+      .detail-loading-preview { display:flex; gap:14px; align-items:center; }
+      .detail-loading-preview img { width:64px; border-radius:7px; flex:0 0 64px; }
+      .detail-loading-preview strong { display:block; font-size:18px; margin-bottom:8px; }
+      .detail-loading-preview p { margin:0 0 5px; }
+      .detail-loading-preview small { opacity:.7; }
+      .detail-loading-track { height:4px; background:var(--divider-color); border-radius:4px;
+        overflow:hidden; margin-top:20px; }
+      .detail-loading-track span { display:block; height:100%; width:32%; background:var(--primary-color);
+        border-radius:4px; animation:detail-loading 1.15s ease-in-out infinite alternate; }
+      @keyframes detail-loading { from { transform:translateX(0); } to { transform:translateX(210%); } }
       .hero {
         position: relative;
         min-height: 270px;
@@ -4685,7 +4714,11 @@ class StreamingBrowserCard extends HTMLElement {
         ${detail.episodeSourcesError ? `<p class="episode-link-note">${this._esc(detail.episodeSourcesError)} · ${this._t("install_episode_backend")}</p>` : ""}
         ${!detail.episodeSourcesLoading && !detail.episodeSourcesError && !detail.episodeSources?.length
             ? `<p class="episode-link-note">${this._t("no_exact_episode_links")}</p>` : ""}
-        <div class="provider-grid">${this._renderProviderCards(detail, this._detailProviders(), true)}</div>
+        ${detail.providersLoading
+          ? `<p class="episode-link-note" role="status">${this._locale().startsWith("es") ? "Cargando plataformas disponibles…" : "Loading streaming providers…"}</p>`
+          : detail.providersError
+            ? `<p class="episode-link-note" role="alert">${this._esc(detail.providersError)}</p>`
+            : `<div class="provider-grid">${this._renderProviderCards(detail, this._detailProviders(), true)}</div>`}
       </div>` : "";
       return `<div class="episode-row-container"><button type="button" class="episode-row ${active ? "active" : ""}"
         data-episode-index="${index}" aria-pressed="${String(Boolean(active))}">
@@ -4716,7 +4749,16 @@ class StreamingBrowserCard extends HTMLElement {
         <div class="overlay">
           <div class="detail">
             <button class="close" data-close>×</button>
-            <div class="loading">${this._t("loading_details")}</div>
+            <div class="detail-loading-panel" role="status" aria-live="polite">
+              <div class="detail-loading-preview">
+                ${detail.item?.poster_path ? `<img src="${this._img(detail.item.poster_path, "w185")}" alt="">` : ""}
+                <div><strong>${this._esc(this._title(detail.item))}</strong>
+                  <p>${this._t("loading_details")}</p>
+                  <small>${this._locale().startsWith("es") ? "Consultando TMDB…" : "Fetching title information from TMDB…"}</small>
+                </div>
+              </div>
+              <div class="detail-loading-track"><span></span></div>
+            </div>
           </div>
         </div>
       `;
@@ -4847,7 +4889,11 @@ class StreamingBrowserCard extends HTMLElement {
                 ${this._t("where_to_watch")}
                 ${this._esc(this._config.region)}
               </div>
-              <div class="provider-grid">${providerCards}</div>
+              ${detail.providersLoading
+                ? `<p class="episode-link-note" role="status">${this._locale().startsWith("es") ? "Cargando plataformas disponibles…" : "Loading streaming providers…"}</p>`
+                : detail.providersError
+                  ? `<p class="error" role="alert">${this._esc(detail.providersError)}</p>`
+                  : `<div class="provider-grid">${providerCards || this._t("no_providers")}</div>`}
             ` : ""}
 
           </div>
@@ -4874,8 +4920,14 @@ class StreamingBrowserCard extends HTMLElement {
       return;
     }
 
-    const providers =
-      this._matchedProviders[this._mode] || [];
+    const availableProviders = this._matchedProviders[this._mode] || [];
+    const selectedMissing = this._provider !== "all" &&
+      !availableProviders.some((item) => String(item.provider_id) === String(this._provider));
+    const previousSelection = selectedMissing
+      ? [...(this._matchedProviders.movie || []), ...(this._matchedProviders.tv || [])]
+          .find((item) => String(item.provider_id) === String(this._provider))
+      : null;
+    const providers = previousSelection ? [...availableProviders, previousSelection] : availableProviders;
 
     const tv = this._tvState();
     const detailScrollTop = this.shadowRoot.querySelector(".detail")?.scrollTop ?? null;
@@ -5595,7 +5647,6 @@ class StreamingBrowserCard extends HTMLElement {
       .forEach((element) =>
         element.addEventListener("click", async () => {
           this._mode = element.dataset.mode;
-          this._provider = "all";
           this._ensureSelectedProvider();
           this._query = "";
           await this._loadBrowse();

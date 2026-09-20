@@ -1,12 +1,17 @@
 {
   "domain": "streaming_browser",
   "name": "Streaming Browser",
-  "version": "0.4.63",
+  "version": "0.4.64",
   "documentation": "https://github.com/fVaqueroG/streaming-browser--card",
   "issue_tracker": "https://github.com/fVaqueroG/streaming-browser--card/issues",
   "codeowners": [],
   "config_flow": true,
-  "dependencies": ["frontend", "http", "lovelace", "websocket_api"],
+  "dependencies": [
+    "frontend",
+    "http",
+    "lovelace",
+    "websocket_api"
+  ],
   "requirements": [],
   "iot_class": "cloud_polling"
 }
