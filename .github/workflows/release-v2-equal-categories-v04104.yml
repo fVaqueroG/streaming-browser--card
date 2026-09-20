@@ -1,0 +1,54 @@
+name: Publish Streaming Browser V2 equal category tabs v0.4.104
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v2-equal-categories-v04104.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make three equal-width V2 category tabs
+        run: python3 tools/equal-v2-category-tabs-v04104.py
+      - name: Validate categories, square providers, independent V1 and retained routing
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          v1=(base/'frontend/streaming-browser-card.js').read_text()
+          v2=(base/'frontend/streaming-browser-card-v2.js').read_text()
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.104'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.98";' in v1
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.104";' in v2
+          for fragment in ['grid-template-columns:repeat(3,minmax(0,1fr))',
+             "key === 'provider-recent' ? (this._locale() === 'es' ? 'Recientes' : 'Recent')",
+             '--v2-source-size:calc(', 'aspect-ratio:1 / 1',
+             '.v2-provider-choice > .chip[data-provider="all"]',
+             'this._v2ProviderScrollLeft = scrollable.scrollLeft',
+             'v2-see-all', 'this._selectRoomRoute', 'streaming_browser/episode_links',
+             'class StreamingBrowserV2Card extends HTMLElement',
+             'streaming-browser-card-v2-editor']:
+             assert fragment in v2, fragment
+          assert 'class StreamingBrowserCard extends HTMLElement' in v1
+          assert 'streaming-browser-card-v2.js' in (base/'__init__.py').read_text()
+          print('PASS three equal-width V2 tabs (Popular, Top Rated, Recent), aligned square source chips, V1 isolation and retained routing')
+          PY
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js
+      - name: Commit and publish v0.4.104
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.104: evenly distribute V2 Popular Top Rated Recent category tabs'
+          git push origin HEAD:main
+          gh release create v0.4.104 --target "$(git rev-parse HEAD)" --title v0.4.104 --notes 'V2 category tabs Popular, Top Rated and Recent now span three equally sized columns. Recent retains the same recent-releases catalog query. Includes v0.4.103 equal square source buttons matching fixed Movies/Series + genre height. All and filters remain fixed while logos scroll; V1 remains unchanged. Update through HACS, restart Home Assistant and reload the dashboard.'
