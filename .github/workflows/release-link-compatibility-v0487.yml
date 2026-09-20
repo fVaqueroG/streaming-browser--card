@@ -1,0 +1,47 @@
+name: Publish Streaming Browser link compatibility v0.4.87
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-link-compatibility-v0487.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore previously working official-app link routes
+        run: python3 tools/apply-link-compatibility-v0487.py
+      - name: Check JS, link routing regression tests and integration version
+        run: |
+          node --check tools/streaming-browser-link-compatibility-v0487.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node tools/test-link-compatibility-v0487.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          card=(base/'frontend/streaming-browser-card.js').read_text()
+          manifest=json.loads((base/'manifest.json').read_text())
+          assert manifest['version']=='0.4.87'
+          assert card.count('const STREAMING_BROWSER_VERSION = "0.4.87";')==1
+          assert card.count('/* Streaming Browser v0.4.87: restore working provider URL routes')==1
+          for marker in ('/* Streaming Browser v0.4.86: optional ADB remote entity',
+                         '/* Streaming Browser v0.4.83: optional WatchHub official-app link source.',
+                         '/* Compact action captions v0.4.84 */', 'sbr-power-switch'):
+              assert marker in card, marker
+          print('PASS integration version, existing WatchHub, rooms, power, captions and optional ADB')
+          PY
+      - name: Commit tested integration and publish v0.4.87
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.87: restore Netflix and Prime Video link compatibility'
+          git push origin HEAD:main
+          gh release create v0.4.87 --target "$(git rev-parse HEAD)" --title v0.4.87 --notes 'Restore previously attempted Netflix and Prime Video provider links that v0.4.85 prematurely blocked. Use original Prime Video URLs before rewriting to an alternative host; restore Netflix native Android TV movie routes and keep /watch/ for episodes. Prefer existing Watchmode and JustWatch links, with WatchHub still available as fallback. The TV button labels a generic series destination Series, not Episode, even when selected from an episode query. Crunchyroll Android TV still opens the installed app instead of sending an unsupported URL. Existing optional ADB remote, WatchHub, room routing, compact button captions and power helper are retained. These are code-path regression corrections; exact playback depends on each installed TV app. Update HACS, restart Home Assistant, and reload the dashboard.'
