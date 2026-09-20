@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.57
+ * v0.4.58
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,6 +60,8 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
+const STREAMING_BROWSER_VERSION = "0.4.58";
+
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
     super();
@@ -99,7 +101,11 @@ class StreamingBrowserCard extends HTMLElement {
     const labels = {
       title: "Card title",
       platform: "Platform",
-      tv_entity: "Media player",
+      tv_entity: "Playback device (media player)",
+      display_entity: "Display TV (optional HDMI host)",
+      display_source: "HDMI input on display TV",
+      display_source_delay_ms: "HDMI switch delay (ms)",
+      remote_side: "Remote position",
       remote_entity: "Android TV remote",
       adb_entity: "Android TV ADB media player",
       tmdb_api_key: "TMDB API key (v3)",
@@ -123,6 +129,14 @@ class StreamingBrowserCard extends HTMLElement {
     const helpers = {
       platform:
         "Choose LG webOS or Android TV Remote.",
+      display_entity:
+        "Optional display television for a separate HDMI playback device. Select the LG/webOS television here, not the Android TV box.",
+      display_source:
+        "Exact HDMI source name as shown under the display TV's available sources (for example HDMI 1).",
+      display_source_delay_ms:
+        "Time allowed for the HDMI input to become ready after switching.",
+      remote_side:
+        "Position of the same floating controller used in Nuvio.",
       remote_entity:
         "Required for Android TV. Use the remote entity from the Android TV Remote integration.",
       adb_entity:
@@ -236,6 +250,30 @@ class StreamingBrowserCard extends HTMLElement {
                   },
                 },
               ],
+            },
+          ],
+        },
+        {
+          type: "expandable",
+          name: "",
+          title: "HDMI / remote",
+          flatten: true,
+          schema: [
+            {
+              name: "display_entity",
+              selector: { entity: { filter: { domain: "media_player" } } },
+            },
+            { name: "display_source", selector: { text: {} } },
+            {
+              name: "display_source_delay_ms",
+              selector: { number: { min: 0, max: 20000, step: 100, unit_of_measurement: "ms" } },
+            },
+            {
+              name: "remote_side",
+              selector: { select: { mode: "dropdown", options: [
+                { value: "left", label: "Left" },
+                { value: "right", label: "Right" },
+              ] } },
             },
           ],
         },
@@ -399,6 +437,10 @@ class StreamingBrowserCard extends HTMLElement {
       tv_entity: "media_player.lg_webos_tv",
       remote_entity: null,
       adb_entity: null,
+      display_entity: null,
+      display_source: "",
+      display_source_delay_ms: 2500,
+      remote_side: "left",
       tmdb_api_key: "YOUR_TMDB_V3_API_KEY",
       region: "MX",
       language: "es-MX",
@@ -448,6 +490,10 @@ class StreamingBrowserCard extends HTMLElement {
       screensaver_wake_delay_ms: 1200,
       android_play_command: "DPAD_CENTER",
       android_app_links: {},
+      display_entity: null,
+      display_source: "",
+      display_source_delay_ms: 2500,
+      remote_side: "left",
       relaunch_delay_ms: 1200,
       auto_play_delay_ms: 4000,
       profile_launch_delay_ms: 3000,
@@ -775,6 +821,7 @@ class StreamingBrowserCard extends HTMLElement {
       if (typeof RemoteCard?.prototype?.syncRemotePortal !== "function") {
         throw new Error("The Nuvio remote is not available.");
       }
+      await this._prepareDisplayRoute();
       const card = this;
       this._remoteExpanded = true;
       RemoteCard.prototype.syncRemotePortal.call({
@@ -2894,6 +2941,31 @@ class StreamingBrowserCard extends HTMLElement {
     throw new Error(this._t("unknown_profile_mode", { mode }));
   }
 
+  async _prepareDisplayRoute() {
+    const display = String(this._config?.display_entity || "").trim();
+    if (!display) return;
+    const source = String(this._config?.display_source || "").trim();
+    if (!source) throw new Error("Choose the HDMI input for the display TV in card settings.");
+    if (display === this._config.tv_entity) {
+      throw new Error("Display TV and playback device must be different for HDMI routing.");
+    }
+    const state = this._hass?.states?.[display];
+    if (!state || state.state === "unavailable") {
+      throw new Error("The configured HDMI display TV is unavailable: " + display);
+    }
+    if (["off", "standby", "unknown"].includes(state.state)) {
+      await this._hass.callService("media_player", "turn_on", { entity_id: display });
+      await this._sleep(Math.max(0, Number(this._config.wake_delay_ms ?? 4500)));
+    }
+    const current = this._hass.states?.[display]?.attributes?.source || "";
+    if (current !== source) {
+      await this._hass.callService("media_player", "select_source", {
+        entity_id: display, source,
+      });
+      await this._sleep(Math.max(0, Number(this._config.display_source_delay_ms ?? 2500)));
+    }
+  }
+
   async _ensureTvOn() {
     let tv = this._tvState();
 
@@ -3304,6 +3376,7 @@ class StreamingBrowserCard extends HTMLElement {
     }
 
     try {
+      await this._prepareDisplayRoute();
       const tv = await this._ensureTvOn();
       const currentSource = tv?.attributes?.source || "";
 
@@ -3738,6 +3811,7 @@ class StreamingBrowserCard extends HTMLElement {
     }
 
     try {
+      await this._prepareDisplayRoute();
       const tv = await this._ensureTvOn();
 
       const sources =
@@ -3777,6 +3851,7 @@ class StreamingBrowserCard extends HTMLElement {
        * then send the exact-title link into the running app.
        */
       if (
+        this._config.manual_profile_selection === false &&
         source &&
         (
           appConfig?.exact_title_profile_first === true ||
@@ -4206,6 +4281,13 @@ class StreamingBrowserCard extends HTMLElement {
         font-size: 22px;
       }
 
+      .detail-remote-button {
+        position: absolute; top: 12px; right: 58px; z-index: 5;
+        width: 38px; height: 38px; border: 0; border-radius: 50%;
+        background: rgba(0,0,0,.64); color: white; cursor: pointer;
+        display: grid; place-items: center;
+      }
+      .detail-remote-button ha-icon { --mdc-icon-size: 22px; }
       .body {
         padding: 0 28px 28px;
       }
@@ -4419,76 +4501,25 @@ class StreamingBrowserCard extends HTMLElement {
     const providerCards = providers.length
       ? providers
           .map((provider) => {
-            const source = this._sourceForProvider(
-              provider.provider_name
-            );
-
+            const source = this._sourceForProvider(provider.provider_name);
             const disabled = source ? "" : "disabled";
-
-            const mode = source
-              ? this._profileModeFor(
-                  provider.provider_name,
-                  source
-                )
-              : "remember";
-
-            const profileText = this._selectedProfile
-              ? ` · ${this._esc(
-                  this._selectedProfile
-                )}: ${this._esc(mode)}`
-              : "";
-
+            const platform = this._platform() === "android_tv" ? "Android TV" : "LG webOS";
             return `
               <div class="provider-card">
                 ${this._providerLogo(provider)}
-
                 <div class="provider-info">
-                  <div class="provider-name">
-                    ${this._esc(provider.provider_name)}
-                  </div>
-
-                  <div class="provider-source">
-                    ${
-                      source
-                        ? `LG: ${this._esc(source)}${profileText}`
-                        : "App no encontrada en el LG"
-                    }
-                  </div>
-
+                  <div class="provider-name">${this._esc(provider.provider_name)}</div>
+                  <div class="provider-source">${source
+                    ? `${platform} · ${this._esc(source)}`
+                    : "App not matched on playback device"}</div>
                   <div class="provider-actions">
-                    <button
-                      class="mini-btn"
-                      data-open-provider="${this._esc(
-                        provider.provider_name
-                      )}"
-                      ${disabled}
-                    >
-                      ${this._t("open_app")}
-                    </button>
-
-                    <button
-                      class="mini-btn title"
-                      data-title-provider="${this._esc(
-                        provider.provider_name
-                      )}"
-                      ${disabled}
-                    >
+                    <button class="mini-btn title"
+                      data-title-provider="${this._esc(provider.provider_name)}" ${disabled}>
                       🎬 ${this._t("open_title")}
-                    </button>
-
-                    <button
-                      class="mini-btn play"
-                      data-title-play-provider="${this._esc(
-                        provider.provider_name
-                      )}"
-                      ${disabled}
-                    >
-                      ▶ ${this._t("title_play")}
                     </button>
                   </div>
                 </div>
-              </div>
-            `;
+              </div>`;
           })
           .join("")
       : `
@@ -4501,6 +4532,11 @@ class StreamingBrowserCard extends HTMLElement {
       <div class="overlay" data-overlay>
         <div class="detail">
           <button class="close" data-close>×</button>
+          <button class="detail-remote-button streaming-remote-toggle"
+            type="button" title="TV remote" aria-label="TV remote"
+            aria-pressed="${this._remoteExpanded ? "true" : "false"}">
+            <ha-icon icon="mdi:remote-tv"></ha-icon>
+          </button>
 
           <div
             class="hero"
@@ -4556,17 +4592,6 @@ class StreamingBrowserCard extends HTMLElement {
               )}
             </div>
 
-            ${
-              this._selectedProfile
-                ? `
-                  <div class="profile-status">
-                    <b>${this._t("active_profile")}</b>
-                    ${this._esc(this._selectedProfile)}
-                  </div>
-                `
-                : ""
-            }
-
             <div class="provider-title">
               ${this._t("where_to_watch")}
               ${this._esc(this._config.region)}
@@ -4576,24 +4601,6 @@ class StreamingBrowserCard extends HTMLElement {
               ${providerCards}
             </div>
 
-            <div class="actions">
-              ${
-                link
-                  ? `
-                    <button
-                      class="action secondary"
-                      data-watch-page
-                    >
-                      ${this._t("open_availability")}
-                    </button>
-                  `
-                  : ""
-              }
-            </div>
-
-            <div class="note">
-              ${this._t("detail_note")}
-            </div>
           </div>
         </div>
       </div>
@@ -4820,6 +4827,11 @@ class StreamingBrowserCard extends HTMLElement {
           flex-wrap: wrap;
         }
 
+        .card-version {
+          display: block; font-size: 11px; line-height: 1.2;
+          color: var(--secondary-text-color); font-weight: 400;
+          margin-top: 2px; opacity: .85;
+        }
         .title {
           font-size: 24px;
           font-weight: 700;
@@ -5178,6 +5190,7 @@ class StreamingBrowserCard extends HTMLElement {
           <div class="top">
             <div class="title">
               ${this._esc(this._config.title)}
+              <span class="card-version">v${STREAMING_BROWSER_VERSION}</span>
             </div>
 
             <div class="tvstate">
@@ -5310,8 +5323,8 @@ class StreamingBrowserCard extends HTMLElement {
   _bindEvents() {
     const root = this.shadowRoot;
     if (!root) return;
-    root.querySelector(".streaming-remote-toggle")?.addEventListener(
-      "click", () => this._toggleNuvioRemote()
+    root.querySelectorAll(".streaming-remote-toggle").forEach((button) =>
+      button.addEventListener("click", () => this._toggleNuvioRemote())
     );
     this._updateNuvioRemoteButton();
 
