@@ -1,0 +1,57 @@
+name: Build Streaming Browser v0.4.64 fast details and provider persistence
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fast-details-v0464.yml
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch bundled card and integration version
+        run: python3 tools/fast-details-and-provider-v0464.py
+      - name: Validate bundled frontend and integration
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('custom_components/streaming_browser')
+          s = (root / 'frontend/streaming-browser-card.js').read_text()
+          m = json.loads((root / 'manifest.json').read_text())
+          assert m['version'] == '0.4.64'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.64";' in s
+          assert 'void this._loadDetailProviders(detail)' in s
+          assert 'this._details !== detail' in s
+          assert '_apiWithTimeout' in s and 'detail.providersLoading' in s
+          assert 'this._provider = "all";\n          this._ensureSelectedProvider();' not in s
+          assert 'previousSelection ? [...availableProviders, previousSelection]' in s
+          assert 'streaming_browser/episode_links' in s
+          assert not any(x in s for x in ('/nuvio/nuvio-card.js', '"nuvio", "remote_key"'))
+          print('PASS: bundled JS syntax, backend Python compilation, provider persistence and independent progressive loading contracts')
+          PY
+      - name: Publish v0.4.64
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('README.md')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('Current version: v0.4.63', 'Current version: v0.4.64', 1)
+          s=s.replace('**Current version: v0.4.63.**', '**Current version: v0.4.64.**', 1)
+          s=s.replace('read **v0.4.63**', 'read **v0.4.64**')
+          p.write_text(s, encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json README.md
+          git commit -m 'v0.4.64: progressive title details and sticky provider selection'
+          git push origin HEAD:main
+          gh release create v0.4.64 --target "$(git rev-parse HEAD)" --title v0.4.64 --notes 'Title metadata loads without waiting for provider availability, with a visible progress state, independent provider errors and bounded lookup timeouts; repeated details use a short cache. Movie/Series switching preserves the selected provider. Update the Streaming Browser Integration through HACS and restart Home Assistant.'
