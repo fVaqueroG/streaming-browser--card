@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.72
+ * v0.4.73
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.72";
+const STREAMING_BROWSER_VERSION = "0.4.73";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -4712,29 +4712,45 @@ class StreamingBrowserCard extends HTMLElement {
         background: white;
       }
 
-      .provider-info {
-        flex: 1;
-        min-width: 0;
+      /* Brand logo replaces the redundant visible service name. Preserve the
+         name for assistive technology, hover, and services without a logo. */
+      .provider-brand {
+        display: grid;
+        place-items: center;
+        flex: 0 0 44px;
+        width: 44px;
+        min-height: 44px;
       }
-
-      .provider-name {
+      .provider-brand-fallback {
+        flex: 0 1 110px;
+        width: auto;
+        max-width: 110px;
+      }
+      .provider-name-fallback {
+        font-size: 12px;
         font-weight: 700;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
       }
-
+      .provider-main {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+      }
       .provider-source {
         font-size: 10px;
-        opacity: .62;
-        margin-top: 2px;
+        opacity: .72;
+        margin: 0;
       }
-
       .provider-actions {
         display: flex;
+        align-items: center;
         gap: 6px;
         flex-wrap: wrap;
-        margin-top: 7px;
+        margin: 0 0 0 auto;
       }
 
       .mini-btn {
@@ -4862,11 +4878,14 @@ class StreamingBrowserCard extends HTMLElement {
           : !url ? this._t("local_link_missing") : "";
         return `
           <div class="provider-card">
-            ${this._providerLogo(provider)}
+            <span class="provider-brand ${provider.logo_path ? "" : "provider-brand-fallback"}"
+              role="img" aria-label="${this._esc(name)}" title="${this._esc(name)}">
+              ${provider.logo_path ? this._providerLogo(provider)
+                : `<span class="provider-name-fallback">${this._esc(name)}</span>`}
+            </span>
             <div class="provider-main">
-              <div class="provider-name">${this._esc(name)}</div>
-              ${groups ? `<div class="provider-source">${this._esc(groups)}</div>` : ""}
-              ${sourceStatus ? `<div class="provider-source">${this._esc(sourceStatus)}</div>` : ""}
+              ${groups ? `<span class="provider-source">${this._esc(groups)}</span>` : ""}
+              ${sourceStatus ? `<span class="provider-source">${this._esc(sourceStatus)}</span>` : ""}
               <div class="provider-actions">
                 ${url ? `
                   <button type="button" class="mini-btn title icon-action"
@@ -6817,7 +6836,7 @@ if (streamingBrowserPreviousPickerEntry) {
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.72 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.73 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
