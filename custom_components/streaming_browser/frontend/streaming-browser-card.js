@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.68
+ * v0.4.69
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.68";
+const STREAMING_BROWSER_VERSION = "0.4.69";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -889,22 +889,48 @@ class StreamingBrowserCard extends HTMLElement {
             border:1px solid #555;border-radius:12px;min-height:41px}
           .sbr-remote button:active {background:#147da7}
           .sbr-x {width:36px;height:36px;min-height:36px!important;border-radius:50%!important}
-          .sbr-pad {width:194px;height:194px;margin:8px auto;display:grid;
-            grid-template:repeat(3,1fr)/repeat(3,1fr);gap:5px}
-          .sbr-pad button {border-radius:50%;font-size:21px}
-          .sbr-pad .sbr-ok {background:#1595cf;border-color:#1595cf;font-size:15px;font-weight:700}
-          .sbr-row {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+          /* Circular D-pad: a solid four-way ring with an independent OK center. */
+          .sbr-pad {width:min(244px,100%);aspect-ratio:1;position:relative;margin:10px auto 14px;
+            border-radius:50%;background:#37373c;box-shadow:inset 0 0 0 2px #ffffff0c,0 3px 11px #0005}
+          .sbr-pad .sbr-dir {position:absolute;width:34%;height:34%;min-height:0;
+            display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#fff;padding:0}
+          .sbr-pad .sbr-dir ha-icon {--mdc-icon-size:46px}
+          .sbr-pad .sbr-up {top:0;left:33%}
+          .sbr-pad .sbr-down {bottom:0;left:33%}
+          .sbr-pad .sbr-left {top:33%;left:0}
+          .sbr-pad .sbr-right {top:33%;right:0}
+          .sbr-pad .sbr-ok {position:absolute;top:28%;left:28%;width:44%;height:44%;min-height:0;
+            display:grid;place-items:center;border-radius:50%;border:0;
+            background:#2c2c31;color:#fff;font-size:25px;font-weight:750;
+            box-shadow:0 0 0 10px #2b2b2f55,inset 0 1px 3px #0005}
+          .sbr-pad .sbr-dir:active {background:#ffffff24}
+          .sbr-pad .sbr-ok:active {background:#414148}
+          .sbr-actions {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 12px}
+          .sbr-remote .sbr-icon-btn {display:grid;place-items:center;min-width:0;min-height:44px;
+            padding:7px;border-radius:12px;background:#373737;color:#fff}
+          .sbr-icon-btn ha-icon {--mdc-icon-size:23px}
           .sbr-numbers {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:12px}
         </style>
         <section class="sbr-remote" role="dialog" aria-label="TV remote">
           <header class="sbr-head"><strong>Control · ${this._esc(this._hass?.states?.[this._config.tv_entity]?.attributes?.friendly_name || this._config.tv_entity)}</strong>
           <button type="button" class="sbr-x" data-close-remote aria-label="Close remote">×</button></header>
-          <div class="sbr-row"><button data-remote="WAKE">⏻ Wake</button>
-            <button data-remote="BACK">↶ Back</button><button data-remote="HOME">⌂ Home</button></div>
-          <div class="sbr-pad"><span></span><button data-remote="UP" aria-label="Up">▲</button><span></span>
-            <button data-remote="LEFT" aria-label="Left">◀</button><button data-remote="ENTER" class="sbr-ok">OK</button><button data-remote="RIGHT" aria-label="Right">▶</button>
-            <span></span><button data-remote="DOWN" aria-label="Down">▼</button><span></span></div>
-          <div class="sbr-row"><button data-remote="PLAY">▶ Play</button><button data-remote="PAUSE">Ⅱ Pause</button><button data-remote="MUTE">🔇 Mute</button></div>
+          <div class="sbr-pad" role="group" aria-label="Directional pad">
+            <button type="button" class="sbr-dir sbr-up" data-remote="UP" title="Up" aria-label="Up"><ha-icon icon="mdi:chevron-up"></ha-icon></button>
+            <button type="button" class="sbr-dir sbr-left" data-remote="LEFT" title="Left" aria-label="Left"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+            <button type="button" class="sbr-ok" data-remote="ENTER" title="OK" aria-label="OK">OK</button>
+            <button type="button" class="sbr-dir sbr-right" data-remote="RIGHT" title="Right" aria-label="Right"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+            <button type="button" class="sbr-dir sbr-down" data-remote="DOWN" title="Down" aria-label="Down"><ha-icon icon="mdi:chevron-down"></ha-icon></button>
+          </div>
+          <div class="sbr-actions" role="group" aria-label="TV actions">
+            <button type="button" class="sbr-icon-btn" data-remote="WAKE" title="Wake" aria-label="Wake"><ha-icon icon="mdi:sleep-off"></ha-icon></button>
+            <button type="button" class="sbr-icon-btn" data-remote="BACK" title="Back" aria-label="Back"><ha-icon icon="mdi:arrow-left"></ha-icon></button>
+            <button type="button" class="sbr-icon-btn" data-remote="HOME" title="Home" aria-label="Home"><ha-icon icon="mdi:home"></ha-icon></button>
+            <button type="button" class="sbr-icon-btn" data-remote="MUTE" title="Mute" aria-label="Mute"><ha-icon icon="mdi:volume-mute"></ha-icon></button>
+            <button type="button" class="sbr-icon-btn" data-remote="PLAY" title="Play" aria-label="Play"><ha-icon icon="mdi:play"></ha-icon></button>
+            <button type="button" class="sbr-icon-btn" data-remote="PAUSE" title="Pause" aria-label="Pause"><ha-icon icon="mdi:pause"></ha-icon></button>
+            <button type="button" class="sbr-icon-btn" data-remote="VOLUME_DOWN" title="Volume down" aria-label="Volume down"><ha-icon icon="mdi:volume-minus"></ha-icon></button>
+            <button type="button" class="sbr-icon-btn" data-remote="VOLUME_UP" title="Volume up" aria-label="Volume up"><ha-icon icon="mdi:volume-plus"></ha-icon></button>
+          </div>
           <div class="sbr-numbers">${[1,2,3,4,5,6,7,8,9,"⌫",0,"↵"].map((n) => `<button data-remote="${n === "⌫" ? "BACK" : n === "↵" ? "ENTER" : n}">${n}</button>`).join("")}</div>
         </section>`;
       portal.querySelector("[data-close-remote]")?.addEventListener("click", () => this._toggleNuvioRemote());
@@ -912,8 +938,20 @@ class StreamingBrowserCard extends HTMLElement {
         try {
           const key = button.dataset.remote;
           if (key === "WAKE") await this._ensureTvOn();
-          else if (key === "MUTE") await this._hass.callService("media_player", "volume_mute", {entity_id:this._config.tv_entity,is_volume_muted:true});
-          else await this._sendRemoteButton(key);
+          else if (key === "MUTE" || key === "VOLUME_UP" || key === "VOLUME_DOWN") {
+            // On an HDMI setup, adjust the display TV's speakers rather than the player.
+            const volumeEntity = this._config.display_entity || this._config.tv_entity;
+            if (key === "MUTE") {
+              const muted = this._hass.states?.[volumeEntity]?.attributes?.is_volume_muted;
+              await this._hass.callService("media_player", "volume_mute", {
+                entity_id: volumeEntity, is_volume_muted: muted !== true
+              });
+            } else {
+              await this._hass.callService("media_player",
+                key === "VOLUME_UP" ? "volume_up" : "volume_down",
+                { entity_id: volumeEntity });
+            }
+          } else await this._sendRemoteButton(key);
         } catch (err) { this._toast(`TV remote: ${this._formatError(err)}`); }
       }));
       document.body.appendChild(portal);
@@ -6722,7 +6760,7 @@ if (streamingBrowserPreviousPickerEntry) {
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.68 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.69 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );

@@ -1,5 +1,10 @@
 # Streaming Browser — Home Assistant Integration
 
+## v0.4.69: Circular remote and volume controls
+
+The floating Streaming Browser remote now has a round, four-way D-pad with centered OK, icon-only Home/Back/Play/Pause/Mute/Wake buttons, `mdi:volume-mute` and `mdi:sleep-off`, plus Volume up/down. When an optional HDMI display entity is configured, volume controls target that TV; otherwise they target the playback media player. Update through HACS Integrations, restart Home Assistant and reload the dashboard; existing cards retain their settings.
+
+
 ## v0.4.68: Fix title detail provider cards
 
 Fix the missing `_renderProviderCards()` method that caused `this._renderProviderCards is not a function` when opening movie or series details. The restored renderer uses TMDB provider availability and the existing TV/app controls, exposes exact provider links on this device when available, and shows episode-specific links only for the selected episode. Update the Streaming Browser HACS **Integration**, restart Home Assistant and fully reload the dashboard; saved card configuration is unaffected.
