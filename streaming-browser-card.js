@@ -1,6 +1,6 @@
 /*
  * Streaming Browser Card for Home Assistant + LG webOS
- * v0.4.58
+ * v0.4.59
  *
  * Features:
  * - Browse/search TMDB movies and TV
@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.58";
+const STREAMING_BROWSER_VERSION = "0.4.59";
 
 class StreamingBrowserCard extends HTMLElement {
   constructor() {
@@ -97,7 +97,26 @@ class StreamingBrowserCard extends HTMLElement {
     );
   }
 
-  static getConfigForm() {
+  static getConfigForm(hass = null, config = {}) {
+    // Use the physical HDMI inputs of the host/display TV, NOT the player.
+    const tv = hass?.states?.[config?.display_entity];
+    const sourceList = tv?.attributes?.source_list;
+    const sources = Array.isArray(sourceList) ? sourceList : [];
+    const hdmiInputs = [...new Set(sources
+      .filter((source) => typeof source === "string")
+      .map((source) => source.trim())
+      .filter((source) => /\bHDMI(?:\b|(?=\d))/i.test(source))
+    )];
+    // Preserve a saved input when the display TV is temporarily offline.
+    const saved = String(config?.display_source || "").trim();
+    if (config?.display_entity && saved && !hdmiInputs.includes(saved)) {
+      hdmiInputs.unshift(saved);
+    }
+    const hdmiOptions = hdmiInputs.map((source) => ({
+      value: source,
+      label: source,
+    }));
+
     const labels = {
       title: "Card title",
       platform: "Platform",
@@ -132,7 +151,7 @@ class StreamingBrowserCard extends HTMLElement {
       display_entity:
         "Optional display television for a separate HDMI playback device. Select the LG/webOS television here, not the Android TV box.",
       display_source:
-        "Exact HDMI source name as shown under the display TV's available sources (for example HDMI 1).",
+        "Select an HDMI input reported by the selected display TV. Turn on the display TV if no inputs are shown.",
       display_source_delay_ms:
         "Time allowed for the HDMI input to become ready after switching.",
       remote_side:
@@ -263,7 +282,15 @@ class StreamingBrowserCard extends HTMLElement {
               name: "display_entity",
               selector: { entity: { filter: { domain: "media_player" } } },
             },
-            { name: "display_source", selector: { text: {} } },
+            {
+              name: "display_source",
+              selector: {
+                select: {
+                  mode: "dropdown",
+                  options: hdmiOptions,
+                },
+              },
+            },
             {
               name: "display_source_delay_ms",
               selector: { number: { min: 0, max: 20000, step: 100, unit_of_measurement: "ms" } },
@@ -5517,27 +5544,64 @@ class StreamingBrowserCardEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    this._render();
+    // Frequent HA state updates must NOT destroy and recreate ha-form: that
+    // resets the expandable sections on every state change or input event.
+    if (this.shadowRoot?.querySelector("#base ha-form")) {
+      this._syncEditorForm();
+    } else {
+      this._render();
+    }
   }
 
   setConfig(config) {
-    this._config = {
+    const previous = this._config;
+    const next = {
       selected_provider_ids: [
-        ...STREAMING_BROWSER_BACKEND
-          .defaultProviderIds,
+        ...STREAMING_BROWSER_BACKEND.defaultProviderIds,
       ],
       ...config,
     };
+    const changed = JSON.stringify(previous) !== JSON.stringify(next);
+    this._config = next;
 
-    this._render();
-    this._loadProviders();
+    if (this.shadowRoot?.querySelector("#base ha-form")) {
+      // ha-form already owns the value entered by the user. Do not push the
+      // same value back into it on every config-changed event.
+      this._syncEditorForm(changed);
+    } else {
+      this._render();
+    }
+    if (!previous || previous.region !== next.region ||
+        previous.language !== next.language ||
+        previous.tmdb_api_key !== next.tmdb_api_key) {
+      this._loadProviders();
+    }
   }
 
   connectedCallback() {
     this._render();
-
-    if (this._config) {
+    if (this._config && !this._providers.length && !this._providersLoading) {
       this._loadProviders();
+    }
+  }
+
+  _syncEditorForm(updateData = false) {
+    const form = this.shadowRoot?.querySelector("#base ha-form");
+    if (!form || !this._config) return;
+    form.hass = this._hass;
+    if (updateData) form.data = this._config;
+    const formConfig = StreamingBrowserCard.getConfigForm(this._hass, this._config);
+    const hdmiSection = formConfig.schema.find((item) => item.title === "HDMI / remote");
+    const hdmiSelector = hdmiSection?.schema?.find((item) => item.name === "display_source");
+    const key = JSON.stringify([
+      this._config.display_entity || "",
+      hdmiSelector?.selector?.select?.options || [],
+    ]);
+    if (key !== this._hdmiSchemaKey) {
+      this._hdmiSchemaKey = key;
+      // Update only when the display TV or its source_list actually changes.
+      // The form element is never replaced, so other expanded sections stay open.
+      form.schema = formConfig.schema;
     }
   }
 
@@ -5824,10 +5888,10 @@ class StreamingBrowserCardEditor extends HTMLElement {
   }
 
   _render() {
-    if (
-      !this.shadowRoot ||
-      !this._config
-    ) {
+    if (!this.shadowRoot || !this._config) return;
+    if (this.shadowRoot.querySelector("#base ha-form")) {
+      this._syncEditorForm();
+      this._renderProviders();
       return;
     }
 
@@ -6019,9 +6083,13 @@ class StreamingBrowserCardEditor extends HTMLElement {
         "ha-form"
       );
 
-    const formConfig =
-      StreamingBrowserCard
-        .getConfigForm();
+    const formConfig = StreamingBrowserCard.getConfigForm(this._hass, this._config);
+    const hdmiSection = formConfig.schema.find((item) => item.title === "HDMI / remote");
+    const hdmiSelector = hdmiSection?.schema?.find((item) => item.name === "display_source");
+    this._hdmiSchemaKey = JSON.stringify([
+      this._config.display_entity || "",
+      hdmiSelector?.selector?.select?.options || [],
+    ]);
 
     form.hass = this._hass;
     form.data = this._config;
@@ -6035,6 +6103,7 @@ class StreamingBrowserCardEditor extends HTMLElement {
     form.addEventListener(
       "value-changed",
       (event) => {
+        const oldDisplay = this._config?.display_entity;
         const oldRegion =
           this._config?.region;
         const oldKey =
@@ -6050,7 +6119,14 @@ class StreamingBrowserCardEditor extends HTMLElement {
             {}),
         };
 
+        if (oldDisplay !== next.display_entity) {
+          // Never carry a stale HDMI input across two different display TVs.
+          next.display_source = "";
+        }
         this._emitConfig(next);
+        if (oldDisplay !== next.display_entity) {
+          this._syncEditorForm(true);
+        }
 
         if (
           oldRegion !==
@@ -6293,7 +6369,7 @@ if (
 }
 
 console.info(
-  "%c STREAMING-BROWSER-CARD %c v0.4.56 ",
+  "%c STREAMING-BROWSER-CARD %c v0.4.59 ",
   "color:white;background:#03a9f4;font-weight:bold;",
   "color:#03a9f4;background:white;font-weight:bold;"
 );
