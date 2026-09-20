@@ -1,0 +1,103 @@
+name: Reliable Streaming Browser card registration v0.4.67
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/reliable-card-registration-v0467.yml"
+permissions:
+  contents: write
+jobs:
+  test-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build resilient integration and bundled card
+        run: python3 tools/repair-card-resource-v0467.py
+      - name: Validate syntax, editor, registration retries and version alignment
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          node - <<'JS'
+          const fs=require('node:fs'), vm=require('node:vm');
+          const code=fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card.js','utf8');
+          const elements=new Map(),window={customCards:[]};
+          const context={HTMLElement:class{},customElements:{get:k=>elements.get(k),define:(k,v)=>elements.set(k,v)},window,document:{createElement:k=>({tagName:k})},console};
+          vm.runInNewContext(code,context);
+          const card=elements.get('streaming-browser-card');
+          if(!card || !elements.get('streaming-browser-card-editor'))throw Error('Card/editor missing');
+          if(card.getConfigElement()?.tagName!=='streaming-browser-card-editor')throw Error('Visual editor missing');
+          if(window.customCards.filter(c=>c.type==='streaming-browser-card' && c.name==='Streaming Browser Card').length!==1)throw Error('Named card picker entry missing');
+          if(!code.includes('STREAMING_BROWSER_VERSION = "0.4.67"'))throw Error('Frontend version differs');
+          console.log('PASS: JavaScript, named card picker, visual editor and v0.4.67 frontend');
+          JS
+          python3 - <<'PY'
+          import ast,asyncio,json,logging,types
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          src=(base/'__init__.py').read_text()
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.67'
+          functions=[n for n in ast.parse(src).body if isinstance(n,ast.AsyncFunctionDef) and n.name in ('_register_card','async_setup_entry')]
+          assert len(functions)==2
+          class Collection:
+              def __init__(self, items):self.items=list(items)
+              async def async_get_info(self):pass
+              def async_items(self):return list(self.items)
+              async def async_create_item(self,item):self.items.append({'id':'new',**item})
+              async def async_update_item(self,id,update):next(x for x in self.items if x['id']==id).update(update)
+              async def async_delete_item(self,id):self.items=[x for x in self.items if x['id']!=id]
+          class Http:
+              def __init__(self):self.calls=0
+              async def async_register_static_paths(self,paths):self.calls+=1
+          class Bus:
+              def __init__(self):self.callback=None
+              def async_listen_once(self,event,callback):self.callback=callback
+          class HA:
+              def __init__(self):self.data={};self.is_running=False;self.http=Http();self.bus=Bus();self.tasks=[]
+              def async_create_task(self,coro):
+                  task=asyncio.create_task(coro);self.tasks.append(task);return task
+          front=[]
+          env={'HomeAssistant':HA,'_CARD_FILE':base/'frontend/streaming-browser-card.js','_CARD_URL':'/streaming_browser/streaming-browser-card.js',
+              '_RESOURCE_URL':'/streaming_browser/streaming-browser-card.js?v=0.4.67','_STATIC_REGISTERED_KEY':'static',
+              '_FRONTEND_REGISTERED_KEY':'frontend','_RESOURCE_RETRY_KEY':'retry','_LOGGER':logging.getLogger('test'),
+              'StaticPathConfig':lambda *args,**kwargs:args,'LOVELACE_DATA':'lovelace','MODE_STORAGE':'storage',
+              'frontend':types.SimpleNamespace(add_extra_js_url=lambda hass,url:front.append(url)),'EVENT_HOMEASSISTANT_STARTED':'homeassistant_started',
+              '_LEGACY_CARD_URLS':{'/hacsfiles/streaming-browser--card/streaming-browser-card.js','/local/community/streaming-browser--card/streaming-browser-card.js'},
+              'CONF_URL':'url','CONF_TYPE':'type','CONF_ID':'id','CONF_RESOURCE_TYPE_WS':'res_type','DOMAIN':'streaming_browser',
+              'async_setup':lambda *args:asyncio.sleep(0,result=True)}
+          exec(compile(ast.Module(body=functions,type_ignores=[]),'<registration tests>','exec'),env)
+          async def run():
+              h=HA()
+              await env['_register_card'](h)
+              await env['_register_card'](h)
+              assert h.http.calls==1 and len(front)==1 and h.bus.callback is not None
+              c=Collection([{'id':'old','url':'/hacsfiles/streaming-browser--card/streaming-browser-card.js?v=old','type':'module'},
+                            {'id':'current','url':'/streaming_browser/streaming-browser-card.js?v=0.4.66','type':'module'},
+                            {'id':'duplicate','url':'/streaming_browser/streaming-browser-card.js?v=0.4.66','type':'module'}])
+              h.data['lovelace']=types.SimpleNamespace(resources=c,resource_mode='storage')
+              h.bus.callback(None)
+              await asyncio.gather(*h.tasks)
+              await env['_register_card'](h)
+              assert h.http.calls==1 and len(front)==1, (h.http.calls,front)
+              assert len(c.items)==1 and c.items[0]['id']=='current' and c.items[0]['url'].endswith('?v=0.4.67'),c.items
+              h.data['streaming_browser']=object()
+              assert await env['async_setup_entry'](h,object())
+              assert h.http.calls==1 and len(c.items)==1
+              h2=HA();h2.data['lovelace']=types.SimpleNamespace(resources=Collection([]),resource_mode='storage')
+              await env['_register_card'](h2)
+              assert len(h2.data['lovelace'].resources.items)==1
+              assert h2.data['lovelace'].resources.items[0]['type']=='module'
+              print('PASS: startup retry, existing setup retry, single HTTP route, global picker registration, legacy resource migration, versioned resource creation')
+          asyncio.run(run())
+          PY
+      - name: Commit verified integration and publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name github-actions\[bot\]
+          git config user.email 41898282+github-actions\[bot\]@users.noreply.github.com
+          git add custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card.js
+          git commit -m "Retry Streaming Browser card resource registration v0.4.67"
+          git push origin HEAD:main
+          gh release create v0.4.67 --target "$(git rev-parse HEAD)" --title "v0.4.67" --notes "Make the bundled card resource self-repairing: retry after Home Assistant startup if Lovelace initializes late, recheck resources during UI integration setup, avoid duplicate HTTP routes and global script registration, and log resource creation. The named card and visual editor remain included. Update the HACS Integration, restart Home Assistant and reload the dashboard."
