@@ -1,0 +1,53 @@
+name: Publish Streaming Browser V2 compact mobile header v0.4.107
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v2-mobile-power-v04107.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix repeated V2 power controls and mobile wrapping
+        run: python3 tools/fix-v2-mobile-header-power-v04107.py
+      - name: Check JavaScript syntax, Python and V1 isolation
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          v1=(base/'frontend/streaming-browser-card.js').read_text(encoding='utf-8')
+          v2=(base/'frontend/streaming-browser-card-v2.js').read_text(encoding='utf-8')
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.107'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.98";' in v1
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.107";' in v2
+          assert "const existingPower = roomBar.querySelector('.sbr-power-controls');" in v2
+          assert "if (holder.querySelector('.sbr-power-switch'))" in v2
+          assert '--v2-mode-height:44px; --v2-genre-height:36px;' in v2
+          assert '--v2-filter-gap:6px; flex-wrap:nowrap;' in v2
+          assert '.v2-provider-choice { flex:1 1 0; min-width:0; width:0;' in v2
+          assert '.v2-provider-scroll { flex:1 1 0; min-width:0;' in v2
+          assert 'this._v2CommitMainMarkup(`' in v2
+          assert 'this._v2CatalogStamp !== stamp' in v2
+          assert 'StreamingBrowserV2Card' in v2 and 'streaming-browser-card-v2' in v2
+          assert 'StreamingBrowserCard' in v1 and 'streaming-browser-card' in v1
+          print('PASS V2 power guard, mobile one-row square providers, fixed filters, incremental catalog; V1 isolated')
+          PY
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js
+      - name: Commit and publish v0.4.107
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.107: dedupe V2 power control and align square source buttons on phones'
+          git push origin HEAD:main
+          gh release create v0.4.107 --target "$(git rev-parse HEAD)" --title v0.4.107 --notes 'V2 fixes accumulating power on/off buttons caused by legacy render hooks during incremental catalog updates. Keep one stable power toggle, and align Movies/Series + Genre with All and equally sized scrolling source squares in one fixed mobile row. V1 and playback logic untouched. HACS update + Home Assistant restart + dashboard reload needed.'
