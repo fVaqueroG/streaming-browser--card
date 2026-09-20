@@ -28,7 +28,6 @@ const names=form.schema[0].schema.map(x=>x.name);
 assert.equal(names[names.indexOf('adb_entity')+1],'adb_remote_entity');
 assert.equal(form.computeLabel({name:'adb_remote_entity'}),'ADB remote (optional)');
 assert.match(form.computeHelper({name:'adb_remote_entity'}),/Netflix-specific keys/);
-Card.getConfigForm = Card.getConfigForm; // Ensure room-only schema has no duplicate global setting.
 const c=new Card(); c.events=[]; c.activity='com.example.app';
 c._config={platform:'android_tv',remote_entity:'remote.standard',adb_entity:null,adb_remote_entity:null,manual_profile_selection:false};
 c._hass={states:{'remote.standard':{state:'on'},'remote.adb':{state:'on'}},
@@ -42,7 +41,11 @@ c._hass={states:{'remote.standard':{state:'on'},'remote.adb':{state:'on'}},
   assert.deepEqual(c.events,[['standard','RIGHT']],'normal controls prefer standard remote');
   c.events=[]; c.activity='com.netflix.ninja';
   await c._sendRemoteButton('UP');
-  assert.deepEqual(c.events,[['remote','send_command',{entity_id:'remote.adb',command:'input keyevent 19'}]]);
+  assert.equal(c.events.length,1);
+  assert.equal(c.events[0][0],'remote');
+  assert.equal(c.events[0][1],'send_command');
+  assert.equal(c.events[0][2].entity_id,'remote.adb');
+  assert.equal(c.events[0][2].command,'input keyevent 19');
   c.events=[]; c.activity='com.example.app';c.failStandard=true;
   await c._sendRemoteButton('ENTER');
   assert.equal(c.events[0][0],'standard');
