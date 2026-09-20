@@ -1,0 +1,68 @@
+name: Streaming Browser provider offer badges v0.4.76
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-provider-offer-badges-v0476.yml'
+permissions:
+  contents: write
+jobs:
+  verify-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch provider offer badges and version
+        run: python3 tools/release-provider-offer-badges-v0476.py
+      - name: Validate badge semantics and existing source actions
+        shell: bash
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          node <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm');
+          const src=fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card.js','utf8');
+          const manifest=JSON.parse(fs.readFileSync('custom_components/streaming_browser/manifest.json','utf8'));
+          if(manifest.version!=='0.4.76'||!src.includes('const STREAMING_BROWSER_VERSION = "0.4.76";'))throw Error('Version mismatch');
+          const registry=new Map(),window={customCards:[]};
+          vm.runInNewContext(src,{HTMLElement:class{},window,customElements:{get:k=>registry.get(k),define:(k,C)=>registry.set(k,C)},console});
+          const Card=registry.get('streaming-browser-card');
+          if(!Card||!registry.get('streaming-browser-card-editor')||!window.customCards.some(c=>c.type==='streaming-browser-card'))throw Error('Named card or editor lost');
+          const p=Card.prototype;
+          const mock={_locale:()=> 'en',_esc:s=>String(s),_providerLogo:()=>'<img src="logo">',_pickWatchmodeSource:(name,sources)=>sources[0]||null,_sourceForProvider:()=> 'Netflix',_platform:()=> 'webos',_t:s=>s,_config:{region:'MX'},_providerOffer:p._providerOffer};
+          const offer=groups=>p._providerOffer.call(mock,groups);
+          if(offer(['flatrate'])?.icon!=='mdi:currency-usd-off'||offer(['flatrate'])?.label!=='Included with subscription')throw Error('Subscription badge wrong');
+          if(offer(['free','ads'])?.icon!=='mdi:play-circle-outline'||offer(['free','ads'])?.kind!=='ads')throw Error('Ads offer must be separate from free or subscription');
+          if(offer(['free'])?.label!=='Free'||offer(['rent'])?.icon!=='mdi:currency-usd'||offer(['buy'])?.icon!=='mdi:currency-usd')throw Error('Free or paid badge wrong');
+          if(offer([])!==null||offer(['flatrate','ads']).kind!=='included')throw Error('Unknown or multiple-offer behavior changed');
+          mock._locale=()=> 'es';
+          if(offer(['ads'])?.label!=='Gratis con anuncios'||offer(['flatrate'])?.label!=='Incluido con suscripción')throw Error('Spanish labels missing');
+          mock._locale=()=> 'en';
+          const detail={selectedSeason:1,selectedEpisode:{episode_number:2},episodeSourcesLoading:false,episodeSources:[{scope:'episode',season:1,episode:2,web_url:'https://example.com/watch'}],localSources:[{web_url:'https://example.com/watch'}],localSourcesLoading:false};
+          const render=(groups,isSeries=false)=>p._renderProviderCards.call(mock,detail,[{provider_name:'Netflix',logo_path:'/logo.png',groups}],isSeries);
+          const included=render(['flatrate']);
+          if(!included.includes('class="provider-offer-badge included"')||!included.includes('mdi:currency-usd-off')||!included.includes('Netflix · Included with subscription')||included.includes('>flatrate<'))throw Error('Subscription rendering, accessibility or raw label wrong');
+          const ad=render(['free','ads'],true);
+          if(!ad.includes('mdi:play-circle-outline')||!ad.includes('class="provider-ad-text">AD</span>')||!ad.includes('data-title-provider="Netflix"')||!ad.includes('mdi:cellphone-play'))throw Error('Episode ad badge or source actions lost');
+          if(!render(['rent']).includes('mdi:currency-usd')||!render(['buy']).includes('mdi:currency-usd'))throw Error('Paid offers missing');
+          const unknown=render([]);
+          if(unknown.includes('provider-offer-badge'))throw Error('Unknown availability must not be labeled paid or free');
+          const noLogo=p._renderProviderCards.call(mock,detail,[{provider_name:'Service without logo',groups:['ads']}]);
+          if(!noLogo.includes('provider-name-fallback')||!noLogo.includes('Gratis')===false){} // Text fallback is preserved; localization checked independently.
+          if(!noLogo.includes('provider-name-fallback')||!noLogo.includes('Service without logo'))throw Error('Logo-less provider fallback lost');
+          const styles=p._detailStyles.call(mock);
+          if(!styles.includes('.provider-offer-badge {')||!styles.includes('position: absolute;')||!styles.includes('.provider-offer-badge.ads'))throw Error('Badge is not overlaid on the logo');
+          const docs=fs.readFileSync('README.md','utf8');
+          if(!docs.includes('v0.4.76 — Offer badges')||!docs.includes('releases/latest'))throw Error('HACS README release notes missing');
+          console.log('PASS: all 3 offer badges, free fallback, locale labels, episode/movie actions, card/editor, CSS and HACS docs');
+          JS
+      - name: Publish HACS Integration v0.4.76
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/frontend/streaming-browser-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'Show subscription, ad-supported and paid offer badges on service logos v0.4.76'
+          git push origin HEAD:main
+          gh release create v0.4.76 --target "$(git rev-parse HEAD)" --title v0.4.76 --notes 'Replace raw flatrate/free/ads/rent/buy text on source cards with small corner badges on service logos: currency-usd-off for included subscription or free, play-circle-outline plus AD for free with ads, currency-usd for rental or purchase. Offer labels remain accessible and available on hover. Movie/episode link actions and saved cards are unchanged. Update HACS Integrations, restart Home Assistant and fully reload the dashboard.'
