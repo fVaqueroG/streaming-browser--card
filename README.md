@@ -199,3 +199,7 @@ The expanded V2 catalog displays **Back to carousel** in a dedicated, non-scroll
 ## v0.4.109 — Matching right-aligned catalog actions (V2)
 
 The fixed **Back to carousel** button sits on the right above the expanded poster grid. **See all** stays beneath the horizontal carousel and now uses the same bordered, rounded secondary-background button treatment, spacing and icon sizing. Incremental rendering, room controls, provider scrolling, V1 and playback are unchanged.
+
+## v0.4.110 — More compact V2 browsing controls
+
+The fixed V2 controls from the search field through the category tabs use shorter fields, source buttons, spacing and category buttons, leaving more vertical room for posters. The same controls, labels and TV-friendly targets remain available. Room controls, horizontal provider scrolling, catalogs, V1 and playback are unchanged.

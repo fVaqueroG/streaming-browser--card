@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.109";
+const STREAMING_BROWSER_VERSION = "0.4.110";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -9934,11 +9934,11 @@ console.info(
       background:var(--card-background-color); padding:clamp(10px,1.5vw,20px);
       border-bottom:1px solid var(--divider-color); box-shadow:0 4px 14px #0002; }
     .v2-header .top { position:relative; top:auto; display:flex;
-      flex-wrap:wrap; align-items:center; gap:9px; margin:0 0 10px; }
+      flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 7px; }
     .v2-header .top .title { flex:1 1 190px; font-size:clamp(18px,2.5vw,25px); }
     .v2-header .top .tvstate { min-width:0; font-size:11px; }
     .v2-header .top .search { order:10; flex:1 1 100%; width:100%; min-width:0;
-      max-width:none; margin:0; }
+      max-width:none; margin:0; padding:8px 12px; border-radius:16px; }
     .v2-header .sbr-room-controls { flex:0 1 235px; gap:5px; min-width:120px; }
     .v2-header .sbr-room-controls .sbr-route-label { flex:1 1 100px;
       min-width:100px; font-size:0; }
@@ -9946,11 +9946,11 @@ console.info(
       border-radius:22px; min-height:36px; padding:7px 12px; }
     /* Filters and All do not belong to the horizontally scrollable logo track. */
     /* One source square matches the complete fixed Movies/Series + genre stack. */
-    .v2-provider-strip { --v2-mode-height:56px; --v2-genre-height:38px;
-      --v2-filter-gap:7px;
+    .v2-provider-strip { --v2-mode-height:46px; --v2-genre-height:34px;
+      --v2-filter-gap:5px;
       --v2-source-size:calc(var(--v2-mode-height) + var(--v2-filter-gap) + var(--v2-genre-height));
       display:flex; flex-wrap:wrap; align-items:stretch; min-width:0;
-      gap:clamp(8px,1.2vw,16px); overflow:visible; padding:2px 1px 10px; }
+      gap:clamp(7px,1vw,12px); overflow:visible; padding:2px 1px 7px; }
     /* Movies and Series share the top row; genre spans precisely both columns.
        The whole group stays outside the horizontally scrolling provider logos. */
     .v2-provider-strip .switcher { display:grid;
@@ -9960,11 +9960,11 @@ console.info(
       max-width:100%; min-width:0; margin:0; align-items:stretch; }
     .v2-provider-strip .switcher .mode { min-width:0; width:100%;
       height:var(--v2-mode-height); min-height:var(--v2-mode-height);
-      padding:8px 6px; margin:0; }
+      padding:6px; margin:0; }
     .v2-provider-strip .switcher .genre-select { grid-column:1 / -1;
       width:100%; min-width:0; max-width:none;
       height:var(--v2-genre-height); min-height:var(--v2-genre-height);
-      margin:0; box-sizing:border-box; }
+      margin:0; padding:5px 8px; box-sizing:border-box; }
     .v2-provider-choice { flex:1 1 250px; min-width:0; max-width:100%;
       display:flex; align-items:stretch; gap:8px; }
     .v2-provider-choice > .chip[data-provider="all"] {
@@ -9980,27 +9980,27 @@ console.info(
     .v2-provider-strip .chip { width:var(--v2-source-size);
       min-width:var(--v2-source-size); height:var(--v2-source-size);
       min-height:var(--v2-source-size); flex:0 0 var(--v2-source-size);
-      aspect-ratio:1 / 1; padding:8px; display:flex; align-items:center;
-      justify-content:center; gap:4px; border-radius:13px; }
+      aspect-ratio:1 / 1; padding:6px; display:flex; align-items:center;
+      justify-content:center; gap:3px; border-radius:12px; }
     .v2-provider-strip .chip:not([data-provider="all"]) span { display:none; }
-    .v2-provider-strip .chip img { width:54px; height:54px;
+    .v2-provider-strip .chip img { width:46px; height:46px;
       max-width:100%; max-height:100%; border-radius:9px; object-fit:contain; }
     .v2-provider-strip .chip[data-provider="all"] { flex-direction:column; }
-    .v2-provider-strip .chip[data-provider="all"] ha-icon { --mdc-icon-size:32px; }
+    .v2-provider-strip .chip[data-provider="all"] ha-icon { --mdc-icon-size:28px; }
     .v2-provider-strip .chip[data-provider="all"] span { font-size:11px;
       font-weight:650; line-height:1; white-space:nowrap; }
     /* Three equal horizontal categories span the entire card width. */
     .v2-categories { display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
-      width:100%; min-width:0; gap:8px; overflow:visible; padding-top:10px;
+      width:100%; min-width:0; gap:7px; overflow:visible; padding-top:7px;
       border-top:1px solid var(--divider-color); }
     .v2-category-tab { display:flex; min-width:0; width:100%; align-items:center;
-      justify-content:center; gap:7px; padding:10px 8px; min-height:44px;
+      justify-content:center; gap:6px; padding:7px 8px; min-height:38px;
       border:1px solid var(--divider-color); border-radius:10px;
       background:var(--secondary-background-color); color:var(--primary-text-color);
       cursor:pointer; font:inherit; font-size:13px; font-weight:650; }
     .v2-category-tab.active { border-color:var(--primary-color);
       background:color-mix(in srgb,var(--primary-color) 22%,var(--secondary-background-color)); }
-    .v2-category-tab ha-icon { --mdc-icon-size:20px; flex:0 0 auto; }
+    .v2-category-tab ha-icon { --mdc-icon-size:18px; flex:0 0 auto; }
     .v2-category-tab span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .v2-back-to-carousel-bar { flex:0 0 auto; display:flex; align-items:center;
       justify-content:flex-end; min-width:0; padding:8px clamp(10px,1.5vw,20px);
@@ -10031,8 +10031,8 @@ console.info(
       .v2-header .top .tvstate { display:none; }
       .v2-header .sbr-room-controls { flex:0 1 155px; }
       /* Mobile: filters + square All + provider logos share ONE row. */
-      .v2-provider-strip { --v2-mode-height:44px; --v2-genre-height:36px;
-        --v2-filter-gap:6px; flex-wrap:nowrap; gap:8px; align-items:stretch; }
+      .v2-provider-strip { --v2-mode-height:38px; --v2-genre-height:32px;
+        --v2-filter-gap:4px; flex-wrap:nowrap; gap:7px; align-items:stretch; }
       .v2-provider-strip .switcher { flex:0 0 clamp(140px,43vw,166px);
         width:clamp(140px,43vw,166px); max-width:47%; min-width:0; }
       .v2-provider-strip .switcher .mode { height:var(--v2-mode-height);
@@ -10047,10 +10047,10 @@ console.info(
       .v2-provider-scroll { flex:1 1 0; min-width:0; max-width:none;
         height:var(--v2-source-size); overflow-x:auto; }
       .v2-provider-scroll .chips { min-width:0; }
-      .v2-provider-strip .chip img { width:38px; height:38px; }
-      .v2-categories { gap:5px; }
-      .v2-category-tab { padding:9px 4px; gap:4px; min-height:40px; font-size:12px; }
-      .v2-category-tab ha-icon { --mdc-icon-size:17px; }
+      .v2-provider-strip .chip img { width:34px; height:34px; }
+      .v2-categories { gap:5px; padding-top:6px; }
+      .v2-category-tab { padding:6px 4px; gap:4px; min-height:36px; font-size:12px; }
+      .v2-category-tab ha-icon { --mdc-icon-size:16px; }
       .v2-body { padding:10px 9px; }
     }
   `;
