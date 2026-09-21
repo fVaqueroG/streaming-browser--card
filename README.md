@@ -203,3 +203,7 @@ The fixed **Back to carousel** button sits on the right above the expanded poste
 ## v0.4.110 — More compact V2 browsing controls
 
 The fixed V2 controls from the search field through the category tabs use shorter fields, source buttons, spacing and category buttons, leaving more vertical room for posters. The same controls, labels and TV-friendly targets remain available. Room controls, horizontal provider scrolling, catalogs, V1 and playback are unchanged.
+
+## v0.4.111 — Larger provider logos in V2
+
+Provider app logos now occupy about 75% of their existing square source buttons on desktop and mobile. The button dimensions and compact V2 header remain unchanged. The fixed All button, V1, room controls, catalogs and playback are unchanged.

@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.110";
+const STREAMING_BROWSER_VERSION = "0.4.111";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -9983,7 +9983,7 @@ console.info(
       aspect-ratio:1 / 1; padding:6px; display:flex; align-items:center;
       justify-content:center; gap:3px; border-radius:12px; }
     .v2-provider-strip .chip:not([data-provider="all"]) span { display:none; }
-    .v2-provider-strip .chip img { width:46px; height:46px;
+    .v2-provider-strip .chip img { width:64px; height:64px;
       max-width:100%; max-height:100%; border-radius:9px; object-fit:contain; }
     .v2-provider-strip .chip[data-provider="all"] { flex-direction:column; }
     .v2-provider-strip .chip[data-provider="all"] ha-icon { --mdc-icon-size:28px; }
@@ -10047,7 +10047,7 @@ console.info(
       .v2-provider-scroll { flex:1 1 0; min-width:0; max-width:none;
         height:var(--v2-source-size); overflow-x:auto; }
       .v2-provider-scroll .chips { min-width:0; }
-      .v2-provider-strip .chip img { width:34px; height:34px; }
+      .v2-provider-strip .chip img { width:56px; height:56px; }
       .v2-categories { gap:5px; padding-top:6px; }
       .v2-category-tab { padding:6px 4px; gap:4px; min-height:36px; font-size:12px; }
       .v2-category-tab ha-icon { --mdc-icon-size:16px; }
