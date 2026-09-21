@@ -1,0 +1,50 @@
+name: Publish Streaming Browser V2 fixed Back to carousel v0.4.108
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v2-sticky-back-v04108.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Move expanded-catalog return control into a fixed V2 toolbar
+        run: python3 tools/v2-sticky-back-to-carousel-v04108.py
+      - name: Validate V2 layout, incremental updates, and unchanged V1
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('custom_components/streaming_browser')
+          v1=(root/'frontend/streaming-browser-card.js').read_text()
+          v2=(root/'frontend/streaming-browser-card-v2.js').read_text()
+          assert json.loads((root/'manifest.json').read_text())['version']=='0.4.108'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.98";' in v1
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.108";' in v2
+          assert v2.count('this._v2PositionBackToCarousel?.();')==2
+          assert 'wrap.insertBefore(bar, body);' in v2
+          assert 'if (bar.firstElementChild !== button) bar.replaceChildren(button);' in v2
+          assert 'button.querySelector(\'ha-icon\')?.setAttribute(\'icon\', \'mdi:chevron-left\')' in v2
+          assert 'this._v2SyncCatalog(body);' in v2
+          assert '.v2-back-to-carousel-bar { flex:0 0 auto;' in v2
+          assert 'this._v2ForceFullRender = true;' in v2
+          print('PASS fixed V2 return control, initial and incremental renders, V1 untouched')
+          PY
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js
+      - name: Commit and publish v0.4.108
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.108: keep Back to carousel above expanded titles while scrolling'
+          git push origin HEAD:main
+          gh release create v0.4.108 --target "$(git rev-parse HEAD)" --title v0.4.108 --notes 'V2 shows Back to carousel in a fixed toolbar just below the category header, above the expanded scrolling catalog. See all stays beneath the carousel. Initial and incremental catalog renders retain existing button actions. V1 and playback are unchanged.'
