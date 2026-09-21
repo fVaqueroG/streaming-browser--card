@@ -189,3 +189,8 @@ Complete v0.4.105 partial-rendering support: reused room controls are no longer 
 ## v0.4.107 — fix repeated V2 power buttons and mobile header wrapping
 
 V2 reuses the existing per-room power switch instead of appending legacy power on/off buttons on every incremental catalog update. Mobile screens keep Movies/Series over the aligned genre selector, All, and the scrollable provider icons in a single fixed horizontal row. The All/provider squares match the complete filter stack height and provider names remain icon-only. V1 and provider playback/routing remain unchanged. Update through HACS, restart Home Assistant, and reload the V2 card to discard controls that were already duplicated in an older DOM.
+
+
+## v0.4.108 — V2 fixed Back to carousel above expanded titles
+
+The expanded V2 catalog displays **Back to carousel** in a dedicated, non-scrolling toolbar directly below the fixed category header and above the poster grid. The button stays visible while titles scroll and continues to return to the selected category carousel. The ordinary **See all** button stays at the bottom of the carousel. Both initial/full renders and incremental catalog refreshes maintain this behavior; V1 and playback are unchanged.

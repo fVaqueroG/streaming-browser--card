@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.107";
+const STREAMING_BROWSER_VERSION = "0.4.108";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -10002,6 +10002,14 @@ console.info(
       background:color-mix(in srgb,var(--primary-color) 22%,var(--secondary-background-color)); }
     .v2-category-tab ha-icon { --mdc-icon-size:20px; flex:0 0 auto; }
     .v2-category-tab span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .v2-back-to-carousel-bar { flex:0 0 auto; display:flex; align-items:center;
+      justify-content:flex-start; min-width:0; padding:8px clamp(10px,1.5vw,20px);
+      background:var(--card-background-color); color:var(--primary-text-color);
+      border-bottom:1px solid var(--divider-color); z-index:20; }
+    .v2-back-to-carousel-bar .v2-see-all { margin:0; padding:7px 10px;
+      min-height:36px; justify-content:flex-start; gap:6px;
+      border-radius:9px; background:var(--secondary-background-color); }
+    .v2-back-to-carousel-bar .v2-see-all ha-icon { order:-1; }
     .v2-body { flex:1 1 auto; min-height:0; overflow:auto; overscroll-behavior:contain;
       padding:clamp(10px,1.5vw,20px); scrollbar-width:thin; }
     .v2-body .catalog-section { margin:0; min-width:0; }
@@ -10165,6 +10173,7 @@ console.info(
         sectionElement.append(button);
       }
     });
+    this._v2PositionBackToCarousel?.();
     body.scrollTop = this._v2ResetScroll ? 0 : oldScroll;
     this._v2ResetScroll = false;
     body.addEventListener('scroll', () => {
@@ -10365,6 +10374,7 @@ console.info(
         !child.matches('.top, .switcher, .chips, .overlay'));
       body.replaceChildren(...children);
       this._v2SyncCatalog(body);
+      this._v2PositionBackToCarousel?.();
       body.scrollTop = this._v2ResetScroll ? 0 : oldTop;
       this._v2ResetScroll = false;
       this._v2CatalogStamp = catalogStamp(this);
@@ -10393,5 +10403,37 @@ console.info(
       }, {passive:true});
     }
     return result;
+  };
+})();
+
+
+/* Streaming Browser V2 v0.4.108: fixed expanded-catalog return bar. */
+(() => {
+  const Card = StreamingBrowserV2Card;
+  Card.prototype._v2PositionBackToCarousel = function() {
+    const wrap = this.shadowRoot?.querySelector('ha-card > .wrap');
+    const body = wrap?.querySelector(':scope > .v2-body');
+    if (!body) return;
+    let bar = wrap.querySelector(':scope > .v2-back-to-carousel-bar');
+    const expanded = this._v2ShowAll === true &&
+      String(this._query || '').trim().length < 2;
+    const section = expanded ? [...body.querySelectorAll('.catalog-section.v2-expanded')]
+      .find(element => !element.hidden && element.style.display !== 'none' &&
+        element.querySelector('.catalog-row[data-section]')?.dataset.section === this._v2CategoryKey) : null;
+    const button = section?.querySelector(':scope > .v2-see-all');
+    if (!button) { bar?.remove(); return; }
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.className = 'v2-back-to-carousel-bar';
+      bar.setAttribute('role', 'navigation');
+      bar.setAttribute('aria-label', this._locale().startsWith('es')
+        ? 'Volver al carrusel' : 'Back to carousel');
+      wrap.insertBefore(bar, body);
+    }
+    button.classList.add('v2-back-to-carousel');
+    button.querySelector('ha-icon')?.setAttribute('icon', 'mdi:chevron-left');
+    // Moving, rather than cloning, preserves the existing click handler and
+    // incremental rendering behavior. The normal See all stays below posters.
+    if (bar.firstElementChild !== button) bar.replaceChildren(button);
   };
 })();
