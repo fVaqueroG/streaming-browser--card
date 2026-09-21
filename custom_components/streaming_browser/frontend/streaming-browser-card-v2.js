@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.108";
+const STREAMING_BROWSER_VERSION = "0.4.109";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -10003,22 +10003,21 @@ console.info(
     .v2-category-tab ha-icon { --mdc-icon-size:20px; flex:0 0 auto; }
     .v2-category-tab span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .v2-back-to-carousel-bar { flex:0 0 auto; display:flex; align-items:center;
-      justify-content:flex-start; min-width:0; padding:8px clamp(10px,1.5vw,20px);
+      justify-content:flex-end; min-width:0; padding:8px clamp(10px,1.5vw,20px);
       background:var(--card-background-color); color:var(--primary-text-color);
       border-bottom:1px solid var(--divider-color); z-index:20; }
-    .v2-back-to-carousel-bar .v2-see-all { margin:0; padding:7px 10px;
-      min-height:36px; justify-content:flex-start; gap:6px;
-      border-radius:9px; background:var(--secondary-background-color); }
+    .v2-back-to-carousel-bar .v2-see-all { margin:0; }
     .v2-back-to-carousel-bar .v2-see-all ha-icon { order:-1; }
     .v2-body { flex:1 1 auto; min-height:0; overflow:auto; overscroll-behavior:contain;
       padding:clamp(10px,1.5vw,20px); scrollbar-width:thin; }
     .v2-body .catalog-section { margin:0; min-width:0; }
     .v2-body .catalog-heading { display:none; }
     .v2-body .catalog-row { width:100%; min-width:0; max-width:100%; }
-    .v2-see-all { display:flex; align-items:center; justify-content:flex-end;
-      gap:6px; margin:18px 0 3px auto; min-height:38px; border:0;
-      background:transparent; color:var(--primary-text-color); cursor:pointer;
-      font:inherit; font-size:13px; opacity:.88; padding:6px 8px; }
+    .v2-see-all { display:flex; align-items:center; justify-content:center;
+      width:max-content; max-width:100%; gap:6px; margin:18px 0 3px auto;
+      min-height:36px; border:1px solid var(--divider-color); border-radius:9px;
+      background:var(--secondary-background-color); color:var(--primary-text-color);
+      cursor:pointer; font:inherit; font-size:13px; opacity:1; padding:7px 10px; }
     .v2-see-all ha-icon { --mdc-icon-size:18px; }
     .v2-expanded .catalog-row { display:grid; grid-auto-flow:row;
       grid-auto-columns:auto; grid-template-columns:repeat(auto-fill,minmax(min(155px,38vw),1fr));

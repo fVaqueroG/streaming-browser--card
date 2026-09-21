@@ -194,3 +194,8 @@ V2 reuses the existing per-room power switch instead of appending legacy power o
 ## v0.4.108 — V2 fixed Back to carousel above expanded titles
 
 The expanded V2 catalog displays **Back to carousel** in a dedicated, non-scrolling toolbar directly below the fixed category header and above the poster grid. The button stays visible while titles scroll and continues to return to the selected category carousel. The ordinary **See all** button stays at the bottom of the carousel. Both initial/full renders and incremental catalog refreshes maintain this behavior; V1 and playback are unchanged.
+
+
+## v0.4.109 — Matching right-aligned catalog actions (V2)
+
+The fixed **Back to carousel** button sits on the right above the expanded poster grid. **See all** stays beneath the horizontal carousel and now uses the same bordered, rounded secondary-background button treatment, spacing and icon sizing. Incremental rendering, room controls, provider scrolling, V1 and playback are unchanged.
