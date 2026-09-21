@@ -1,0 +1,50 @@
+name: Publish Streaming Browser V2 matching catalog buttons v0.4.109
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v2-aligned-catalog-actions-v04109.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Align Back to carousel and match See all styling in V2
+        run: python3 tools/v2-aligned-catalog-actions-v04109.py
+      - name: Validate V2 catalog controls, syntax and V1 isolation
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          v1=(base/'frontend/streaming-browser-card.js').read_text()
+          v2=(base/'frontend/streaming-browser-card-v2.js').read_text()
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.109'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.98";' in v1
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.109";' in v2
+          assert 'justify-content:flex-end; min-width:0; padding:8px clamp(10px,1.5vw,20px);' in v2
+          assert '.v2-back-to-carousel-bar .v2-see-all { margin:0; }' in v2
+          assert 'width:max-content; max-width:100%; gap:6px; margin:18px 0 3px auto;' in v2
+          assert 'min-height:36px; border:1px solid var(--divider-color); border-radius:9px;' in v2
+          assert "button.querySelector('ha-icon')?.setAttribute('icon', 'mdi:chevron-left')" in v2
+          assert 'this._v2PositionBackToCarousel?.();' in v2
+          assert 'this._v2SyncCatalog(body);' in v2
+          print('PASS V2 catalog actions match, fixed Back right aligned, See all beneath carousel, V1 unchanged')
+          PY
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js
+      - name: Commit and publish v0.4.109
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.109: right-align fixed Back button and match See all styling'
+          git push origin HEAD:main
+          gh release create v0.4.109 --target "$(git rev-parse HEAD)" --title v0.4.109 --notes 'V2 Back to carousel is right-aligned in its fixed toolbar above expanded titles. See all stays below the horizontal carousel and uses the same bordered, rounded button styling and spacing. V1 and playback unchanged.'
