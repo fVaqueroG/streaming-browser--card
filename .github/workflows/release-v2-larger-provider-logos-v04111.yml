@@ -1,0 +1,47 @@
+name: Publish Streaming Browser V2 larger provider logos v0.4.111
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v2-larger-provider-logos-v04111.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enlarge V2 provider logos
+        run: python3 tools/v2-larger-provider-logos-v04111.py
+      - name: Validate logo occupancy, syntax and V1 isolation
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          v1=(base/'frontend/streaming-browser-card.js').read_text()
+          v2=(base/'frontend/streaming-browser-card-v2.js').read_text()
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.111'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.98";' in v1
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.111";' in v2
+          assert '.v2-provider-strip .chip img { width:64px; height:64px;' in v2
+          assert '.v2-provider-strip .chip img { width:56px; height:56px; }' in v2
+          assert '--v2-mode-height:46px; --v2-genre-height:34px;' in v2
+          assert '--v2-mode-height:38px; --v2-genre-height:32px;' in v2
+          print('PASS: V2 provider logos occupy about 75% while square buttons and V1 remain unchanged')
+          PY
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js
+      - name: Commit and publish v0.4.111
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.111: enlarge V2 provider logos'
+          git push origin HEAD:main
+          gh release create v0.4.111 --target "$(git rev-parse HEAD)" --title v0.4.111 --notes 'Streaming Browser Card V2 provider app logos now fill about 75% of their existing square buttons on desktop and mobile. Button dimensions and the compact header remain unchanged. The All button, V1, rooms, catalogs and playback are unchanged.'
