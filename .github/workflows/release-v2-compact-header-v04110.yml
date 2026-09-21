@@ -1,0 +1,48 @@
+name: Publish Streaming Browser V2 compact controls v0.4.110
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v2-compact-header-v04110.yml'
+permissions:
+  contents: write
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compact the V2 browsing controls
+        run: python3 tools/v2-compact-header-v04110.py
+      - name: Validate compact V2 layout, syntax and V1 isolation
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          v1=(base/'frontend/streaming-browser-card.js').read_text()
+          v2=(base/'frontend/streaming-browser-card-v2.js').read_text()
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.110'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.98";' in v1
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.110";' in v2
+          assert '--v2-mode-height:46px; --v2-genre-height:34px;' in v2
+          assert 'padding:8px 12px; border-radius:16px;' in v2
+          assert 'padding:7px 8px; min-height:38px;' in v2
+          assert '--v2-mode-height:38px; --v2-genre-height:32px;' in v2
+          assert 'padding:6px 4px; gap:4px; min-height:36px;' in v2
+          print('PASS: V2 search, source filters and categories are compact; V1 unchanged')
+          PY
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card.js
+      - name: Commit and publish v0.4.110
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.110: compact V2 browsing controls'
+          git push origin HEAD:main
+          gh release create v0.4.110 --target "$(git rev-parse HEAD)" --title v0.4.110 --notes 'Streaming Browser Card V2 now uses a shorter search field, more compact Movies/Series and genre controls, smaller source tiles, tighter spacing, and shorter category tabs. This leaves more of the card available for posters while retaining the same controls and scrolling behavior. V1, rooms and playback are unchanged.'
