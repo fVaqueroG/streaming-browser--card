@@ -14,7 +14,9 @@ jobs:
         with:
           persist-credentials: true
       - name: Install official local logos and update card branding
-        run: python3 tools/apply-bundled-branding-v04114.py
+        run: |
+          sed -i 's/0\.4\.111/0.4.113/g' tools/apply-bundled-branding-v04114.py
+          python3 tools/apply-bundled-branding-v04114.py
       - name: Check frontend and backend syntax, bundled assets and version
         run: |
           set -euo pipefail
