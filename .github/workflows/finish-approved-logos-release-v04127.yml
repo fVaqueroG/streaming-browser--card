@@ -1,0 +1,41 @@
+name: Finish Streaming Browser v0.4.127 logo release
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/finish-approved-logos-release-v04127.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify approved logos and version already committed
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, hashlib
+          root=Path('custom_components/streaming_browser')
+          assert json.loads((root/'manifest.json').read_text())['version']=='0.4.127'
+          expected={'icon':'a63dc460cc3eb6f5f31e9549fb479904bf4d25758f6ba1425b90681f612ce7a8','vertical':'0b5c9c47edd941dab690d4f0bbba32ef16aa1616835bc3924a62e29192df133f','horizontal':'0a82c01fa653840be9c0b1c86316fa1bd570c789e19a1eef09e4f5790e62e629'}
+          popup=(root/'frontend/streaming-browser-popup-card.js').read_text()
+          for kind, expected_sha in expected.items():
+              png=root/'frontend/assets'/f'streaming-browser-{kind}-v127.png'
+              assert hashlib.sha256(png.read_bytes()).hexdigest()==expected_sha, f'{kind}: image mismatch'
+              assert f'streaming-browser-{kind}-v127.png?v=0.4.127' in popup
+          print('PASS: exact approved logos committed and referenced by v0.4.127')
+          PY
+      - name: Publish release without optional ZIP attachment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.4.127 >/dev/null 2>&1; then
+            echo 'v0.4.127 release already exists'
+          else
+            gh release create v0.4.127 --target "$(git rev-parse HEAD)" --title 'v0.4.127' --notes 'Publish the three exact user-approved transparent Streaming Browser PNG logos (horizontal, vertical and icon only), with updated frontend image references and cache version. All three PNG checksums verified. 120px launcher sizing and playback remain unchanged. Approved original ZIP remains accessible in the repository branding/ folder.'
+          fi
+          gh release view v0.4.127 --json url,tagName,isDraft,isPrerelease
