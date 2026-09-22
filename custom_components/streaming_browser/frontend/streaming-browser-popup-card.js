@@ -4,14 +4,14 @@
  */
 const SB_POPUP_TYPE = 'custom:streaming-browser-popup-card';
 const SB_V2_TYPE = 'custom:streaming-browser-card-v2';
-const SB_POPUP_KEYS = ['button_label', 'button_icon', 'button_show_label', 'popup_width', 'button_display'];
+const SB_POPUP_KEYS = ['button_label', 'button_icon', 'button_show_label', 'popup_width', 'button_display', 'popup_auto_close_minutes'];
 const sbPopupEscape = (value) => String(value ?? '').replaceAll('&', '&amp;')
   .replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
 const SB_POPUP_LOGOS = Object.freeze({
-  horizontal: '/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.120',
-  vertical: '/streaming_browser/assets/streaming-browser-vertical.png?v=0.4.118',
-  icon_only: '/streaming_browser/assets/streaming-browser-icon.png?v=0.4.118',
+  horizontal: '/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.121',
+  vertical: '/streaming_browser/assets/streaming-browser-vertical.png?v=0.4.121',
+  icon_only: '/streaming_browser/assets/streaming-browser-icon.png?v=0.4.121',
 });
 class StreamingBrowserPopupCard extends HTMLElement {
   constructor() {
@@ -21,6 +21,7 @@ class StreamingBrowserPopupCard extends HTMLElement {
     this._hass = null;
     this._dialog = null;
     this._innerCard = null;
+    this._autoCloseTimer = null;
   }
 
   static getStubConfig() {
@@ -33,6 +34,7 @@ class StreamingBrowserPopupCard extends HTMLElement {
       button_show_label: true,
       popup_width: 'wide',
       button_display: 'horizontal',
+      popup_auto_close_minutes: 2,
     };
   }
 
@@ -113,7 +115,15 @@ class StreamingBrowserPopupCard extends HTMLElement {
   }
   }
 
+  _clearAutoCloseTimer() {
+    if (this._autoCloseTimer !== null) {
+      clearTimeout(this._autoCloseTimer);
+      this._autoCloseTimer = null;
+    }
+  }
+
   _close() {
+    this._clearAutoCloseTimer();
     if (this._dialog) {
       const dialog = this._dialog;
       this._dialog = null;
@@ -203,12 +213,24 @@ class StreamingBrowserPopupCard extends HTMLElement {
           event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
     });
     dialog.addEventListener('close', () => {
+      this._clearAutoCloseTimer();
       if (this._dialog === dialog) { this._dialog = null; this._innerCard = null; }
       dialog.remove();
     }, { once: true });
     document.body.appendChild(dialog);
     this._dialog = dialog;
-    try { dialog.showModal(); } catch (error) { this._close(); console.error('Streaming Browser popup:', error); }
+    try {
+      dialog.showModal();
+      const configuredMinutes = Number(this._config.popup_auto_close_minutes ?? 2);
+      const autoCloseMinutes = Number.isFinite(configuredMinutes) ? Math.max(0, configuredMinutes) : 2;
+      if (autoCloseMinutes > 0) {
+        const delayMs = Math.min(autoCloseMinutes * 60_000, 2_147_483_647);
+        this._autoCloseTimer = window.setTimeout(() => {
+          this._autoCloseTimer = null;
+          if (this._dialog === dialog && dialog.open) dialog.close();
+        }, delayMs);
+      }
+    } catch (error) { this._close(); console.error('Streaming Browser popup:', error); }
   }
 }
 
@@ -254,6 +276,10 @@ class StreamingBrowserPopupCardEditor extends HTMLElement {
         <label>Button icon (MDI) <input data-key="button_icon" value="${sbPopupEscape(config.button_icon || 'mdi:movie-open')}"></label>
         <label class="check"><input type="checkbox" data-key="button_show_label"
           ${config.button_show_label !== false ? 'checked' : ''}>Show button label</label>
+        <label>Auto-close after (minutes; 0 = manual close)
+          <input type="number" min="0" step="1" data-key="popup_auto_close_minutes"
+            value="${sbPopupEscape(config.popup_auto_close_minutes ?? 2)}">
+        </label>
         <label>Popup size <select data-key="popup_width">
           <option value="normal" ${config.popup_width === 'normal' ? 'selected' : ''}>Normal</option>
           <option value="wide" ${!config.popup_width || config.popup_width === 'wide' ? 'selected' : ''}>Wide</option>
@@ -263,7 +289,8 @@ class StreamingBrowserPopupCardEditor extends HTMLElement {
       </div>`;
     for (const input of this.shadowRoot.querySelectorAll('[data-key]')) {
       input.addEventListener('change', () => this._changed({
-        [input.dataset.key]: input.type === 'checkbox' ? input.checked : input.value,
+        [input.dataset.key]: input.type === 'checkbox' ? input.checked
+          : input.type === 'number' ? Number(input.value) : input.value,
       }));
     }
     const v2Editor = document.createElement('streaming-browser-card-v2-editor');
