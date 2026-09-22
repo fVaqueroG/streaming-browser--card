@@ -31,6 +31,9 @@ _RESOURCE_URL = f"{_CARD_URL}?v={_VERSION}"
 _V2_CARD_URL = "/streaming_browser/streaming-browser-card-v2.js"
 _V2_CARD_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-card-v2.js"
 _V2_RESOURCE_URL = f"{_V2_CARD_URL}?v={_VERSION}"
+_POPUP_CARD_URL = "/streaming_browser/streaming-browser-popup-card.js"
+_POPUP_CARD_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-popup-card.js"
+_POPUP_RESOURCE_URL = f"{_POPUP_CARD_URL}?v={_VERSION}"
 _STATIC_REGISTERED_KEY = f"{DOMAIN}_card_static_registered"
 _FRONTEND_REGISTERED_KEY = f"{DOMAIN}_card_frontend_registered"
 _RESOURCE_RETRY_KEY = f"{DOMAIN}_resource_retry_scheduled"
@@ -94,6 +97,22 @@ async def _ensure_v2_resource(collection) -> None:
         await collection.async_delete_item(duplicate[CONF_ID])
 
 
+async def _ensure_popup_resource(collection) -> None:
+    """Register the compact button separately, after V2, without duplicating V2 code."""
+    existing = [item for item in collection.async_items() or []
+                if str(item.get(CONF_URL) or "").split("?", 1)[0] == _POPUP_CARD_URL]
+    if not existing:
+        await collection.async_create_item(
+            {CONF_URL: _POPUP_RESOURCE_URL, CONF_RESOURCE_TYPE_WS: "module"})
+        return
+    main = existing[0]
+    if main.get(CONF_URL) != _POPUP_RESOURCE_URL or main.get(CONF_TYPE) != "module":
+        await collection.async_update_item(
+            main[CONF_ID], {CONF_URL: _POPUP_RESOURCE_URL, CONF_RESOURCE_TYPE_WS: "module"})
+    for duplicate in existing[1:]:
+        await collection.async_delete_item(duplicate[CONF_ID])
+
+
 async def _register_card(hass: HomeAssistant) -> None:
     """Serve the exact JS bundled with this installed integration version."""
     if not _CARD_FILE.is_file():
@@ -103,14 +122,19 @@ async def _register_card(hass: HomeAssistant) -> None:
     # card. Browser-cached V1 can otherwise appear on one view while a freshly
     # opened subview reports that the custom card resource is unavailable.
     v2_available = _V2_CARD_FILE.is_file()
+    popup_available = v2_available and _POPUP_CARD_FILE.is_file()
     if not v2_available:
         _LOGGER.warning("Streaming Browser V2 bundle is not installed: %s; registering V1 independently", _V2_CARD_FILE)
+    if v2_available and not popup_available:
+        _LOGGER.warning("Streaming Browser popup bundle is not installed: %s; registering V1 and V2 independently", _POPUP_CARD_FILE)
     # Re-running setup must repair a missing resource without attempting to
     # register the same aiohttp route twice (which can prevent HA startup).
     if not hass.data.get(_STATIC_REGISTERED_KEY):
         paths = [StaticPathConfig(_CARD_URL, str(_CARD_FILE), cache_headers=False)]
         if v2_available:
             paths.append(StaticPathConfig(_V2_CARD_URL, str(_V2_CARD_FILE), cache_headers=False))
+        if popup_available:
+            paths.append(StaticPathConfig(_POPUP_CARD_URL, str(_POPUP_CARD_FILE), cache_headers=False))
         await hass.http.async_register_static_paths(paths)
         hass.data[_STATIC_REGISTERED_KEY] = True
     # The global module lets the named card appear in Add card even before a
@@ -119,6 +143,8 @@ async def _register_card(hass: HomeAssistant) -> None:
         frontend.add_extra_js_url(hass, _RESOURCE_URL)
         if v2_available:
             frontend.add_extra_js_url(hass, _V2_RESOURCE_URL)
+        if popup_available:
+            frontend.add_extra_js_url(hass, _POPUP_RESOURCE_URL)
         hass.data[_FRONTEND_REGISTERED_KEY] = True
 
     lovelace = hass.data.get(LOVELACE_DATA)
@@ -162,6 +188,8 @@ async def _register_card(hass: HomeAssistant) -> None:
         _LOGGER.info("Streaming Browser card resource created: %s", _RESOURCE_URL)
         if v2_available:
             await _ensure_v2_resource(collection)
+        if popup_available:
+            await _ensure_popup_resource(collection)
         return
     primary = matches[0]
     if primary.get(CONF_URL) != _RESOURCE_URL or primary.get(CONF_TYPE) != "module":
@@ -173,6 +201,8 @@ async def _register_card(hass: HomeAssistant) -> None:
     _LOGGER.info("Streaming Browser card registered as a module resource: %s", _RESOURCE_URL)
     if v2_available:
         await _ensure_v2_resource(collection)
+    if popup_available:
+        await _ensure_popup_resource(collection)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
