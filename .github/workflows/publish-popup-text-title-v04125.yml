@@ -1,0 +1,102 @@
+name: Publish Streaming Browser v0.4.125 popup text heading
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-popup-text-title-v04125.yml'
+permissions:
+  contents: write
+jobs:
+  fix-validate-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Replace duplicate logo in popup header with text and bump version
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('custom_components/streaming_browser')
+          popup=root/'frontend/streaming-browser-popup-card.js'
+          source=popup.read_text(encoding='utf-8')
+          # Only the modal heading changes. The launcher retains all appearance options,
+          # while the embedded V2 card continues to render its own horizontal logo.
+          start=source.index('    // The popup heading uses the transparent horizontal logo')
+          end=source.index("  const content = dialog.querySelector('.sb-popup-content');",start)
+          assert source.count('heading.replaceChildren(headingLogo, headingFallback);')==1
+          replacement=(
+            '    // The modal header is text-only; the V2 card provides the logo below.\n'
+            "    const heading = dialog.querySelector('.sb-popup-heading');\n"
+            "    heading.textContent = String(this._config.button_label || this._config.title || 'Streaming Browser');\n"
+          )
+          source=source[:start]+replacement+source[end:]
+          start_style=source.index('      .sb-popup-heading-logo {')
+          end_style=source.index('        .sb-popup-close {', start_style)
+          source=source[:start_style]+source[end_style:]
+          assert 'headingLogo' not in source and 'sb-popup-heading-logo' not in source
+          assert "const mode = this._config.button_display || 'horizontal';" in source
+          assert "button.appendChild(image);" in source
+          assert "const card = document.createElement('streaming-browser-card-v2');" in source
+          assert "'streaming-browser-horizontal-v124.png?v=0.4.124'" in source
+          source=source.replace('?v=0.4.124','?v=0.4.125')
+          popup.write_text(source,encoding='utf-8')
+
+          manifest=root/'manifest.json'
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.124',data['version']
+          data['version']='0.4.125'
+          manifest.write_text(json.dumps(data,indent=2)+'\n',encoding='utf-8')
+          v2=root/'frontend/streaming-browser-card-v2.js'
+          v2_source=v2.read_text(encoding='utf-8')
+          old='const STREAMING_BROWSER_VERSION = "0.4.124";'
+          assert old in v2_source
+          v2_source=v2_source.replace(old,'const STREAMING_BROWSER_VERSION = "0.4.125";')
+          v2_source=v2_source.replace('?v=0.4.124','?v=0.4.125')
+          v2.write_text(v2_source,encoding='utf-8')
+          print('PASS plain-text popup heading; launcher options and V2 branding preserved')
+          PY
+      - name: Validate assets and popup behavior contract
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          from PIL import Image
+          root=Path('custom_components/streaming_browser')
+          popup=(root/'frontend/streaming-browser-popup-card.js').read_text()
+          v2=(root/'frontend/streaming-browser-card-v2.js').read_text()
+          assert json.loads((root/'manifest.json').read_text())['version']=='0.4.125'
+          assert "heading.textContent = String(this._config.button_label || this._config.title || 'Streaming Browser');" in popup
+          assert 'headingLogo' not in popup and 'sb-popup-heading-logo' not in popup
+          assert "button.appendChild(image);" in popup
+          assert "card.setConfig(cardConfig);" in popup
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.125";' in v2
+          for name in ('horizontal','vertical','icon'):
+            image_path=root/'frontend/assets'/f'streaming-browser-{name}-v124.png'
+            with Image.open(image_path) as image:
+              image.load()
+              assert image.getchannel('A').getbbox(),image_path
+            assert f'streaming-browser-{name}-v124.png?v=0.4.125' in popup
+          print('PASS frontend syntax, modal text, three intact selectable launcher logos, and V2')
+          PY
+      - name: Commit and publish HACS update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.125: use text-only popup heading without duplicate logo'
+          git push origin HEAD:main
+          if gh release view v0.4.125 >/dev/null 2>&1; then
+            echo 'v0.4.125 already exists'
+            exit 0
+          fi
+          gh release create v0.4.125 --target "$(git rev-parse HEAD)" --title 'v0.4.125' --notes 'Show plain text rather than a second horizontal logo in the popup modal header. The popup launcher continues to offer its selectable horizontal, vertical, icon-only, and icon + text appearances; the embedded Streaming Browser V2 card retains its logo and all existing playback behavior. Bump HACS and frontend cache versions to 0.4.125.'
