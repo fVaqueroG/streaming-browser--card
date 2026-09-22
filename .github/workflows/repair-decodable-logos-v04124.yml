@@ -1,0 +1,141 @@
+name: Repair Streaming Browser logo assets and publish v0.4.124
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-decodable-logos-v04124.yml
+permissions:
+  contents: write
+jobs:
+  repair-verify-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Recover approved artwork from verified historical source and create unique image URLs
+        run: |
+          python3 -m pip install --quiet Pillow
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import io, json, subprocess
+
+          root=Path('custom_components/streaming_browser')
+          assets=root/'frontend/assets'
+          source_tags={'horizontal':'v0.4.121','vertical':'v0.4.122','icon':'v0.4.122'}
+          source_shas={
+            'horizontal':'f28438a0f78d0615c5068ad70fa483edc0a49d7a',
+            'vertical':'2e00000000000000000000000000000000000000',
+            'icon':'2e00000000000000000000000000000000000000',
+          }
+          originals={}
+          for name,tag in source_tags.items():
+            relative=f'custom_components/streaming_browser/frontend/assets/streaming-browser-{name}.png'
+            raw=subprocess.check_output(['git','show',f'{tag}:{relative}'])
+            image=Image.open(io.BytesIO(raw)).convert('RGBA')
+            image.load()  # Fail before publishing if even a recovered source is corrupt.
+            bbox=image.getchannel('A').getbbox()
+            if bbox is None:
+              raise RuntimeError(f'{name}: source is entirely transparent')
+            originals[name]=image
+            cropped=image.crop(bbox)
+            for path in (assets/f'streaming-browser-{name}.png',assets/f'streaming-browser-{name}-v124.png'):
+              cropped.save(path,'PNG',optimize=True)
+              check=Image.open(path).convert('RGBA')
+              check.load()
+              assert check.size==cropped.size and check.getchannel('A').getbbox()==(0,0,*cropped.size),path
+              print('Repaired',path,'dimensions',check.size,'source',tag,flush=True)
+
+          # Native integration branding uses the same vetted artwork. Preserve a square canvas for HA icon.
+          (root/'brand').mkdir(exist_ok=True)
+          originals['horizontal'].crop(originals['horizontal'].getchannel('A').getbbox()).save(root/'brand/logo.png','PNG',optimize=True)
+          originals['icon'].save(root/'brand/icon.png','PNG',optimize=True)
+
+          manifest=root/'manifest.json'
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.123',data['version']
+          data['version']='0.4.124'
+          manifest.write_text(json.dumps(data,indent=2)+'\n',encoding='utf-8')
+
+          backend=root/'__init__.py'
+          text=backend.read_text(encoding='utf-8')
+          oldfile='f"streaming-browser-{name}.png"'
+          oldurl='f"/streaming_browser/assets/streaming-browser-{name}.png"'
+          assert text.count(oldfile)==1 and text.count(oldurl)==1, 'Logo static path map has changed'
+          text=text.replace(oldfile,'f"streaming-browser-{name}-v124.png"')
+          text=text.replace(oldurl,'f"/streaming_browser/assets/streaming-browser-{name}-v124.png"')
+          backend.write_text(text,encoding='utf-8')
+
+          v2=root/'frontend/streaming-browser-card-v2.js'
+          text=v2.read_text(encoding='utf-8')
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.123";' in text
+          assert 'streaming-browser-horizontal.png' in text
+          text=text.replace('const STREAMING_BROWSER_VERSION = "0.4.123";','const STREAMING_BROWSER_VERSION = "0.4.124";')
+          for name in source_tags:
+            text=text.replace(f'streaming-browser-{name}.png',f'streaming-browser-{name}-v124.png')
+          text=text.replace('?v=0.4.123','?v=0.4.124')
+          v2.write_text(text,encoding='utf-8')
+
+          popup=root/'frontend/streaming-browser-popup-card.js'
+          text=popup.read_text(encoding='utf-8')
+          for name in source_tags:
+            old=f'streaming-browser-{name}.png?v=0.4.123'
+            assert old in text,(popup,old)
+            text=text.replace(old,f'streaming-browser-{name}-v124.png?v=0.4.124')
+          popup.write_text(text,encoding='utf-8')
+          print('PASS v0.4.124 backend, cards, brand and cache-busted URLs prepared')
+          PY
+      - name: Test real PNG decoding and card/integration asset URLs
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          base=Path('custom_components/streaming_browser')
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.124'
+          backend=(base/'__init__.py').read_text()
+          v2=(base/'frontend/streaming-browser-card-v2.js').read_text()
+          popup=(base/'frontend/streaming-browser-popup-card.js').read_text()
+          assert 'streaming-browser-{name}-v124.png' in backend
+          assert '/streaming_browser/assets/streaming-browser-{name}-v124.png' in backend
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.124";' in v2
+          for name in ('horizontal','vertical','icon'):
+            assert f'streaming-browser-{name}-v124.png?v=0.4.124' in popup
+            for suffix in ('', '-v124'):
+              p=base/'frontend/assets'/f'streaming-browser-{name}{suffix}.png'
+              with Image.open(p) as image:
+                image.load()
+                rgba=image.convert('RGBA')
+                bbox=rgba.getchannel('A').getbbox()
+                assert bbox==(0,0,*rgba.size),(p,bbox,rgba.size)
+                print('PASS valid trimmed PNG',p,rgba.size,p.stat().st_size,flush=True)
+          assert 'streaming-browser-horizontal-v124.png?v=0.4.124' in v2
+          for name in ('logo','icon'):
+            p=base/'brand'/f'{name}.png'
+            with Image.open(p) as image:
+              image.load()
+              assert image.convert('RGBA').getchannel('A').getbbox(),p
+              print('PASS valid integration branding PNG',p,image.size,flush=True)
+          print('PASS image decoding, metadata, frontend syntax, and static URL checks')
+          PY
+      - name: Commit verified assets and publish HACS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/manifest.json custom_components/streaming_browser/__init__.py custom_components/streaming_browser/brand custom_components/streaming_browser/frontend/assets custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          git commit -m 'v0.4.124: repair approved logos with decoded trimmed assets and fresh URLs'
+          git push origin HEAD:main
+          if gh release view v0.4.124 >/dev/null 2>&1; then
+            echo 'v0.4.124 release already exists; skipping duplicate publication'
+            exit 0
+          fi
+          gh release create v0.4.124 --target "$(git rev-parse HEAD)" --title 'v0.4.124' --notes 'Repair the corrupted logo files distributed in v0.4.123. Recover verified decodable approved horizontal, vertical and icon-only designs from earlier releases, trim transparent margins, replace all three Lovelace assets, and replace the Home Assistant integration branding with valid PNGs. Serve version-specific v124 filenames and bump both the integration and frontend cache version. All PNGs are fully decoded and verified in CI before publication. HACS update, restart HA, hard-refresh dashboards.'
