@@ -1,0 +1,71 @@
+name: Fix Streaming Browser v127 logo HTTP routes v0.4.128
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-v127-logo-http-routes-v04128.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Register both legacy and approved logo image routes
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,hashlib
+          root=Path('custom_components/streaming_browser')
+          init=root/'__init__.py'
+          s=init.read_text(encoding='utf-8')
+          old='''_LOGO_FILES = {name: _INTEGRATION_DIR / "frontend" / "assets" / f"streaming-browser-{name}-v124.png"
+                         for name in ("horizontal", "vertical", "icon")}'''
+          new='''_LOGO_FILES = {(name, version): _INTEGRATION_DIR / "frontend" / "assets" / f"streaming-browser-{name}-{version}.png"
+                         for version in ("v124", "v127") for name in ("horizontal", "vertical", "icon")}'''
+          assert s.count(old)==1, 'Expected logo file registry changed; inspect code before editing'
+          s=s.replace(old,new)
+          old='''        for name, file in _LOGO_FILES.items():
+            if file.is_file():
+                paths.append(StaticPathConfig(
+                    f"/streaming_browser/assets/streaming-browser-{name}-v124.png",
+                    str(file), cache_headers=True))'''
+          new='''        for (name, version), file in _LOGO_FILES.items():
+            if file.is_file():
+                paths.append(StaticPathConfig(
+                    f"/streaming_browser/assets/streaming-browser-{name}-{version}.png",
+                    str(file), cache_headers=True))'''
+          assert s.count(old)==1, 'Expected logo static route changed; inspect code before editing'
+          s=s.replace(old,new)
+          init.write_text(s,encoding='utf-8')
+          manifest=root/'manifest.json'
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.127', data['version']
+          data['version']='0.4.128'
+          manifest.write_text(json.dumps(data,indent=2)+'\n',encoding='utf-8')
+          popup=(root/'frontend/streaming-browser-popup-card.js').read_text(encoding='utf-8')
+          assert all(f'streaming-browser-{name}-v127.png?v=0.4.127' in popup for name in ('horizontal','vertical','icon'))
+          for name in ('horizontal','vertical','icon'):
+              path=root/'frontend/assets'/f'streaming-browser-{name}-v127.png'
+              assert path.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'), path
+          print('PASS: HTTP endpoints for all v127 PNG logos and legacy v124 registered; manifest 0.4.128')
+          PY
+      - name: Validate code and bundled logos
+        run: |
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+      - name: Publish HACS v0.4.128 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.128: serve approved v127 logo assets via registered HTTP paths'
+          git push origin HEAD:main
+          gh release create v0.4.128 --target "$(git rev-parse HEAD)" --title v0.4.128 --notes 'Fix missing HTTP static paths for all three approved v127 Streaming Browser logos. Previously the launcher image load failed and fell back to the clapperboard. Keep legacy v124 paths for compatibility. Restart Home Assistant after HACS update to register the new image URLs; popup and playback behavior unchanged.'
