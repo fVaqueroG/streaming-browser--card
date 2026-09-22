@@ -1,0 +1,75 @@
+name: Publish Streaming Browser popup card v0.4.112
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-popup-v04112.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: streaming-browser-popup-v04112
+  cancel-in-progress: false
+jobs:
+  validate-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Check popup source and backend registration
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('custom_components/streaming_browser/__init__.py').read_text()
+          popup = Path('custom_components/streaming_browser/frontend/streaming-browser-popup-card.js').read_text()
+          v2 = Path('custom_components/streaming_browser/frontend/streaming-browser-card-v2.js').read_text()
+          assert src.count('async def _ensure_popup_resource(') == 1
+          assert '_POPUP_RESOURCE_URL' in src and '_POPUP_CARD_FILE' in src
+          assert 'frontend.add_extra_js_url(hass, _POPUP_RESOURCE_URL)' in src
+          assert 'await _ensure_popup_resource(collection)' in src
+          assert "customElements.define('streaming-browser-popup-card', StreamingBrowserPopupCard)" in popup
+          assert "document.createElement('streaming-browser-card-v2')" in popup
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.111";' in v2
+          print('PASS: popup resource, V2 reuse, editor and syntax checks')
+          PY
+      - name: Version bundled files for HACS release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base = Path('custom_components/streaming_browser')
+          manifest_file = base/'manifest.json'
+          manifest = json.loads(manifest_file.read_text())
+          assert manifest['version'] == '0.4.111', manifest['version']
+          manifest['version'] = '0.4.112'
+          manifest_file.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n')
+          js = base/'frontend/streaming-browser-card-v2.js'
+          text = js.read_text()
+          before = 'const STREAMING_BROWSER_VERSION = "0.4.111";'
+          assert text.count(before) == 1
+          js.write_text(text.replace(before, 'const STREAMING_BROWSER_VERSION = "0.4.112";'))
+          assert json.loads(manifest_file.read_text())['version'] == '0.4.112'
+          PY
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+      - name: Publish tagged integration update
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.112: publish compact popup button alongside Streaming Browser V2'
+          git push origin HEAD:main
+          gh release create v0.4.112 --target "$(git rev-parse HEAD)" --title v0.4.112 --notes 'Add a compact Streaming Browser Popup Button Lovelace card, opening the existing full V2 browsing card in a responsive modal. Reuse the V2 visual editor and all existing room, TV, catalog and playback settings. Automatically register the additional frontend module without changing existing dashboards. Update via HACS Integration, restart Home Assistant, and refresh the dashboard.'
