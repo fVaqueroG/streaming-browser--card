@@ -1,0 +1,60 @@
+name: Align Streaming Browser popup launcher v0.4.126
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/align-popup-launcher-v04126.yml']
+permissions:
+  contents: write
+jobs:
+  align:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unify popup launcher dimensions
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('custom_components/streaming_browser')
+          p=root/'frontend/streaming-browser-popup-card.js'
+          s=p.read_text()
+          def swap(old,new):
+              global s
+              assert s.count(old)==1, f'Unexpected Streaming Browser CSS: {old[:65]}'
+              s=s.replace(old,new)
+          swap(':host { display: block; }\n        ha-card { overflow: hidden; height: 100%; }', ':host { display: block; --popup-button-height: 120px; }\n        ha-card { overflow: hidden; height: var(--popup-button-height); min-height: var(--popup-button-height); box-sizing: border-box; border-radius: var(--ha-card-border-radius, 14px); }')
+          swap('button { width: 100%; min-height: 52px; padding: 8px 14px; display: flex;', 'button { box-sizing: border-box; width: 100%; height: 100%; min-height: var(--popup-button-height); padding: 8px; border-radius: inherit; display: flex;')
+          swap('button.sb-popup-logo-ready { min-height:78px; padding:5px 10px; gap:0; }', 'button.sb-popup-logo-ready { min-height:var(--popup-button-height); padding:8px; gap:0; }')
+          swap('button[data-logo-mode="vertical"].sb-popup-logo-ready { min-height:120px; }', 'button[data-logo-mode="vertical"].sb-popup-logo-ready { min-height:var(--popup-button-height); }')
+          swap('button[data-logo-mode="vertical"] .sb-popup-button-logo { width:190px; height:110px; }', 'button[data-logo-mode="vertical"] .sb-popup-button-logo { width:190px; height:104px; }')
+          swap('button[data-logo-mode="icon_only"].sb-popup-logo-ready { min-height:64px; }', 'button[data-logo-mode="icon_only"].sb-popup-logo-ready { min-height:var(--popup-button-height); }')
+          swap('button[data-logo-mode="icon_only"] .sb-popup-button-logo { width:110px; height:55px; }', 'button[data-logo-mode="icon_only"] .sb-popup-button-logo { width:110px; height:104px; }')
+          p.write_text(s)
+          m=root/'manifest.json'
+          d=json.loads(m.read_text())
+          assert d['version']=='0.4.125', d['version']
+          d['version']='0.4.126'
+          m.write_text(json.dumps(d,indent=2)+'\n')
+          v=root/'frontend/streaming-browser-card-v2.js'
+          text=v.read_text()
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.125";' in text
+          text=text.replace('const STREAMING_BROWSER_VERSION = "0.4.125";', 'const STREAMING_BROWSER_VERSION = "0.4.126";')
+          v.write_text(text)
+          print('Streaming Browser popup launcher unified to 120px in all appearance modes')
+          PY
+      - name: Validate JavaScript and manifest
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+      - name: Publish integration update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.126: align Streaming Browser popup launcher to 120px'
+          git push origin HEAD:main
+          gh release create v0.4.126 --target "$(git rev-parse HEAD)" --title v0.4.126 --notes 'Align Streaming Browser popup launcher height, border radius, padding and logo sizing in every appearance mode. Playback and full-size card behavior unchanged.'
