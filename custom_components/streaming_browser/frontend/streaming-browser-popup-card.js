@@ -9,9 +9,9 @@ const sbPopupEscape = (value) => String(value ?? '').replaceAll('&', '&amp;')
   .replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
 const SB_POPUP_LOGOS = Object.freeze({
-  horizontal: '/streaming_browser/assets/streaming-browser-horizontal-v124.png?v=0.4.124',
-  vertical: '/streaming_browser/assets/streaming-browser-vertical-v124.png?v=0.4.124',
-  icon_only: '/streaming_browser/assets/streaming-browser-icon-v124.png?v=0.4.124',
+  horizontal: '/streaming_browser/assets/streaming-browser-horizontal-v124.png?v=0.4.125',
+  vertical: '/streaming_browser/assets/streaming-browser-vertical-v124.png?v=0.4.125',
+  icon_only: '/streaming_browser/assets/streaming-browser-icon-v124.png?v=0.4.125',
 });
 class StreamingBrowserPopupCard extends HTMLElement {
   constructor() {
@@ -157,9 +157,6 @@ class StreamingBrowserPopupCard extends HTMLElement {
           flex: 0 0 auto; padding: 8px 12px 8px 18px; min-height: 40px;
           border-bottom: 1px solid var(--divider-color, #8884); }
         .sb-popup-heading { font: inherit; font-size: 16px; font-weight: 600; }
-      .sb-popup-heading-logo { display:block; width:330px; max-width:56vw;
-                  height:65px; object-fit:contain; object-position:left center; }
-      .sb-popup-heading-logo[hidden], .sb-popup-heading span[hidden] { display:none; }
         .sb-popup-close { width: 40px; height: 40px; display: grid; place-items: center;
           cursor: pointer; border: 0; border-radius: 50%; color: var(--primary-text-color);
           background: transparent; }
@@ -180,18 +177,9 @@ class StreamingBrowserPopupCard extends HTMLElement {
             title="Close"><ha-icon icon="mdi:close"></ha-icon></button></header>
         <main class="sb-popup-content"></main>
       </div>`;
-    // The popup heading uses the transparent horizontal logo, independent of
-  // when the optional branding frontend resource happens to load.
-  const heading = dialog.querySelector('.sb-popup-heading');
-  const headingLogo = document.createElement('img');
-  const headingFallback = document.createElement('span');
-  headingLogo.className = 'sb-popup-heading-logo';
-  headingLogo.alt = 'Streaming Browser';
-  headingFallback.textContent = this._config.title || 'Streaming Browser';
-  headingLogo.addEventListener('load', () => { headingFallback.hidden = true; });
-  headingLogo.addEventListener('error', () => { headingLogo.hidden = true; });
-  heading.replaceChildren(headingLogo, headingFallback);
-  headingLogo.src = String(this._config.logo_horizontal_url || SB_POPUP_LOGOS.horizontal);
+    // Keep the modal title plain text; V2 displays the logo below.
+    const heading = dialog.querySelector('.sb-popup-heading');
+    heading.textContent = String(this._config.button_label || this._config.title || 'Streaming Browser');
   const content = dialog.querySelector('.sb-popup-content');
     const v2Class = customElements.get('streaming-browser-card-v2');
     if (v2Class) {
