@@ -1,0 +1,181 @@
+name: Publish native Streaming Browser card branding v0.4.118
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-native-card-branding-v04118.yml'
+permissions:
+  contents: write
+jobs:
+  integrate-test-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Make logo and appearance controls native to each card
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('custom_components/streaming_browser')
+          popup = root / 'frontend/streaming-browser-popup-card.js'
+          v2 = root / 'frontend/streaming-browser-card-v2.js'
+          branding = root / 'frontend/streaming-browser-branding.js'
+          manifest = root / 'manifest.json'
+
+          def replace_once(path, old, new):
+              data = path.read_text(encoding='utf-8')
+              count = data.count(old)
+              assert count == 1, f'{path}: expected exactly one anchor, found {count}: {old[:110]!r}'
+              path.write_text(data.replace(old, new, 1), encoding='utf-8')
+
+          replace_once(popup,
+              "const SB_POPUP_KEYS = ['button_label', 'button_icon', 'button_show_label', 'popup_width'];",
+              "const SB_POPUP_KEYS = ['button_label', 'button_icon', 'button_show_label', 'popup_width', 'button_display'];")
+          replace_once(popup,
+              'class StreamingBrowserPopupCard extends HTMLElement {',
+              """const SB_POPUP_LOGOS = Object.freeze({
+            horizontal: '/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.118',
+            vertical: '/streaming_browser/assets/streaming-browser-vertical.png?v=0.4.118',
+            icon_only: '/streaming_browser/assets/streaming-browser-icon.png?v=0.4.118',
+          });
+          class StreamingBrowserPopupCard extends HTMLElement {""")
+          replace_once(popup,
+              "      popup_width: 'wide',",
+              "      popup_width: 'wide',\n      button_display: 'horizontal',")
+          replace_once(popup,
+              '  getCardSize() { return 1; }\n  getGridOptions() { return { columns: 3, rows: 1, min_columns: 2, min_rows: 1 }; }',
+              """  getCardSize() { return this._config?.button_display === 'vertical' ? 2 : 1; }
+            getGridOptions() {
+              const tall = this._config?.button_display === 'vertical';
+              return { columns: tall ? 4 : 3, rows: tall ? 2 : 1,
+                min_columns: 2, min_rows: tall ? 2 : 1 };
+            }""")
+          replace_once(popup,
+              '        ha-icon { color: var(--primary-color); --mdc-icon-size: 24px; }',
+              """        .sb-popup-button-logo { display:none; max-width:100%; width:190px;
+                  height:48px; object-fit:contain; object-position:center; }
+                button.sb-popup-logo-ready { padding:4px 10px; gap:0; }
+                button.sb-popup-logo-ready .sb-popup-button-logo { display:block; }
+                button[data-logo-mode="vertical"].sb-popup-logo-ready { min-height:120px; }
+                button[data-logo-mode="vertical"] .sb-popup-button-logo { width:190px; height:110px; }
+                button[data-logo-mode="icon_only"].sb-popup-logo-ready { min-height:64px; }
+                button[data-logo-mode="icon_only"] .sb-popup-button-logo { width:110px; height:55px; }
+                ha-icon { color: var(--primary-color); --mdc-icon-size: 24px; }""")
+          replace_once(popup,
+              "    this.shadowRoot.querySelector('button').addEventListener('click', () => this._open());",
+              """    const button = this.shadowRoot.querySelector('button');
+            button.addEventListener('click', () => this._open());
+            // Brand images are bundled locally. Keep icon + label if the image fails.
+            const mode = this._config.button_display || 'horizontal';
+            if (Object.prototype.hasOwnProperty.call(SB_POPUP_LOGOS, mode)) {
+              const image = document.createElement('img');
+              image.className = 'sb-popup-button-logo';
+              image.alt = '';
+              image.addEventListener('load', () => {
+                if (!image.isConnected || !button.isConnected) return;
+                button.querySelectorAll('ha-icon, span').forEach((node) => node.remove());
+                button.classList.add('sb-popup-logo-ready');
+              });
+              image.addEventListener('error', () => image.remove());
+              button.dataset.logoMode = mode;
+              button.appendChild(image);
+              const overrideKey = mode === 'icon_only' ? 'logo_icon_url' : `logo_${mode}_url`;
+              image.src = String(this._config[overrideKey] || SB_POPUP_LOGOS[mode]);
+            }""")
+          replace_once(popup,
+              '        .sb-popup-heading { font: inherit; font-size: 16px; font-weight: 600; }',
+              """        .sb-popup-heading { font: inherit; font-size: 16px; font-weight: 600; }
+                .sb-popup-heading-logo { display:block; width:188px; max-width:45vw;
+                  height:44px; object-fit:contain; object-position:left center; }
+                .sb-popup-heading-logo[hidden], .sb-popup-heading span[hidden] { display:none; }""")
+          replace_once(popup,
+              "    const content = dialog.querySelector('.sb-popup-content');",
+              """    // The popup heading uses the transparent horizontal logo, independent of
+            // when the optional branding frontend resource happens to load.
+            const heading = dialog.querySelector('.sb-popup-heading');
+            const headingLogo = document.createElement('img');
+            const headingFallback = document.createElement('span');
+            headingLogo.className = 'sb-popup-heading-logo';
+            headingLogo.alt = 'Streaming Browser';
+            headingFallback.textContent = this._config.title || 'Streaming Browser';
+            headingLogo.addEventListener('load', () => { headingFallback.hidden = true; });
+            headingLogo.addEventListener('error', () => { headingLogo.hidden = true; });
+            heading.replaceChildren(headingLogo, headingFallback);
+            headingLogo.src = String(this._config.logo_horizontal_url || SB_POPUP_LOGOS.horizontal);
+            const content = dialog.querySelector('.sb-popup-content');""")
+          replace_once(popup,
+              '      <div class="sb-popup-editor">\n        <label>Button label',
+              """      <div class="sb-popup-editor">
+                <label>Popup button appearance <select data-key="button_display">
+                  <option value="horizontal" ${!config.button_display || config.button_display === 'horizontal' ? 'selected' : ''}>Horizontal logo</option>
+                  <option value="vertical" ${config.button_display === 'vertical' ? 'selected' : ''}>Vertical logo</option>
+                  <option value="icon_only" ${config.button_display === 'icon_only' ? 'selected' : ''}>Icon-only logo</option>
+                  <option value="icon_text" ${config.button_display === 'icon_text' ? 'selected' : ''}>MDI icon + text</option>
+                </select></label>
+                <label>Button label""")
+
+          replace_once(v2,
+              'const STREAMING_BROWSER_VERSION = "0.4.117";',
+              'const STREAMING_BROWSER_VERSION = "0.4.118";')
+          replace_once(v2,
+              '            <div class="title">\n              ${this._esc(this._config.title)}\n              <span class="card-version">v${STREAMING_BROWSER_VERSION}</span>',
+              """            <div class="title">
+                        <img class="sb-v2-header-logo"
+                          src="${this._esc(this._config.logo_horizontal_url || '/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.118')}"
+                          alt="Streaming Browser"
+                          style="display:block;max-width:100%;width:196px;height:53px;object-fit:contain;object-position:left center;">
+                        <span class="card-version">v${STREAMING_BROWSER_VERSION}</span>""")
+
+          # These independent module scripts are not guaranteed to execute in
+          # resource-list order; remove the old prototype-patching implementation
+          # so it cannot duplicate the native popup editor or overwrite logos.
+          branding.write_text(
+              '/* v0.4.118: Branding is native to the V2 and popup card modules.\n'
+              ' * This legacy frontend resource remains intentionally inert for\n'
+              ' * Home Assistant installations that already registered its URL.\n'
+              ' */\n', encoding='utf-8')
+          data = json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version'] == '0.4.117', data['version']
+          data['version'] = '0.4.118'
+          manifest.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+          print('PASS native button appearance selector, bundled three logos, native V2 and popup title, version 0.4.118')
+          PY
+      - name: Validate frontend syntax, resources and four appearance modes
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-branding.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('custom_components/streaming_browser')
+          popup=(root/'frontend/streaming-browser-popup-card.js').read_text()
+          v2=(root/'frontend/streaming-browser-card-v2.js').read_text()
+          brand=(root/'frontend/streaming-browser-branding.js').read_text()
+          assert json.loads((root/'manifest.json').read_text())['version']=='0.4.118'
+          assert 'data-key="button_display"' in popup
+          for mode in ('horizontal','vertical','icon_only','icon_text'):
+              assert f'value="{mode}"' in popup, mode
+          for logo in ('horizontal','vertical','icon'):
+              assert (root/'frontend/assets'/f'streaming-browser-{logo}.png').is_file()
+          assert 'sb-popup-heading-logo' in popup
+          assert 'sb-v2-header-logo' in v2
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.118";' in v2
+          assert 'prototype._render' not in brand
+          print('PASS v0.4.118 four appearance modes and both native header logos')
+          PY
+      - name: Commit verified integration and publish HACS tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/frontend/streaming-browser-branding.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.118: native popup logo picker and horizontal V2/popup headers'
+          git push origin HEAD:main
+          gh release create v0.4.118 --target "$(git rev-parse HEAD)" --title v0.4.118 --notes 'Fix logo rendering regardless of frontend module loading order: the V2 header and popup header use the locally bundled transparent horizontal logo, and the popup card visual editor now includes a native four-option appearance selector (horizontal logo, vertical logo, icon-only logo, MDI icon + text). Preview button reflects the chosen appearance, preserving existing room/connection/catalog/playback settings. Upgrade through HACS, restart Home Assistant and hard-refresh your dashboard.'
