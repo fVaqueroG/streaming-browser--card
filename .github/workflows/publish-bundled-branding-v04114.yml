@@ -1,0 +1,57 @@
+name: Publish bundled Streaming Browser logos v0.4.114
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-bundled-branding-v04114.yml'
+permissions:
+  contents: write
+jobs:
+  validate-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Install official local logos and update card branding
+        run: python3 tools/apply-bundled-branding-v04114.py
+      - name: Check frontend and backend syntax, bundled assets and version
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-branding.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base = Path('custom_components/streaming_browser')
+          assert json.loads((base/'manifest.json').read_text())['version'] == '0.4.114'
+          backend = (base/'__init__.py').read_text()
+          branding = (base/'frontend/streaming-browser-branding.js').read_text()
+          v2 = (base/'frontend/streaming-browser-card-v2.js').read_text()
+          assert 'cache_headers=True' in backend and 'for name, file in _LOGO_FILES.items()' in backend
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.114";' in v2
+          assert 'icon_only' in branding and "['icon_only', 'Icon-only logo']" in branding
+          assert "const HORIZONTAL = '/streaming_browser/assets/streaming-browser-horizontal.webp?v=0.4.114'" in branding
+          assert "const VERTICAL = '/streaming_browser/assets/streaming-browser-vertical.webp?v=0.4.114'" in branding
+          assert "const ICON = '/streaming_browser/assets/streaming-browser-icon.webp?v=0.4.114'" in branding
+          for name in ('horizontal','vertical','icon'):
+              path = base/'frontend/assets'/f'streaming-browser-{name}.webp'
+              blob = path.read_bytes()
+              assert blob[:4] == b'RIFF' and blob[8:12] == b'WEBP' and len(blob) > 500
+              print(f'PASS bundled {name}: {len(blob)} bytes')
+          print('PASS v0.4.114 local logos, cacheable backend URLs and four popup display modes')
+          PY
+      - name: Commit verified integration and publish HACS tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/frontend/streaming-browser-branding.js custom_components/streaming_browser/frontend/assets
+          git commit -m 'v0.4.114: bundle and locally serve cached official logos including icon-only'
+          git push origin HEAD:main
+          gh release create v0.4.114 --target "$(git rev-parse HEAD)" --title v0.4.114 --notes 'The horizontal, vertical and icon-only Streaming Browser logos are bundled with the integration as compact local WebP files. Home Assistant serves all three from cacheable versioned /streaming_browser/assets/ URLs; no manual /config/www copy or external download is required. The popup card supports vertical, horizontal, icon_only and icon_text button_display values. V2 catalogs, TV routing and existing card configs are preserved. Update through HACS, restart Home Assistant and refresh the dashboard.'
