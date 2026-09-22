@@ -37,8 +37,8 @@ _POPUP_RESOURCE_URL = f"{_POPUP_CARD_URL}?v={_VERSION}"
 _BRANDING_URL = "/streaming_browser/streaming-browser-branding.js"
 _BRANDING_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-branding.js"
 _BRANDING_RESOURCE_URL = f"{_BRANDING_URL}?v={_VERSION}"
-_LOGO_FILES = {name: _INTEGRATION_DIR / "frontend" / "assets" / f"streaming-browser-{name}-v124.png"
-               for name in ("horizontal", "vertical", "icon")}
+_LOGO_FILES = {(name, version): _INTEGRATION_DIR / "frontend" / "assets" / f"streaming-browser-{name}-{version}.png"
+               for version in ("v124", "v127") for name in ("horizontal", "vertical", "icon")}
 _STATIC_REGISTERED_KEY = f"{DOMAIN}_card_static_registered"
 _FRONTEND_REGISTERED_KEY = f"{DOMAIN}_card_frontend_registered"
 _RESOURCE_RETRY_KEY = f"{DOMAIN}_resource_retry_scheduled"
@@ -161,10 +161,10 @@ async def _register_card(hass: HomeAssistant) -> None:
             paths.append(StaticPathConfig(_BRANDING_URL, str(_BRANDING_FILE), cache_headers=False))
         # Served from this integration, not /local or an external image host.
         # Stable versioned URLs allow the browser to cache these tiny assets.
-        for name, file in _LOGO_FILES.items():
+        for (name, version), file in _LOGO_FILES.items():
             if file.is_file():
                 paths.append(StaticPathConfig(
-                    f"/streaming_browser/assets/streaming-browser-{name}-v124.png",
+                    f"/streaming_browser/assets/streaming-browser-{name}-{version}.png",
                     str(file), cache_headers=True))
             else:
                 _LOGGER.warning("Missing bundled Streaming Browser logo: %s", file)
