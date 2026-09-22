@@ -1,0 +1,31 @@
+name: Diagnose Streaming Browser bundled logo rendering
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-approved-logo-render-v04123.yml
+permissions:
+  contents: read
+jobs:
+  inspect-logos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare packaged logo content bounds to approved preview
+        run: |
+          python3 -m pip install --quiet Pillow
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          from hashlib import sha256
+          for name in ('horizontal','vertical','icon'):
+              p=Path('custom_components/streaming_browser/frontend/assets')/f'streaming-browser-{name}.png'
+              img=Image.open(p).convert('RGBA')
+              bbox=img.getchannel('A').getbbox()
+              assert bbox, f'EMPTY logo {name}'
+              cut=img.crop(bbox)
+              renderhash=sha256(cut.resize((64,64),Image.Resampling.LANCZOS).tobytes()).hexdigest()[:12]
+              coverage=(bbox[2]-bbox[0])*(bbox[3]-bbox[1])/(img.width*img.height)
+              print(f'REPO LOGO {name} source={img.size} alpha_bbox={bbox} coverage={coverage:.3f} normalized_pixel_hash={renderhash} bytes={p.stat().st_size}',flush=True)
+          print('Approved preview reference: horizontal bbox=(291, 41, 518, 90) normalized_pixel_hash=a7c7f3cee212; vertical bbox=(27, 36, 232, 224) normalized_pixel_hash=962c02652fee; icon bbox=(17, 68, 256, 202) normalized_pixel_hash=192cdfdb2abe')
+          PY
