@@ -1,0 +1,132 @@
+name: Publish larger, tightly cropped Streaming Browser logo v0.4.119
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-horizontal-logo-sizing-v04119.yml'
+permissions:
+  contents: write
+jobs:
+  build-verify-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Install image tools
+        run: python3 -m pip install --quiet Pillow
+      - name: Trim horizontal logo and enlarge all card placements
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+
+          root = Path('custom_components/streaming_browser')
+          asset = root / 'frontend/assets/streaming-browser-horizontal.png'
+          brand = root / 'brand/logo.png'
+          v2 = root / 'frontend/streaming-browser-card-v2.js'
+          popup = root / 'frontend/streaming-browser-popup-card.js'
+          manifest = root / 'manifest.json'
+
+          def replace_once(path, old, new):
+              data = path.read_text(encoding='utf-8')
+              count = data.count(old)
+              assert count == 1, f'{path}: expected one anchor, got {count}: {old[:120]!r}'
+              path.write_text(data.replace(old, new, 1), encoding='utf-8')
+
+          # The already-approved, transparent horizontal artwork was saved in
+          # v0.4.117 with very large transparent upper/lower margins. Crop only
+          # transparent pixels: do NOT remove white, re-render, or regenerate it.
+          source = Image.open(asset).convert('RGBA')
+          visible = source.getchannel('A').point(lambda alpha: 255 if alpha >= 16 else 0)
+          bounds = visible.getbbox()
+          assert bounds, 'Horizontal logo has no visible content'
+          left, top, right, bottom = bounds
+          pad = 2
+          cropped = source.crop((max(0,left-pad), max(0,top-pad),
+                                 min(source.width,right+pad), min(source.height,bottom+pad)))
+          assert cropped.width > cropped.height * 3.5, f'Unexpected logo aspect ratio: {cropped.size}'
+          cropped.save(asset, format='PNG', optimize=True)
+          # Native integration horizontal logo uses the exact same approved art.
+          cropped.save(brand, format='PNG', optimize=True)
+          print('Trimmed approved horizontal artwork:', source.size, '->', cropped.size)
+
+          replace_once(v2,
+              'const STREAMING_BROWSER_VERSION = "0.4.118";',
+              'const STREAMING_BROWSER_VERSION = "0.4.119";')
+          replace_once(v2,
+              "width:196px;height:53px;object-fit:contain;object-position:left center;",
+              "width:clamp(230px,32vw,400px);height:76px;object-fit:contain;object-position:left center;")
+          replace_once(v2,
+              '/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.118',
+              '/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.119')
+
+          replace_once(popup,
+              "/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.118",
+              "/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.119")
+          replace_once(popup,
+              'height:48px; object-fit:contain; object-position:center;',
+              'height:66px; object-fit:contain; object-position:center;')
+          replace_once(popup,
+              'display:none; max-width:100%; width:190px;',
+              'display:none; max-width:100%; width:330px;')
+          replace_once(popup,
+              'button.sb-popup-logo-ready { padding:4px 10px; gap:0; }',
+              'button.sb-popup-logo-ready { min-height:78px; padding:5px 10px; gap:0; }')
+          replace_once(popup,
+              'width:188px; max-width:45vw;\n                  height:44px;',
+              'width:330px; max-width:56vw;\n                  height:65px;')
+
+          metadata = json.loads(manifest.read_text())
+          assert metadata['version'] == '0.4.118', metadata['version']
+          metadata['version'] = '0.4.119'
+          manifest.write_text(json.dumps(metadata, indent=2) + '\n')
+          print('PASS: horizontal logo now fills the configured V2 header, popup header, and button')
+          PY
+      - name: Verify branding assets, syntax, version and selectors
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import json
+          root=Path('custom_components/streaming_browser')
+          image=Image.open(root/'frontend/assets/streaming-browser-horizontal.png').convert('RGBA')
+          alpha=image.getchannel('A')
+          bbox=alpha.point(lambda n:255 if n>=16 else 0).getbbox()
+          assert bbox is not None
+          assert image.width > image.height * 3.5, (image.size,bbox)
+          assert bbox[3]-bbox[1] >= image.height * .88, (image.size,bbox)
+          assert image.getpixel((0,0))[3] == 0, 'logo must have transparent background'
+          assert (root/'brand/logo.png').read_bytes()==(root/'frontend/assets/streaming-browser-horizontal.png').read_bytes()
+          for name in ('vertical','icon'):
+              assert (root/'frontend/assets'/f'streaming-browser-{name}.png').is_file()
+          popup=(root/'frontend/streaming-browser-popup-card.js').read_text()
+          v2=(root/'frontend/streaming-browser-card-v2.js').read_text()
+          assert 'data-key="button_display"' in popup
+          for mode in ('horizontal','vertical','icon_only','icon_text'):
+              assert f'value="{mode}"' in popup
+          assert 'width:330px; max-width:56vw;' in popup
+          assert 'width:clamp(230px,32vw,400px);height:76px;' in v2
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.119";' in v2
+          assert json.loads((root/'manifest.json').read_text())['version']=='0.4.119'
+          print('PASS: PNG tightly cropped, transparent and bundled; CSS, modes and version validated')
+          PY
+      - name: Publish verified integration v0.4.119
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/assets/streaming-browser-horizontal.png custom_components/streaming_browser/brand/logo.png custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.119: tightly crop approved horizontal logo and enlarge card headers/button'
+          git push origin HEAD:main
+          gh release view v0.4.119 >/dev/null 2>&1 || gh release create v0.4.119 --target "$(git rev-parse HEAD)" --title v0.4.119 --notes 'Use the approved transparent horizontal Streaming Browser artwork with its empty margins removed and increase logo display sizes in the full V2 card header, popup header, and horizontal popup button. The icon-only and vertical logos, appearance selector, room routing, playback and other card settings remain unchanged. Update the HACS integration, restart Home Assistant, and hard-refresh your browser.'
