@@ -70,9 +70,9 @@ class StreamingBrowserPopupCard extends HTMLElement {
     const showLabel = this._config.button_show_label !== false;
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display: block; }
-        ha-card { overflow: hidden; height: 100%; }
-        button { width: 100%; min-height: 52px; padding: 8px 14px; display: flex;
+        :host { display: block; --popup-button-height: 120px; }
+        ha-card { overflow: hidden; height: var(--popup-button-height); min-height: var(--popup-button-height); box-sizing: border-box; border-radius: var(--ha-card-border-radius, 14px); }
+        button { box-sizing: border-box; width: 100%; height: 100%; min-height: var(--popup-button-height); padding: 8px; border-radius: inherit; display: flex;
           align-items: center; justify-content: center; gap: 10px; cursor: pointer;
           background: transparent; border: 0; color: var(--primary-text-color);
           font: inherit; font-weight: 500; }
@@ -80,12 +80,12 @@ class StreamingBrowserPopupCard extends HTMLElement {
         button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
         .sb-popup-button-logo { display:none; max-width:100%; width:330px;
         height:66px; object-fit:contain; object-position:center; }
-      button.sb-popup-logo-ready { min-height:78px; padding:5px 10px; gap:0; }
+      button.sb-popup-logo-ready { min-height:var(--popup-button-height); padding:8px; gap:0; }
       button.sb-popup-logo-ready .sb-popup-button-logo { display:block; }
-      button[data-logo-mode="vertical"].sb-popup-logo-ready { min-height:120px; }
-      button[data-logo-mode="vertical"] .sb-popup-button-logo { width:190px; height:110px; }
-      button[data-logo-mode="icon_only"].sb-popup-logo-ready { min-height:64px; }
-      button[data-logo-mode="icon_only"] .sb-popup-button-logo { width:110px; height:55px; }
+      button[data-logo-mode="vertical"].sb-popup-logo-ready { min-height:var(--popup-button-height); }
+      button[data-logo-mode="vertical"] .sb-popup-button-logo { width:190px; height:104px; }
+      button[data-logo-mode="icon_only"].sb-popup-logo-ready { min-height:var(--popup-button-height); }
+      button[data-logo-mode="icon_only"] .sb-popup-button-logo { width:110px; height:104px; }
       ha-icon { color: var(--primary-color); --mdc-icon-size: 24px; }
         span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
       </style>
