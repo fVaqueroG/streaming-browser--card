@@ -1,0 +1,39 @@
+name: Check approved logo PNG assets v0.4.122
+on:
+  push:
+    branches: [approved-logos-v04122]
+    paths:
+      - '.github/workflows/check-approved-logos-v04122.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install --quiet Pillow
+      - name: Validate all five updated images
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          root=Path('custom_components/streaming_browser')
+          files={
+            'horizontal': root/'frontend/assets/streaming-browser-horizontal.png',
+            'vertical': root/'frontend/assets/streaming-browser-vertical.png',
+            'icon': root/'frontend/assets/streaming-browser-icon.png',
+            'brand-logo':root/'brand/logo.png',
+            'brand-icon':root/'brand/icon.png',
+          }
+          for name,path in files.items():
+            with Image.open(path) as image:
+              image.load() # verifies complete PNG stream and checksums
+              alpha=image.convert('RGBA').getchannel('A')
+              assert alpha.getextrema()[0]==0, f'{name}: no transparency'
+              assert alpha.getbbox(), f'{name}: no visible artwork'
+              if name in ('icon','vertical','brand-icon'):
+                assert image.size==(256,256), (name,image.size)
+              else:
+                assert image.width>image.height*3, (name,image.size)
+              print('PASS',name,image.size,image.mode,path.stat().st_size)
+          PY
