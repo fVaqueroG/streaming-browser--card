@@ -34,6 +34,9 @@ _V2_RESOURCE_URL = f"{_V2_CARD_URL}?v={_VERSION}"
 _POPUP_CARD_URL = "/streaming_browser/streaming-browser-popup-card.js"
 _POPUP_CARD_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-popup-card.js"
 _POPUP_RESOURCE_URL = f"{_POPUP_CARD_URL}?v={_VERSION}"
+_BRANDING_URL = "/streaming_browser/streaming-browser-branding.js"
+_BRANDING_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-branding.js"
+_BRANDING_RESOURCE_URL = f"{_BRANDING_URL}?v={_VERSION}"
 _STATIC_REGISTERED_KEY = f"{DOMAIN}_card_static_registered"
 _FRONTEND_REGISTERED_KEY = f"{DOMAIN}_card_frontend_registered"
 _RESOURCE_RETRY_KEY = f"{DOMAIN}_resource_retry_scheduled"
@@ -113,6 +116,22 @@ async def _ensure_popup_resource(collection) -> None:
         await collection.async_delete_item(duplicate[CONF_ID])
 
 
+async def _ensure_branding_resource(collection) -> None:
+    """Load branding after both V2 and popup, with HACS cache-busting."""
+    matches = [item for item in collection.async_items() or []
+               if str(item.get(CONF_URL) or "").split("?", 1)[0] == _BRANDING_URL]
+    if not matches:
+        await collection.async_create_item(
+            {CONF_URL: _BRANDING_RESOURCE_URL, CONF_RESOURCE_TYPE_WS: "module"})
+        return
+    main = matches[0]
+    if main.get(CONF_URL) != _BRANDING_RESOURCE_URL or main.get(CONF_TYPE) != "module":
+        await collection.async_update_item(
+            main[CONF_ID], {CONF_URL: _BRANDING_RESOURCE_URL, CONF_RESOURCE_TYPE_WS: "module"})
+    for duplicate in matches[1:]:
+        await collection.async_delete_item(duplicate[CONF_ID])
+
+
 async def _register_card(hass: HomeAssistant) -> None:
     """Serve the exact JS bundled with this installed integration version."""
     if not _CARD_FILE.is_file():
@@ -123,6 +142,7 @@ async def _register_card(hass: HomeAssistant) -> None:
     # opened subview reports that the custom card resource is unavailable.
     v2_available = _V2_CARD_FILE.is_file()
     popup_available = v2_available and _POPUP_CARD_FILE.is_file()
+    branding_available = popup_available and _BRANDING_FILE.is_file()
     if not v2_available:
         _LOGGER.warning("Streaming Browser V2 bundle is not installed: %s; registering V1 independently", _V2_CARD_FILE)
     if v2_available and not popup_available:
@@ -135,6 +155,8 @@ async def _register_card(hass: HomeAssistant) -> None:
             paths.append(StaticPathConfig(_V2_CARD_URL, str(_V2_CARD_FILE), cache_headers=False))
         if popup_available:
             paths.append(StaticPathConfig(_POPUP_CARD_URL, str(_POPUP_CARD_FILE), cache_headers=False))
+        if branding_available:
+            paths.append(StaticPathConfig(_BRANDING_URL, str(_BRANDING_FILE), cache_headers=False))
         await hass.http.async_register_static_paths(paths)
         hass.data[_STATIC_REGISTERED_KEY] = True
     # The global module lets the named card appear in Add card even before a
@@ -145,6 +167,8 @@ async def _register_card(hass: HomeAssistant) -> None:
             frontend.add_extra_js_url(hass, _V2_RESOURCE_URL)
         if popup_available:
             frontend.add_extra_js_url(hass, _POPUP_RESOURCE_URL)
+        if branding_available:
+            frontend.add_extra_js_url(hass, _BRANDING_RESOURCE_URL)
         hass.data[_FRONTEND_REGISTERED_KEY] = True
 
     lovelace = hass.data.get(LOVELACE_DATA)
@@ -190,6 +214,8 @@ async def _register_card(hass: HomeAssistant) -> None:
             await _ensure_v2_resource(collection)
         if popup_available:
             await _ensure_popup_resource(collection)
+        if branding_available:
+            await _ensure_branding_resource(collection)
         return
     primary = matches[0]
     if primary.get(CONF_URL) != _RESOURCE_URL or primary.get(CONF_TYPE) != "module":
@@ -203,6 +229,8 @@ async def _register_card(hass: HomeAssistant) -> None:
         await _ensure_v2_resource(collection)
     if popup_available:
         await _ensure_popup_resource(collection)
+    if branding_available:
+        await _ensure_branding_resource(collection)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
