@@ -9,9 +9,9 @@ const sbPopupEscape = (value) => String(value ?? '').replaceAll('&', '&amp;')
   .replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
 const SB_POPUP_LOGOS = Object.freeze({
-  horizontal: '/streaming_browser/assets/streaming-browser-horizontal-v124.png?v=0.4.125',
-  vertical: '/streaming_browser/assets/streaming-browser-vertical-v124.png?v=0.4.125',
-  icon_only: '/streaming_browser/assets/streaming-browser-icon-v124.png?v=0.4.125',
+  horizontal: '/streaming_browser/assets/streaming-browser-horizontal-v127.png?v=0.4.127',
+  vertical: '/streaming_browser/assets/streaming-browser-vertical-v127.png?v=0.4.127',
+  icon_only: '/streaming_browser/assets/streaming-browser-icon-v127.png?v=0.4.127',
 });
 class StreamingBrowserPopupCard extends HTMLElement {
   constructor() {
