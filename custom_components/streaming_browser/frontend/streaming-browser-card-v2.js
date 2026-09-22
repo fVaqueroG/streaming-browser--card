@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.113";
+const STREAMING_BROWSER_VERSION = "0.4.114";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {

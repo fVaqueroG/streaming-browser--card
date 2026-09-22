@@ -207,3 +207,8 @@ The fixed V2 controls from the search field through the category tabs use shorte
 ## v0.4.111 — Larger provider logos in V2
 
 Provider app logos now occupy about 75% of their existing square source buttons on desktop and mobile. The button dimensions and compact V2 header remain unchanged. The fixed All button, V1, room controls, catalogs and playback are unchanged.
+
+
+### Built-in Streaming Browser logos (v0.4.114)
+
+Horizontal, vertical, and icon-only WebP logos are included with the HACS integration and served from `/streaming_browser/assets/`. No manual `/config/www/` PNG installation or external image download is needed. The images have cacheable, versioned URLs. The popup card supports `button_display: horizontal`, `vertical`, `icon_only`, or `icon_text`. Explicit `logo_*_url` overrides remain optional.

@@ -1,7 +1,7 @@
 /* Streaming Browser branding extension.
- * Loaded after the V2 and popup custom elements. The PNG files are user-supplied
- * through /local by default, or can be overridden with logo_horizontal_url and
- * logo_vertical_url in Lovelace YAML. Missing images fall back to existing text.
+ * Official compact WebP logos ship with the integration and are served locally
+ * by Home Assistant. Explicit custom logo URLs are still supported.
+ * Missing images fall back to the existing accessible icon/text.
  */
 (() => {
   const Card = customElements.get('streaming-browser-card-v2');
@@ -10,12 +10,15 @@
   if (!Card || !Popup || !Editor || window.__streamingBrowserLogoBranding) return;
   window.__streamingBrowserLogoBranding = true;
 
-  const HORIZONTAL = '/local/streaming-browser-horizontal.png';
-  const VERTICAL = '/local/streaming-browser-vertical.png';
-  const asset = (config, kind) => String(
-    config?.[kind === 'vertical' ? 'logo_vertical_url' : 'logo_horizontal_url'] ||
-    (kind === 'vertical' ? VERTICAL : HORIZONTAL)
-  ).trim();
+  const HORIZONTAL = '/streaming_browser/assets/streaming-browser-horizontal.webp?v=0.4.114';
+  const VERTICAL = '/streaming_browser/assets/streaming-browser-vertical.webp?v=0.4.114';
+  const ICON = '/streaming_browser/assets/streaming-browser-icon.webp?v=0.4.114';
+  const asset = (config, kind) => {
+    const name = kind === 'vertical' ? 'vertical' : kind === 'icon' ? 'icon' : 'horizontal';
+    const defaults = { horizontal: HORIZONTAL, vertical: VERTICAL, icon: ICON };
+    // Old custom URLs still work, but no URL or /config/www image is required.
+    return String(config?.[`logo_${name}_url`] || defaults[name]).trim();
+  };
   const makeImage = (config, kind, className) => {
     const image = document.createElement('img');
     image.className = className;
@@ -86,17 +89,17 @@
     return result;
   };
 
-  // Three choices on the compact button: vertical, horizontal, or MDI icon + text.
+  // Four choices: vertical, horizontal, MDI icon + text, or logo-only mark.
   // Keep the original icon+text until an image actually loads, so a missing asset
   // never creates an empty or inaccessible button.
   const render = Popup.prototype._render;
   Popup.prototype._render = function (...args) {
     const result = render.apply(this, args);
     const mode = this._config?.button_display || 'horizontal';
-    if (mode !== 'vertical' && mode !== 'horizontal') return result;
+    if (!['vertical', 'horizontal', 'icon_only'].includes(mode)) return result;
     const button = this.shadowRoot?.querySelector('ha-card > button');
     if (!button) return result;
-    const logo = makeImage(this._config, mode, 'sb-popup-button-logo');
+    const logo = makeImage(this._config, mode === 'icon_only' ? 'icon' : mode, 'sb-popup-button-logo');
     logo.addEventListener('load', () => {
       if (!logo.isConnected || !button.isConnected) return;
       button.replaceChildren(logo);
@@ -114,6 +117,8 @@
       button[data-logo-mode="horizontal"] .sb-popup-button-logo { max-width:290px; height:45px; }
       button[data-logo-mode="vertical"].sb-popup-logo-ready { min-height:130px; }
       button[data-logo-mode="vertical"] .sb-popup-button-logo { width:150px; max-width:100%; height:120px; }
+      button[data-logo-mode="icon_only"].sb-popup-logo-ready { min-height:60px; }
+      button[data-logo-mode="icon_only"] .sb-popup-button-logo { width:105px; max-width:100%; height:50px; }
     `);
     return result;
   };
@@ -132,7 +137,8 @@
     const select = document.createElement('select');
     const mode = this._config?.button_display || 'horizontal';
     for (const [value, name] of [
-      ['vertical', 'Vertical logo'], ['horizontal', 'Horizontal logo'], ['icon_text', 'Icon + text'],
+      ['vertical', 'Vertical logo'], ['horizontal', 'Horizontal logo'],
+      ['icon_only', 'Icon-only logo'], ['icon_text', 'Icon + text'],
     ]) {
       const option = document.createElement('option');
       option.value = value;
@@ -146,6 +152,7 @@
     for (const [key, name, placeholder] of [
       ['logo_horizontal_url', 'Horizontal logo URL', HORIZONTAL],
       ['logo_vertical_url', 'Vertical logo URL', VERTICAL],
+      ['logo_icon_url', 'Icon-only logo URL', ICON],
     ]) {
       const label = document.createElement('label');
       label.textContent = name;
