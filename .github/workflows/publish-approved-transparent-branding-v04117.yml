@@ -1,0 +1,84 @@
+name: Publish approved transparent Streaming Browser branding v0.4.117
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-approved-transparent-branding-v04117.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install image validator
+        run: python3 -m pip install --quiet Pillow
+
+      - name: Validate approved transparent PNG branding
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-branding.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+
+          root = Path("custom_components/streaming_browser")
+          assert json.loads((root / "manifest.json").read_text())["version"] == "0.4.117"
+
+          backend = (root / "__init__.py").read_text()
+          branding = (root / "frontend/streaming-browser-branding.js").read_text()
+          v2 = (root / "frontend/streaming-browser-card-v2.js").read_text()
+
+          assert "streaming-browser-{name}.png" in backend
+          assert ".webp" not in "\n".join([
+              line for line in backend.splitlines() if "_LOGO_FILES" in line or "streaming-browser-{name}" in line
+          ])
+          assert "streaming-browser-horizontal.png?v=0.4.117" in branding
+          assert "streaming-browser-vertical.png?v=0.4.117" in branding
+          assert "streaming-browser-icon.png?v=0.4.117" in branding
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.117";' in v2
+
+          checks = {
+              root / "brand/icon.png": (256, 256),
+              root / "brand/logo.png": (256, 138),
+              root / "frontend/assets/streaming-browser-horizontal.png": (256, 138),
+              root / "frontend/assets/streaming-browser-vertical.png": (240, 237),
+              root / "frontend/assets/streaming-browser-icon.png": (256, 256),
+          }
+          for path, size in checks.items():
+              im = Image.open(path)
+              assert im.size == size, (path, im.size, size)
+              assert im.mode in ("P", "RGBA", "LA")
+              if im.mode == "P":
+                  assert "transparency" in im.info, f"{path} has no alpha transparency"
+              else:
+                  assert im.getchannel("A").getextrema()[0] < 255, f"{path} has no transparent pixels"
+              print("PASS", path, im.size, im.mode)
+
+          assert not (root / "brand/icon@2x.png").exists()
+          assert not (root / "brand/logo@2x.png").exists()
+          for old in (root / "frontend/assets").glob("streaming-browser-*.webp"):
+              raise AssertionError(f"obsolete active WebP asset remains: {old}")
+          print("PASS approved transparent-background PNG branding v0.4.117")
+          PY
+
+      - name: Publish HACS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.4.117 >/dev/null 2>&1; then
+            echo "v0.4.117 already exists"
+            exit 0
+          fi
+          gh release create v0.4.117 \
+            --target "$(git rev-parse HEAD)" \
+            --title "v0.4.117" \
+            --notes "Replace the temporary background-removed WebP branding with the previously approved transparent-background Streaming Browser logo artwork. The icon-only transparent PNG is now the Home Assistant integration/repository icon and popup icon-only asset; the approved horizontal transparent PNG is used for card and popup headers; the approved vertical transparent PNG remains the vertical popup option. Branding remains bundled locally with the integration and existing card/playback configuration is unchanged. Update through HACS, restart Home Assistant, and refresh the dashboard."
