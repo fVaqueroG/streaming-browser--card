@@ -1,0 +1,102 @@
+name: Publish Streaming Browser updated transparent logos v0.4.120
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-transparent-logo-refresh-v04120.yml'
+permissions:
+  contents: write
+jobs:
+  refresh-build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Prepare transparently cropped updated logos and bump cache version
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+
+          root = Path('custom_components/streaming_browser')
+          assets = root / 'frontend' / 'assets'
+          brand = root / 'brand'
+
+          def crop_content(im):
+              im = im.convert('RGBA')
+              box = im.getchannel('A').point(lambda a: 255 if a >= 2 else 0).getbbox()
+              assert box, 'Logo has no visible pixels'
+              return im.crop(box)
+
+          def contain_on_canvas(im, canvas, inner):
+              im = crop_content(im)
+              ratio = min(inner[0]/im.width, inner[1]/im.height)
+              im = im.resize((round(im.width*ratio), round(im.height*ratio)), Image.Resampling.LANCZOS)
+              result = Image.new('RGBA', canvas, (0,0,0,0))
+              result.alpha_composite(im, ((canvas[0]-im.width)//2, (canvas[1]-im.height)//2))
+              return result
+
+          # Re-export the approved transparent logo set already in the repo.
+          horizontal = crop_content(Image.open(assets / 'streaming-browser-horizontal.png'))
+          horizontal = horizontal.resize((800, round(800*horizontal.height/horizontal.width)), Image.Resampling.LANCZOS)
+          horizontal.save(assets / 'streaming-browser-horizontal.png', optimize=True)
+          horizontal.resize((640, round(640*horizontal.height/horizontal.width)), Image.Resampling.LANCZOS).save(brand / 'logo.png', optimize=True)
+          vertical = contain_on_canvas(Image.open(assets / 'streaming-browser-vertical.png'), (256,256), (205,188))
+          vertical.save(assets / 'streaming-browser-vertical.png', optimize=True)
+          icon = contain_on_canvas(Image.open(assets / 'streaming-browser-icon.png'), (256,256), (239,134))
+          icon.save(assets / 'streaming-browser-icon.png', optimize=True)
+          icon.save(brand / 'icon.png', optimize=True)
+
+          manifest = root / 'manifest.json'
+          metadata = json.loads(manifest.read_text(encoding='utf-8'))
+          assert metadata['version'] == '0.4.119', metadata['version']
+          metadata['version'] = '0.4.120'
+          manifest.write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
+          v2 = root / 'frontend/streaming-browser-card-v2.js'
+          v2_text = v2.read_text(encoding='utf-8')
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.119";' in v2_text
+          v2_text = v2_text.replace('const STREAMING_BROWSER_VERSION = "0.4.119";', 'const STREAMING_BROWSER_VERSION = "0.4.120";')
+          assert '?v=0.4.119' in v2_text
+          v2.write_text(v2_text.replace('?v=0.4.119', '?v=0.4.120'), encoding='utf-8')
+          popup = root / 'frontend/streaming-browser-popup-card.js'
+          popup_text = popup.read_text(encoding='utf-8')
+          assert '?v=0.4.119' in popup_text
+          popup.write_text(popup_text.replace('?v=0.4.119', '?v=0.4.120'), encoding='utf-8')
+          print('PASS logos re-exported with alpha and frontend cache bumped to 0.4.120')
+          PY
+      - name: Validate images, integration and card resource versions
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path('custom_components/streaming_browser')
+          assert json.loads((root/'manifest.json').read_text())['version']=='0.4.120'
+          assert 'STREAMING_BROWSER_VERSION = "0.4.120"' in (root/'frontend/streaming-browser-card-v2.js').read_text()
+          paths=[root/'brand/icon.png', root/'brand/logo.png']+list((root/'frontend/assets').glob('streaming-browser-*.png'))
+          assert len(paths)==5, paths
+          for path in paths:
+              image=Image.open(path).convert('RGBA')
+              alpha=image.getchannel('A')
+              assert alpha.getextrema()[0]==0, (path,'missing transparency')
+              assert alpha.getbbox(), (path,'missing artwork')
+              print('PASS',path,image.size,alpha.getbbox())
+          PY
+      - name: Commit and publish v0.4.120 for HACS
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/brand custom_components/streaming_browser/frontend/assets custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.120: refresh approved transparent logo assets and cache versions'
+          git push origin HEAD:main
+          gh release create v0.4.120 --target "$(git rev-parse HEAD)" --title v0.4.120 --notes 'Re-export the approved transparent Streaming Browser logo artwork bundled with the integration, tightly crop and enlarge the horizontal mark, rescale the vertical and icon-only marks for current layouts, and bump the card asset cache version. Update through HACS, restart Home Assistant and hard refresh the dashboard. All rooms and playback settings are unchanged.'
