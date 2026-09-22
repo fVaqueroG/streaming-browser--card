@@ -1,6 +1,6 @@
 # Streaming Browser — Home Assistant Integration
 
-<p align="center"><img src="custom_components/streaming_browser/brand/icon@2x.png" alt="Streaming Browser icon-only logo" width="160" height="160" /></p>
+<p align="center"><img src="custom_components/streaming_browser/brand/icon.png" alt="Streaming Browser icon-only logo" width="160" height="160" /></p>
 
 [![Latest release](https://img.shields.io/github/v/release/fVaqueroG/streaming-browser--card?label=latest%20release)](https://github.com/fVaqueroG/streaming-browser--card/releases/latest) · [Latest release notes](https://github.com/fVaqueroG/streaming-browser--card/releases/latest) · [All releases and changes](https://github.com/fVaqueroG/streaming-browser--card/releases)
 
@@ -10,7 +10,7 @@ Browse TMDB movie and TV catalogs, choose streaming providers, review movie and 
 
 ## Recent release highlights
 
-- **v0.4.93 — Netflix Android TV ADB playback:** For a room with an explicitly configured ADB media player, the TV Play button uses the selected Netflix movie/episode ID with `am start -a android.intent.action.VIEW -d http://www.netflix.com/watch/<id> --es source 30 -n com.netflix.ninja/.MainActivity`. No follow-up keyevent, Play button, restart, or forced profile navigation. Validated /watch/ episode URLs must match the selected episode; movie /title/ URLs (including regional paths) are accepted. Netflix on webOS and other providers are unchanged.
+- **v0.4.117 — Approved transparent branding:** Replaces the temporary background-removed WebP artwork with the previously approved transparent-background Streaming Browser PNG logos. The icon-only mark is used for integration/repository branding, the horizontal logo for headers, and the vertical logo remains available for the popup button. All branding assets are bundled and served locally by Home Assistant.\n- **v0.4.93 — Netflix Android TV ADB playback:** For a room with an explicitly configured ADB media player, the TV Play button uses the selected Netflix movie/episode ID with `am start -a android.intent.action.VIEW -d http://www.netflix.com/watch/<id> --es source 30 -n com.netflix.ninja/.MainActivity`. No follow-up keyevent, Play button, restart, or forced profile navigation. Validated /watch/ episode URLs must match the selected episode; movie /title/ URLs (including regional paths) are accepted. Netflix on webOS and other providers are unchanged.
 
 - **v0.4.77 — Genre dropdown:** Beside Movies and Series, choose a TMDB genre such as Horror, Comedy or Drama, or All genres. Movie and TV genre names come from TMDB in the configured language. Genre and streaming-provider filters combine server-side for paginated catalogs; each mode remembers its own genre selection.
 - **v0.4.76 — Offer badges:** A small corner badge on each streaming-service logo shows included-with-subscription (`mdi:currency-usd-off`), free-with-ads (`mdi:play-circle-outline` + AD), or extra rental/purchase (`mdi:currency-usd`). The raw `flatrate`/`rent`/`buy` text is hidden; offer labels remain available to screen readers and on hover.
