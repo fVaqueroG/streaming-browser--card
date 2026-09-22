@@ -4,10 +4,15 @@
  */
 const SB_POPUP_TYPE = 'custom:streaming-browser-popup-card';
 const SB_V2_TYPE = 'custom:streaming-browser-card-v2';
-const SB_POPUP_KEYS = ['button_label', 'button_icon', 'button_show_label', 'popup_width'];
+const SB_POPUP_KEYS = ['button_label', 'button_icon', 'button_show_label', 'popup_width', 'button_display'];
 const sbPopupEscape = (value) => String(value ?? '').replaceAll('&', '&amp;')
   .replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
+const SB_POPUP_LOGOS = Object.freeze({
+  horizontal: '/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.118',
+  vertical: '/streaming_browser/assets/streaming-browser-vertical.png?v=0.4.118',
+  icon_only: '/streaming_browser/assets/streaming-browser-icon.png?v=0.4.118',
+});
 class StreamingBrowserPopupCard extends HTMLElement {
   constructor() {
     super();
@@ -27,6 +32,7 @@ class StreamingBrowserPopupCard extends HTMLElement {
       button_icon: 'mdi:movie-open',
       button_show_label: true,
       popup_width: 'wide',
+      button_display: 'horizontal',
     };
   }
 
@@ -45,8 +51,12 @@ class StreamingBrowserPopupCard extends HTMLElement {
     if (this._innerCard) this._innerCard.hass = value;
   }
 
-  getCardSize() { return 1; }
-  getGridOptions() { return { columns: 3, rows: 1, min_columns: 2, min_rows: 1 }; }
+  getCardSize() { return this._config?.button_display === 'vertical' ? 2 : 1; }
+  getGridOptions() {
+    const tall = this._config?.button_display === 'vertical';
+    return { columns: tall ? 4 : 3, rows: tall ? 2 : 1,
+      min_columns: 2, min_rows: tall ? 2 : 1 };
+  }
 
   connectedCallback() { this._render(); }
   disconnectedCallback() { this._close(); }
@@ -66,7 +76,15 @@ class StreamingBrowserPopupCard extends HTMLElement {
           font: inherit; font-weight: 500; }
         button:hover { background: var(--secondary-background-color); }
         button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
-        ha-icon { color: var(--primary-color); --mdc-icon-size: 24px; }
+        .sb-popup-button-logo { display:none; max-width:100%; width:190px;
+        height:48px; object-fit:contain; object-position:center; }
+      button.sb-popup-logo-ready { padding:4px 10px; gap:0; }
+      button.sb-popup-logo-ready .sb-popup-button-logo { display:block; }
+      button[data-logo-mode="vertical"].sb-popup-logo-ready { min-height:120px; }
+      button[data-logo-mode="vertical"] .sb-popup-button-logo { width:190px; height:110px; }
+      button[data-logo-mode="icon_only"].sb-popup-logo-ready { min-height:64px; }
+      button[data-logo-mode="icon_only"] .sb-popup-button-logo { width:110px; height:55px; }
+      ha-icon { color: var(--primary-color); --mdc-icon-size: 24px; }
         span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
       </style>
       <ha-card><button type="button" aria-label="${sbPopupEscape(label || 'Open Streaming Browser')}"
@@ -74,7 +92,25 @@ class StreamingBrowserPopupCard extends HTMLElement {
         <ha-icon icon="${sbPopupEscape(icon)}"></ha-icon>
         ${showLabel ? `<span>${sbPopupEscape(label)}</span>` : ''}
       </button></ha-card>`;
-    this.shadowRoot.querySelector('button').addEventListener('click', () => this._open());
+    const button = this.shadowRoot.querySelector('button');
+  button.addEventListener('click', () => this._open());
+  // Brand images are bundled locally. Keep icon + label if the image fails.
+  const mode = this._config.button_display || 'horizontal';
+  if (Object.prototype.hasOwnProperty.call(SB_POPUP_LOGOS, mode)) {
+    const image = document.createElement('img');
+    image.className = 'sb-popup-button-logo';
+    image.alt = '';
+    image.addEventListener('load', () => {
+      if (!image.isConnected || !button.isConnected) return;
+      button.querySelectorAll('ha-icon, span').forEach((node) => node.remove());
+      button.classList.add('sb-popup-logo-ready');
+    });
+    image.addEventListener('error', () => image.remove());
+    button.dataset.logoMode = mode;
+    button.appendChild(image);
+    const overrideKey = mode === 'icon_only' ? 'logo_icon_url' : `logo_${mode}_url`;
+    image.src = String(this._config[overrideKey] || SB_POPUP_LOGOS[mode]);
+  }
   }
 
   _close() {
@@ -111,6 +147,9 @@ class StreamingBrowserPopupCard extends HTMLElement {
           flex: 0 0 auto; padding: 8px 12px 8px 18px; min-height: 40px;
           border-bottom: 1px solid var(--divider-color, #8884); }
         .sb-popup-heading { font: inherit; font-size: 16px; font-weight: 600; }
+      .sb-popup-heading-logo { display:block; width:188px; max-width:45vw;
+        height:44px; object-fit:contain; object-position:left center; }
+      .sb-popup-heading-logo[hidden], .sb-popup-heading span[hidden] { display:none; }
         .sb-popup-close { width: 40px; height: 40px; display: grid; place-items: center;
           cursor: pointer; border: 0; border-radius: 50%; color: var(--primary-text-color);
           background: transparent; }
@@ -131,7 +170,19 @@ class StreamingBrowserPopupCard extends HTMLElement {
             title="Close"><ha-icon icon="mdi:close"></ha-icon></button></header>
         <main class="sb-popup-content"></main>
       </div>`;
-    const content = dialog.querySelector('.sb-popup-content');
+    // The popup heading uses the transparent horizontal logo, independent of
+  // when the optional branding frontend resource happens to load.
+  const heading = dialog.querySelector('.sb-popup-heading');
+  const headingLogo = document.createElement('img');
+  const headingFallback = document.createElement('span');
+  headingLogo.className = 'sb-popup-heading-logo';
+  headingLogo.alt = 'Streaming Browser';
+  headingFallback.textContent = this._config.title || 'Streaming Browser';
+  headingLogo.addEventListener('load', () => { headingFallback.hidden = true; });
+  headingLogo.addEventListener('error', () => { headingLogo.hidden = true; });
+  heading.replaceChildren(headingLogo, headingFallback);
+  headingLogo.src = String(this._config.logo_horizontal_url || SB_POPUP_LOGOS.horizontal);
+  const content = dialog.querySelector('.sb-popup-content');
     const v2Class = customElements.get('streaming-browser-card-v2');
     if (v2Class) {
       const card = document.createElement('streaming-browser-card-v2');
@@ -193,7 +244,13 @@ class StreamingBrowserPopupCardEditor extends HTMLElement {
         h3 { margin: 12px 0 0; font-size: 15px; }
       </style>
       <div class="sb-popup-editor">
-        <label>Button label <input data-key="button_label" value="${sbPopupEscape(config.button_label ?? 'Streaming')}"></label>
+      <label>Popup button appearance <select data-key="button_display">
+        <option value="horizontal" ${!config.button_display || config.button_display === 'horizontal' ? 'selected' : ''}>Horizontal logo</option>
+        <option value="vertical" ${config.button_display === 'vertical' ? 'selected' : ''}>Vertical logo</option>
+        <option value="icon_only" ${config.button_display === 'icon_only' ? 'selected' : ''}>Icon-only logo</option>
+        <option value="icon_text" ${config.button_display === 'icon_text' ? 'selected' : ''}>MDI icon + text</option>
+      </select></label>
+      <label>Button label <input data-key="button_label" value="${sbPopupEscape(config.button_label ?? 'Streaming')}"></label>
         <label>Button icon (MDI) <input data-key="button_icon" value="${sbPopupEscape(config.button_icon || 'mdi:movie-open')}"></label>
         <label class="check"><input type="checkbox" data-key="button_show_label"
           ${config.button_show_label !== false ? 'checked' : ''}>Show button label</label>
