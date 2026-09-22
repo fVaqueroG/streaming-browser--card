@@ -1,5 +1,7 @@
 # Streaming Browser — Home Assistant Integration
 
+<p align="center"><img src="custom_components/streaming_browser/brand/icon@2x.png" alt="Streaming Browser icon-only logo" width="160" height="160" /></p>
+
 [![Latest release](https://img.shields.io/github/v/release/fVaqueroG/streaming-browser--card?label=latest%20release)](https://github.com/fVaqueroG/streaming-browser--card/releases/latest) · [Latest release notes](https://github.com/fVaqueroG/streaming-browser--card/releases/latest) · [All releases and changes](https://github.com/fVaqueroG/streaming-browser--card/releases)
 
 Browse TMDB movie and TV catalogs, choose streaming providers, review movie and episode availability, and open supported streaming apps or links from a Home Assistant dashboard. The card has a named entry in **Add card** and a visual editor. It is bundled with the Streaming Browser **HACS Integration**, not a separate HACS Dashboard card.
@@ -212,3 +214,8 @@ Provider app logos now occupy about 75% of their existing square source buttons 
 ### Built-in Streaming Browser logos (v0.4.114)
 
 Horizontal, vertical, and icon-only WebP logos are included with the HACS integration and served from `/streaming_browser/assets/`. No manual `/config/www/` PNG installation or external image download is needed. The images have cacheable, versioned URLs. The popup card supports `button_display: horizontal`, `vertical`, `icon_only`, or `icon_text`. Explicit `logo_*_url` overrides remain optional.
+
+
+### Integration icon (v0.4.116)
+
+The official icon-only catalog logo is included as transparent 256/512 px PNG icons in `custom_components/streaming_browser/brand/`; the horizontal branding is included as standard/HiDPI `logo.png` files. Home Assistant 2026.3+ uses these local brand assets on its integration pages. The HACS repository listing may still show a placeholder because some HACS versions do not display locally bundled Home Assistant brand assets. The Lovelace header and popup logo assets remain bundled WebP files.
