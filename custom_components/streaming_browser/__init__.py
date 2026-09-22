@@ -37,7 +37,7 @@ _POPUP_RESOURCE_URL = f"{_POPUP_CARD_URL}?v={_VERSION}"
 _BRANDING_URL = "/streaming_browser/streaming-browser-branding.js"
 _BRANDING_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-branding.js"
 _BRANDING_RESOURCE_URL = f"{_BRANDING_URL}?v={_VERSION}"
-_LOGO_FILES = {name: _INTEGRATION_DIR / "frontend" / "assets" / f"streaming-browser-{name}.webp"
+_LOGO_FILES = {name: _INTEGRATION_DIR / "frontend" / "assets" / f"streaming-browser-{name}.png"
                for name in ("horizontal", "vertical", "icon")}
 _STATIC_REGISTERED_KEY = f"{DOMAIN}_card_static_registered"
 _FRONTEND_REGISTERED_KEY = f"{DOMAIN}_card_frontend_registered"
@@ -164,7 +164,7 @@ async def _register_card(hass: HomeAssistant) -> None:
         for name, file in _LOGO_FILES.items():
             if file.is_file():
                 paths.append(StaticPathConfig(
-                    f"/streaming_browser/assets/streaming-browser-{name}.webp",
+                    f"/streaming_browser/assets/streaming-browser-{name}.png",
                     str(file), cache_headers=True))
             else:
                 _LOGGER.warning("Missing bundled Streaming Browser logo: %s", file)
