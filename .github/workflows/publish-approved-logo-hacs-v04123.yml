@@ -1,0 +1,85 @@
+name: Publish Streaming Browser approved logos v0.4.123
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-approved-logo-hacs-v04123.yml'
+permissions:
+  contents: write
+jobs:
+  validate-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Verify exact approved artwork and bump HACS version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          base = Path('custom_components/streaming_browser')
+          expected = {
+            'streaming-browser-horizontal.png': '7504f8e974461dc27cd1a6c704738914936a7c20',
+            'streaming-browser-vertical.png': '0fa3ed84f76b73676ecdb5d13f81916085b6e2a9',
+            'streaming-browser-icon.png': '99776b5bb9d5e614b958ab789fc3298ae981973a',
+          }
+          for name, sha in expected.items():
+            path = base / 'frontend/assets' / name
+            actual = subprocess.check_output(['git', 'hash-object', str(path)], text=True).strip()
+            assert actual == sha, f'Unexpected logo bytes in {path}: {actual} != {sha}'
+            print('PASS exact approved logo:', name, actual)
+          manifest = base / 'manifest.json'
+          config = json.loads(manifest.read_text(encoding='utf-8'))
+          assert config['version'] == '0.4.122', config['version']
+          config['version'] = '0.4.123'
+          manifest.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')
+          v2 = base / 'frontend/streaming-browser-card-v2.js'
+          src = v2.read_text(encoding='utf-8')
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.122";' in src
+          src = src.replace('const STREAMING_BROWSER_VERSION = "0.4.122";', 'const STREAMING_BROWSER_VERSION = "0.4.123";')
+          src = src.replace('?v=0.4.122', '?v=0.4.123')
+          v2.write_text(src, encoding='utf-8')
+          popup = base / 'frontend/streaming-browser-popup-card.js'
+          src = popup.read_text(encoding='utf-8')
+          assert all(f'streaming-browser-{name}.png?v=0.4.122' in src for name in ('horizontal','vertical','icon'))
+          src = src.replace('?v=0.4.122', '?v=0.4.123')
+          popup.write_text(src, encoding='utf-8')
+          print('PASS v0.4.123 HACS and frontend asset-cache version bump')
+          PY
+      - name: Validate JS, Python, and manifest before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('custom_components/streaming_browser')
+          assert json.loads((root/'manifest.json').read_text())['version']=='0.4.123'
+          v2=(root/'frontend/streaming-browser-card-v2.js').read_text()
+          popup=(root/'frontend/streaming-browser-popup-card.js').read_text()
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.123";' in v2
+          assert all(f'streaming-browser-{n}.png?v=0.4.123' in popup for n in ('horizontal','vertical','icon'))
+          print('PASS v0.4.123 validation')
+          PY
+      - name: Commit version bump and publish GitHub release for HACS
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          git commit -m 'Release v0.4.123 with exact approved logo assets'
+          git push origin HEAD:main
+          if gh release view v0.4.123 >/dev/null 2>&1; then
+            echo 'Release v0.4.123 already exists; verify the release tag before proceeding.'
+            exit 1
+          fi
+          gh release create v0.4.123 --target "$(git rev-parse HEAD)" --title 'v0.4.123' --notes 'Publish the three exact approved transparent Streaming Browser Lovelace logos (horizontal, vertical, and icon-only), committed after v0.4.122 was tagged, in the HACS-downloadable release snapshot. Update integration and card resource versions to 0.4.123 to invalidate cached logos. No changes to card configuration, integration icon/logo, or popup behavior. Update in HACS, restart Home Assistant, and hard-refresh the dashboard.'
