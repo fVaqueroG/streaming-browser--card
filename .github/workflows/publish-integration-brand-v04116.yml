@@ -1,0 +1,108 @@
+name: Publish Streaming Browser integration icon v0.4.116
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-integration-brand-v04116.yml'
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Install image exporter
+        run: python3 -m pip install --disable-pip-version-check 'Pillow>=10,<13'
+      - name: Build official local integration brand icon and logo
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          base = Path('custom_components/streaming_browser')
+          brand = base / 'brand'
+          brand.mkdir(exist_ok=True)
+          asset_dir = base / 'frontend' / 'assets'
+          icon_src = Image.open(asset_dir / 'streaming-browser-icon.webp').convert('RGBA')
+          horizontal_src = Image.open(asset_dir / 'streaming-browser-horizontal.webp').convert('RGBA')
+          for name, source in [('icon', icon_src), ('horizontal', horizontal_src)]:
+              alpha = source.getchannel('A')
+              assert alpha.getextrema()[0] == 0 and alpha.getextrema()[1] == 255, f'{name}: missing real transparency'
+              bounds = alpha.getbbox()
+              assert bounds, f'{name}: empty brand asset'
+              if name == 'icon': icon_src = source.crop(bounds)
+              else: horizontal_src = source.crop(bounds)
+          def icon(size):
+              # The official mark is a landscape filmstrip: preserve its aspect
+              # ratio while fitting it into the square Home Assistant icon.
+              usable = int(size * .94)
+              factor = min(usable / icon_src.width, usable / icon_src.height)
+              image = icon_src.resize((round(icon_src.width * factor), round(icon_src.height * factor)), Image.Resampling.LANCZOS)
+              canvas = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+              canvas.alpha_composite(image, ((size-image.width)//2, (size-image.height)//2))
+              return canvas
+          def logo(short_side):
+              factor = short_side / min(horizontal_src.size)
+              return horizontal_src.resize((round(horizontal_src.width*factor), round(horizontal_src.height*factor)), Image.Resampling.LANCZOS)
+          for name, img in [('icon.png',icon(256)), ('icon@2x.png',icon(512)),
+                            ('logo.png',logo(128)), ('logo@2x.png',logo(256))]:
+              path = brand / name
+              img.save(path, format='PNG', optimize=True, compress_level=9)
+              restored = Image.open(path)
+              assert restored.mode == 'RGBA' and restored.getchannel('A').getextrema()[0] == 0
+              assert restored.size[0] == restored.size[1] if name.startswith('icon') else restored.size[1] in (128,256)
+              print(f'PASS {path} {restored.size} {path.stat().st_size} bytes')
+          manifest_file = base / 'manifest.json'
+          manifest = json.loads(manifest_file.read_text())
+          assert manifest['domain'] == 'streaming_browser' and manifest['version'] == '0.4.115'
+          manifest['version'] = '0.4.116'
+          manifest_file.write_text(json.dumps(manifest, indent=2) + '\n')
+          readme = Path('README.md')
+          content = readme.read_text()
+          heading = '# Streaming Browser — Home Assistant Integration'
+          assert content.count(heading) == 1
+          badge = ('\n\n<p align="center"><img src="custom_components/streaming_browser/brand/icon@2x.png" '
+                   'alt="Streaming Browser icon-only logo" width="160" height="160" /></p>')
+          content = content.replace(heading, heading + badge, 1)
+          content += ('\n\n### Integration icon (v0.4.116)\n\n'
+                      'The official icon-only catalog logo is included as transparent 256/512 px PNG '
+                      'icons in `custom_components/streaming_browser/brand/`; the horizontal branding '
+                      'is included as standard/HiDPI `logo.png` files. Home Assistant 2026.3+ '
+                      'uses these local brand assets on its integration pages. The HACS repository '
+                      'listing may still show a placeholder because some HACS versions do not '
+                      'display locally bundled Home Assistant brand assets. The Lovelace header '
+                      'and popup logo assets remain bundled WebP files.\n')
+          readme.write_text(content)
+          PY
+      - name: Validate brand dimensions and manifest
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root = Path('custom_components/streaming_browser')
+          assert json.loads((root/'manifest.json').read_text())['version'] == '0.4.116'
+          for name, size in [('icon.png',(256,256)), ('icon@2x.png',(512,512))]:
+              im = Image.open(root/'brand'/name)
+              assert im.size == size and im.mode == 'RGBA' and im.getchannel('A').getextrema()[0] == 0
+          for name, short_side in [('logo.png',128), ('logo@2x.png',256)]:
+              im = Image.open(root/'brand'/name)
+              assert min(im.size) == short_side and im.mode == 'RGBA'
+          print('PASS: valid local Home Assistant brand/icon assets and v0.4.116 manifest')
+          PY
+          python3 -m compileall -q custom_components/streaming_browser
+          node --check custom_components/streaming_browser/frontend/streaming-browser-branding.js
+      - name: Commit branding assets and publish HACS release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md custom_components/streaming_browser/brand custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.116: add native Home Assistant brand icon and logo assets'
+          git push origin HEAD:main
+          gh release create v0.4.116 --target "$(git rev-parse HEAD)" --title v0.4.116 --notes 'Add native Home Assistant integration branding using the official icon-only Streaming Browser mark: transparent PNG icon.png (256px), icon@2x.png (512px), plus standard/HiDPI horizontal logos. These assets live in custom_components/streaming_browser/brand/ and are automatically loaded by Home Assistant 2026.3+. The README also displays the repository logo. HACS itself may show a placeholder until its frontend supports local brand assets. Existing Lovelace card logos, playback, and configurations are unchanged.'
