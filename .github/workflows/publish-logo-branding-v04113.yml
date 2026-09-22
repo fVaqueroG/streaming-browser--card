@@ -1,0 +1,46 @@
+name: Publish Streaming Browser logo appearance v0.4.113
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-logo-branding-v04113.yml'
+permissions:
+  contents: write
+jobs:
+  brand-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Register branded V2 and popup card module
+        run: python3 tools/apply-logo-branding-v04113.py
+      - name: Validate integration and JavaScript
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-branding.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=Path('custom_components/streaming_browser')
+          init=(base/'__init__.py').read_text()
+          assert json.loads((base/'manifest.json').read_text())['version']=='0.4.113'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.113";' in (base/'frontend/streaming-browser-card-v2.js').read_text()
+          assert init.index('frontend.add_extra_js_url(hass, _V2_RESOURCE_URL)') < init.index('frontend.add_extra_js_url(hass, _POPUP_RESOURCE_URL)') < init.index('frontend.add_extra_js_url(hass, _BRANDING_RESOURCE_URL)')
+          assert 'await _ensure_branding_resource(collection)' in init
+          js=(base/'frontend/streaming-browser-branding.js').read_text()
+          for key in ('button_display','vertical','horizontal','icon_text','logo_horizontal_url','logo_vertical_url'):
+            assert key in js, key
+          print('PASS branding resource order, popup options, JS syntax, Python compilation')
+          PY
+      - name: Publish v0.4.113
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.113: register logo branding for V2 and popup cards'
+          git push origin HEAD:main
+          gh release create v0.4.113 --target "$(git rev-parse HEAD)" --title v0.4.113 --notes 'Add official Streaming Browser logo slots to V2 and popup header and selectable Vertical logo, Horizontal logo, and Icon + text on the popup launcher. Configure the original PNGs as /config/www/streaming-browser-horizontal.png and /config/www/streaming-browser-vertical.png (served as /local/ URLs); missing PNGs safely fall back to the original text/icon. Existing room, playback and catalog configuration stays unchanged.'
