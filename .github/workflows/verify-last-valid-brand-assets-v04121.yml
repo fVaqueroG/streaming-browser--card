@@ -1,0 +1,33 @@
+name: Verify valid approved logo artwork from v0.4.121
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/verify-last-valid-brand-assets-v04121.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Inspect previously approved logo files
+        run: |
+          python3 -m pip install --quiet Pillow
+          python3 - <<'PY'
+          import subprocess, io
+          from pathlib import Path
+          from PIL import Image
+          from hashlib import sha256
+          for name in ('horizontal', 'vertical', 'icon'):
+            path=f'custom_components/streaming_browser/frontend/assets/streaming-browser-{name}.png'
+            raw=subprocess.check_output(['git','show',f'v0.4.121:{path}'])
+            image=Image.open(io.BytesIO(raw)).convert('RGBA')
+            image.load()
+            bbox=image.getchannel('A').getbbox()
+            assert bbox is not None, name
+            normalized=sha256(image.crop(bbox).resize((64,64),Image.Resampling.LANCZOS).tobytes()).hexdigest()[:12]
+            print(f'VALID PREVIOUS LOGO {name}: {image.size=} {bbox=} normalized_pixel_hash={normalized} bytes={len(raw)}', flush=True)
+          PY
