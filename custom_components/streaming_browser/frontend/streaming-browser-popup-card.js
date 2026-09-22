@@ -9,7 +9,7 @@ const sbPopupEscape = (value) => String(value ?? '').replaceAll('&', '&amp;')
   .replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
 const SB_POPUP_LOGOS = Object.freeze({
-  horizontal: '/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.118',
+  horizontal: '/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.119',
   vertical: '/streaming_browser/assets/streaming-browser-vertical.png?v=0.4.118',
   icon_only: '/streaming_browser/assets/streaming-browser-icon.png?v=0.4.118',
 });
@@ -76,9 +76,9 @@ class StreamingBrowserPopupCard extends HTMLElement {
           font: inherit; font-weight: 500; }
         button:hover { background: var(--secondary-background-color); }
         button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
-        .sb-popup-button-logo { display:none; max-width:100%; width:190px;
-        height:48px; object-fit:contain; object-position:center; }
-      button.sb-popup-logo-ready { padding:4px 10px; gap:0; }
+        .sb-popup-button-logo { display:none; max-width:100%; width:330px;
+        height:66px; object-fit:contain; object-position:center; }
+      button.sb-popup-logo-ready { min-height:78px; padding:5px 10px; gap:0; }
       button.sb-popup-logo-ready .sb-popup-button-logo { display:block; }
       button[data-logo-mode="vertical"].sb-popup-logo-ready { min-height:120px; }
       button[data-logo-mode="vertical"] .sb-popup-button-logo { width:190px; height:110px; }
@@ -147,8 +147,8 @@ class StreamingBrowserPopupCard extends HTMLElement {
           flex: 0 0 auto; padding: 8px 12px 8px 18px; min-height: 40px;
           border-bottom: 1px solid var(--divider-color, #8884); }
         .sb-popup-heading { font: inherit; font-size: 16px; font-weight: 600; }
-      .sb-popup-heading-logo { display:block; width:188px; max-width:45vw;
-        height:44px; object-fit:contain; object-position:left center; }
+      .sb-popup-heading-logo { display:block; width:330px; max-width:56vw;
+                  height:65px; object-fit:contain; object-position:left center; }
       .sb-popup-heading-logo[hidden], .sb-popup-heading span[hidden] { display:none; }
         .sb-popup-close { width: 40px; height: 40px; display: grid; place-items: center;
           cursor: pointer; border: 0; border-radius: 50%; color: var(--primary-text-color);
