@@ -10,9 +10,9 @@
   if (!Card || !Popup || !Editor || window.__streamingBrowserLogoBranding) return;
   window.__streamingBrowserLogoBranding = true;
 
-  const HORIZONTAL = '/streaming_browser/assets/streaming-browser-horizontal.webp?v=0.4.114';
-  const VERTICAL = '/streaming_browser/assets/streaming-browser-vertical.webp?v=0.4.114';
-  const ICON = '/streaming_browser/assets/streaming-browser-icon.webp?v=0.4.114';
+  const HORIZONTAL = '/streaming_browser/assets/streaming-browser-horizontal.webp?v=0.4.115';
+  const VERTICAL = '/streaming_browser/assets/streaming-browser-vertical.webp?v=0.4.115';
+  const ICON = '/streaming_browser/assets/streaming-browser-icon.webp?v=0.4.115';
   const asset = (config, kind) => {
     const name = kind === 'vertical' ? 'vertical' : kind === 'icon' ? 'icon' : 'horizontal';
     const defaults = { horizontal: HORIZONTAL, vertical: VERTICAL, icon: ICON };
@@ -54,7 +54,7 @@
       style(this.shadowRoot, `
         .top > .title { display:flex; align-items:center; flex-wrap:nowrap; gap:7px; min-width:0; }
         .top > .title .sb-brand-horizontal { display:block; width:clamp(115px,18vw,230px);
-          height:46px; max-width:100%; object-fit:cover; object-position:center; }
+          height:46px; max-width:100%; object-fit:contain; object-position:center; }
         .top > .title .sb-brand-horizontal[hidden],
         .top > .title .sb-brand-fallback[hidden] { display:none; }
         .top > .title .card-version { flex:0 0 auto; }
@@ -82,7 +82,7 @@
       style(dialog, `
         .sb-popup-heading { display:flex; align-items:center; min-width:0; }
         .sb-popup-heading-logo { display:block; width:190px; max-width:48vw; height:38px;
-          object-fit:cover; object-position:center; }
+          object-fit:contain; object-position:center; }
         .sb-popup-heading-logo[hidden], .sb-popup-heading span[hidden] { display:none; }
       `);
     }
@@ -110,7 +110,7 @@
     button.dataset.logoMode = mode;
     style(this.shadowRoot, `
       button[data-logo-mode] { overflow:hidden; position:relative; }
-      .sb-popup-button-logo { display:none; width:100%; object-fit:cover; object-position:center; }
+      .sb-popup-button-logo { display:none; width:100%; object-fit:contain; object-position:center; }
       button.sb-popup-logo-ready { padding:4px 9px; }
       button.sb-popup-logo-ready .sb-popup-button-logo { display:block; }
       button[data-logo-mode="horizontal"].sb-popup-logo-ready { min-height:55px; }
