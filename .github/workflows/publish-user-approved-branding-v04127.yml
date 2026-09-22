@@ -1,0 +1,84 @@
+name: Publish user-approved Streaming Browser logos v0.4.127
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'branding/*.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Import the three exact approved original PNGs
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import hashlib
+          import json
+
+          root = Path('custom_components/streaming_browser')
+          asset_dir = root / 'frontend' / 'assets'
+          manifest = root / 'manifest.json'
+          popup = root / 'frontend' / 'streaming-browser-popup-card.js'
+          v2 = root / 'frontend' / 'streaming-browser-card-v2.js'
+          archives = sorted(Path('branding').glob('*.zip'))
+          assert len(archives) == 1, 'Place exactly one approved logo ZIP in branding/'
+          expected = {
+              'icon': ('Streaming Browser Logo Icon.png', 'a63dc460cc3eb6f5f31e9549fb479904bf4d25758f6ba1425b90681f612ce7a8'),
+              'vertical': ('Streaming Browser Logo Vertical(1).png', '0b5c9c47edd941dab690d4f0bbba32ef16aa1616835bc3924a62e29192df133f'),
+              'horizontal': ('Streaming Browser Logo Horizontal(1).png', '0a82c01fa653840be9c0b1c86316fa1bd570c789e19a1eef09e4f5790e62e629'),
+          }
+          data = json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version'] == '0.4.126', f"Unexpected version: {data['version']}"
+          with ZipFile(archives[0]) as package:
+              for kind, (source, expected_sha256) in expected.items():
+                  original = package.read(source)
+                  assert original.startswith(b'\x89PNG\r\n\x1a\n'), f'Not a PNG: {source}'
+                  assert hashlib.sha256(original).hexdigest() == expected_sha256, f'Wrong image: {source}'
+                  for name in (f'streaming-browser-{kind}-v127.png', f'streaming-browser-{kind}.png'):
+                      (asset_dir / name).write_bytes(original)
+          for path in (popup, v2):
+              text = path.read_text(encoding='utf-8')
+              for kind in expected:
+                  text = text.replace(f'streaming-browser-{kind}-v124.png', f'streaming-browser-{kind}-v127.png')
+              text = text.replace('?v=0.4.125', '?v=0.4.127').replace('?v=0.4.126', '?v=0.4.127')
+              if path == v2:
+                  old = 'const STREAMING_BROWSER_VERSION = "0.4.126";'
+                  assert text.count(old) == 1, 'V2 version marker changed; inspect before releasing'
+                  text = text.replace(old, 'const STREAMING_BROWSER_VERSION = "0.4.127";')
+              path.write_text(text, encoding='utf-8')
+          for kind in expected:
+              assert f'streaming-browser-{kind}-v127.png?v=0.4.127' in popup.read_text(encoding='utf-8')
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.127";' in v2.read_text(encoding='utf-8')
+          data['version'] = '0.4.127'
+          manifest.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+          print('PASS: all three full-resolution uploaded originals verified byte-for-byte and installed')
+          PY
+      - name: Validate card scripts and manifest
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json > /dev/null
+          python3 -m compileall -q custom_components/streaming_browser
+      - name: Commit and publish HACS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/assets custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.127: publish exact approved transparent Streaming Browser logos'
+          git push origin HEAD:main
+          gh release create v0.4.127 branding/*.zip --target "$(git rev-parse HEAD)" --title 'v0.4.127' --notes 'Publish the three exact user-approved full-resolution transparent PNGs for icon-only, vertical and horizontal Streaming Browser branding. Update bundled card references and cache busting; launcher sizing and playback remain unchanged. Original image package attached to this release.'
