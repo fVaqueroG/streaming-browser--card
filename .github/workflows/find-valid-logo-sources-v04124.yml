@@ -1,0 +1,38 @@
+name: Find decodable logo source art across recent versions
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/find-valid-logo-sources-v04124.yml
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Probe image integrity in tags
+        run: |
+          python3 -m pip install --quiet Pillow
+          python3 - <<'PY'
+          import subprocess, io
+          from PIL import Image
+          names=['frontend/assets/streaming-browser-horizontal.png','frontend/assets/streaming-browser-vertical.png','frontend/assets/streaming-browser-icon.png','brand/logo.png','brand/icon.png']
+          base='custom_components/streaming_browser/'
+          for n in range(112,124):
+            tag=f'v0.4.{n}'
+            for name in names:
+              try:
+                raw=subprocess.check_output(['git','show',f'{tag}:{base}{name}'],stderr=subprocess.DEVNULL)
+              except subprocess.CalledProcessError:
+                continue
+              try:
+                im=Image.open(io.BytesIO(raw)).convert('RGBA')
+                im.load()
+                bbox=im.getchannel('A').getbbox()
+                print('VALID',tag,name,'size',im.size,'bbox',bbox,'bytes',len(raw),flush=True)
+              except Exception as exc:
+                print('BROKEN',tag,name,'bytes',len(raw),'error',type(exc).__name__,str(exc),flush=True)
+          PY
