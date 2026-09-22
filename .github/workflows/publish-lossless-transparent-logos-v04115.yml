@@ -1,0 +1,84 @@
+name: Publish transparent Streaming Browser logos v0.4.115
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'custom_components/streaming_browser/frontend/assets/streaming-browser-*.webp'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: streaming-browser-logo-04115
+  cancel-in-progress: false
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Install image validator
+        run: python3 -m pip install --quiet Pillow
+      - name: Confirm real transparent lossless images and crop bounds
+        run: |
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          root = Path('custom_components/streaming_browser/frontend/assets')
+          for kind in ('horizontal', 'vertical', 'icon'):
+              p = root / f'streaming-browser-{kind}.webp'
+              data = p.read_bytes()
+              assert data[:4] == b'RIFF' and data[8:12] == b'WEBP'
+              assert b'VP8L' in data[:60], f'{kind}: WebP image must be encoded losslessly'
+              assert len(data) > 5000, f'{kind}: source asset looks like an older placeholder'
+              image = Image.open(p).convert('RGBA')
+              alpha = image.getchannel('A')
+              lo, hi = alpha.getextrema()
+              assert lo == 0 and hi == 255, f'{kind}: missing true transparency'
+              bbox = alpha.getbbox()
+              assert bbox is not None
+              x0, y0, x1, y1 = bbox
+              assert min(x0, y0, image.width-x1, image.height-y1) <= 8, f'{kind}: too much empty margin'
+              print(f'PASS {kind}: {image.width}x{image.height}, {len(data)} bytes, transparent VP8L')
+          PY
+      - name: Version frontend resources and preserve both cards
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('custom_components/streaming_browser')
+          mf = root / 'manifest.json'
+          data = json.loads(mf.read_text())
+          assert data['version'] in ('0.4.114','0.4.115')
+          data['version'] = '0.4.115'
+          mf.write_text(json.dumps(data, indent=2) + '\n')
+          branding = root / 'frontend/streaming-browser-branding.js'
+          js = branding.read_text()
+          js = js.replace('?v=0.4.114', '?v=0.4.115')
+          js = js.replace('object-fit:cover;', 'object-fit:contain;')
+          branding.write_text(js)
+          v2 = root / 'frontend/streaming-browser-card-v2.js'
+          js = v2.read_text().replace('const STREAMING_BROWSER_VERSION = "0.4.114";', 'const STREAMING_BROWSER_VERSION = "0.4.115";')
+          v2.write_text(js)
+          PY
+          node --check custom_components/streaming_browser/frontend/streaming-browser-branding.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m compileall -q custom_components/streaming_browser
+      - name: Release validated logo assets through HACS
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.4.115 >/dev/null 2>&1; then
+            echo 'v0.4.115 already published; refusing to replace a tagged release'
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/manifest.json \
+            custom_components/streaming_browser/frontend/streaming-browser-branding.js \
+            custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'v0.4.115: lossless transparent trimmed Streaming Browser logos'
+          git push origin HEAD:main
+          gh release create v0.4.115 --target "$(git rev-parse HEAD)" --title v0.4.115 \
+            --notes 'Replace all three locally served Streaming Browser logos with transparent, tightly trimmed, lossless WebP artwork. Keeps the existing full V2 card and popup card configurations, and fixes their logo object-fit cropping. Update through HACS Integration and restart Home Assistant.'
