@@ -1,0 +1,49 @@
+name: Publish Streaming Browser v0.4.121
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-v04121.yml'
+permissions:
+  contents: write
+jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate current integration
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('custom_components/streaming_browser')
+          assert json.loads((root/'manifest.json').read_text())['version']=='0.4.121'
+          for path in [
+            root/'brand/icon.png',
+            root/'brand/logo.png',
+            root/'frontend/assets/streaming-browser-horizontal.png',
+            root/'frontend/assets/streaming-browser-vertical.png',
+            root/'frontend/assets/streaming-browser-icon.png',
+          ]:
+            assert path.is_file() and path.stat().st_size > 0, path
+            print('OK', path, path.stat().st_size)
+          popup=(root/'frontend/streaming-browser-popup-card.js').read_text()
+          v2=(root/'frontend/streaming-browser-card-v2.js').read_text()
+          assert '?v=0.4.121' in popup
+          assert 'STREAMING_BROWSER_VERSION = "0.4.121"' in v2
+          print('PASS v0.4.121 assets and cache version')
+          PY
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m compileall -q custom_components/streaming_browser
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.4.121 >/dev/null 2>&1; then
+            echo "v0.4.121 already exists"
+            exit 0
+          fi
+          gh release create v0.4.121 --target "$(git rev-parse HEAD)" --title "v0.4.121" --notes "Update Streaming Browser to the latest generated horizontal, vertical, and icon logo assets across both Lovelace card branding and Home Assistant integration branding. Keep the larger horizontal placement introduced in v0.4.119. This release also includes the current popup auto-close setting already present on main. Update through HACS, restart Home Assistant, and hard-refresh the dashboard."
