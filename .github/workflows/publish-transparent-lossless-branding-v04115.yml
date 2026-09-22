@@ -1,0 +1,137 @@
+name: Publish transparent lossless Streaming Browser logos v0.4.115
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-transparent-lossless-branding-v04115.yml'
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Install Pillow
+        run: python3 -m pip install --user Pillow
+      - name: Remove connected light backgrounds, trim and losslessly export logo assets
+        run: |
+          python3 - <<'PY'
+          from collections import deque
+          from pathlib import Path
+          from PIL import Image
+
+          asset_dir = Path('custom_components/streaming_browser/frontend/assets')
+          for kind in ('horizontal', 'vertical', 'icon'):
+              path = asset_dir / f'streaming-browser-{kind}.webp'
+              image = Image.open(path).convert('RGBA')
+              width, height = image.size
+              pixel = image.load()
+              # Only remove the near-white backdrop connected to the outside.
+              # Enclosed white icons / white text details remain opaque.
+              light = bytearray(width * height)
+              for y in range(height):
+                  for x in range(width):
+                      r, g, b, a = pixel[x, y]
+                      light[y * width + x] = (a < 16 or (min(r, g, b) >= 232 and max(r, g, b) - min(r, g, b) <= 23))
+              queue = deque()
+              seen = bytearray(width * height)
+              def enqueue(x, y):
+                  i = y * width + x
+                  if light[i] and not seen[i]:
+                      seen[i] = 1
+                      queue.append((x, y))
+              for x in range(width):
+                  enqueue(x, 0)
+                  enqueue(x, height - 1)
+              for y in range(height):
+                  enqueue(0, y)
+                  enqueue(width - 1, y)
+              while queue:
+                  x, y = queue.popleft()
+                  if x: enqueue(x - 1, y)
+                  if x + 1 < width: enqueue(x + 1, y)
+                  if y: enqueue(x, y - 1)
+                  if y + 1 < height: enqueue(x, y + 1)
+              backdrop_pixels = sum(seen)
+              if backdrop_pixels < (width * height) // 100:
+                  raise RuntimeError(f'{kind}: image has no removable light backdrop; refusing ambiguous conversion')
+              for y in range(height):
+                  for x in range(width):
+                      if seen[y * width + x]:
+                          r, g, b, _ = pixel[x, y]
+                          pixel[x, y] = (r, g, b, 0)
+              bbox = image.getchannel('A').getbbox()
+              if not bbox:
+                  raise RuntimeError(f'{kind}: background removal erased the logo')
+              image = image.crop(bbox)
+              image.save(path, format='WEBP', lossless=True, method=6, exact=True)
+              check = Image.open(path).convert('RGBA')
+              assert check.getchannel('A').getextrema() == (0, 255), kind
+              assert check.getchannel('A').getbbox() == (0, 0, *check.size), kind
+              print(f'PASS {kind}: {width}x{height} -> {check.width}x{check.height}, transparent lossless WebP, {path.stat().st_size} bytes')
+          PY
+      - name: Bump card, manifest, and logo URL versions without changing card settings
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base = Path('custom_components/streaming_browser')
+          manifest_path = base / 'manifest.json'
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          assert manifest['version'] == '0.4.114', manifest['version']
+          manifest['version'] = '0.4.115'
+          manifest_path.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+          v2 = base / 'frontend/streaming-browser-card-v2.js'
+          text = v2.read_text(encoding='utf-8')
+          old = 'const STREAMING_BROWSER_VERSION = "0.4.114";'
+          assert text.count(old) == 1
+          v2.write_text(text.replace(old, 'const STREAMING_BROWSER_VERSION = "0.4.115";', 1), encoding='utf-8')
+          branding = base / 'frontend/streaming-browser-branding.js'
+          text = branding.read_text(encoding='utf-8')
+          for name in ('horizontal', 'vertical', 'icon'):
+              old = f'/streaming_browser/assets/streaming-browser-{name}.webp?v=0.4.114'
+              assert text.count(old) == 1, old
+              text = text.replace(old, f'/streaming_browser/assets/streaming-browser-{name}.webp?v=0.4.115', 1)
+          # Cropped transparent art must be contained, not zoomed/cropped again in CSS.
+          text = text.replace('object-fit:cover;', 'object-fit:contain;')
+          branding.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate JS, Python, alpha transparency and lossless WebP metadata
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-branding.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m compileall -q custom_components/streaming_browser
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          base = Path('custom_components/streaming_browser')
+          assert json.loads((base / 'manifest.json').read_text())['version'] == '0.4.115'
+          branding = (base / 'frontend/streaming-browser-branding.js').read_text()
+          assert branding.count('webp?v=0.4.115') == 3
+          assert 'object-fit:cover;' not in branding
+          for name in ('horizontal', 'vertical', 'icon'):
+              path = base / 'frontend/assets' / f'streaming-browser-{name}.webp'
+              img = Image.open(path)
+              alpha = img.convert('RGBA').getchannel('A')
+              assert alpha.getextrema() == (0, 255)
+              assert alpha.getbbox() == (0, 0, *img.size)
+              assert img.info.get('lossless') is True or (path.read_bytes().find(b'VP8L') != -1), name
+          print('PASS v0.4.115 transparent, trimmed, lossless bundled assets and card scripts')
+          PY
+      - name: Commit assets and publish the versioned HACS release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/assets custom_components/streaming_browser/frontend/streaming-browser-branding.js custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.115: transparent, tightly cropped, lossless WebP brand assets'
+          git push origin HEAD:main
+          gh release create v0.4.115 --target "$(git rev-parse HEAD)" --title v0.4.115 --notes 'Refresh all three bundled Streaming Browser logos with transparency, tight cropping and lossless WebP encoding. Logo URLs are versioned to invalidate stale dashboard caches; existing V2 and popup configurations and four button appearances are unchanged. Assets remain bundled with and served locally by Home Assistant; no image hosting or manual downloads are needed. Update via HACS, restart Home Assistant and refresh your dashboard.'
