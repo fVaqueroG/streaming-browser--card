@@ -1,7 +1,7 @@
 /* Streaming Browser branding extension.
- * Official compact WebP logos ship with the integration and are served locally
- * by Home Assistant. Explicit custom logo URLs are still supported.
- * Missing images fall back to the existing accessible icon/text.
+ * Uses the approved transparent-background PNG logo set created for Streaming Browser.
+ * Assets ship with the integration and are served locally by Home Assistant.
+ * Explicit custom logo URLs remain supported.
  */
 (() => {
   const Card = customElements.get('streaming-browser-card-v2');
@@ -10,9 +10,9 @@
   if (!Card || !Popup || !Editor || window.__streamingBrowserLogoBranding) return;
   window.__streamingBrowserLogoBranding = true;
 
-  const HORIZONTAL = '/streaming_browser/assets/streaming-browser-horizontal.webp?v=0.4.115';
-  const VERTICAL = '/streaming_browser/assets/streaming-browser-vertical.webp?v=0.4.115';
-  const ICON = '/streaming_browser/assets/streaming-browser-icon.webp?v=0.4.115';
+  const HORIZONTAL = '/streaming_browser/assets/streaming-browser-horizontal.png?v=0.4.117';
+  const VERTICAL = '/streaming_browser/assets/streaming-browser-vertical.png?v=0.4.117';
+  const ICON = '/streaming_browser/assets/streaming-browser-icon.png?v=0.4.117';
   const asset = (config, kind) => {
     const name = kind === 'vertical' ? 'vertical' : kind === 'icon' ? 'icon' : 'horizontal';
     const defaults = { horizontal: HORIZONTAL, vertical: VERTICAL, icon: ICON };
