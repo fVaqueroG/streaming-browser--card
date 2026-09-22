@@ -10,6 +10,7 @@ Browse TMDB movie and TV catalogs, choose streaming providers, review movie and 
 
 ## Recent release highlights
 
+- **v0.4.121 — Latest generated logos + popup timeout:** Replaces the active horizontal, vertical, and icon branding files with the latest generated versions. The popup card now auto-closes after a configurable number of minutes (default 2); set the value to 0 to require manual close. Existing room, catalog, remote, and playback configuration is unchanged.
 - **v0.4.117 — Approved transparent branding:** Replaces the temporary background-removed WebP artwork with the previously approved transparent-background Streaming Browser PNG logos. The icon-only mark is used for integration/repository branding, the horizontal logo for headers, and the vertical logo remains available for the popup button. All branding assets are bundled and served locally by Home Assistant.
 - **v0.4.93 — Netflix Android TV ADB playback:** For a room with an explicitly configured ADB media player, the TV Play button uses the selected Netflix movie/episode ID with `am start -a android.intent.action.VIEW -d http://www.netflix.com/watch/<id> --es source 30 -n com.netflix.ninja/.MainActivity`. No follow-up keyevent, Play button, restart, or forced profile navigation. Validated /watch/ episode URLs must match the selected episode; movie /title/ URLs (including regional paths) are accepted. Netflix on webOS and other providers are unchanged.
 
