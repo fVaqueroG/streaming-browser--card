@@ -1,0 +1,52 @@
+name: Publish Streaming Browser larger horizontal logo v0.4.119 retry
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-horizontal-logo-sizing-v04119-retry.yml'
+permissions:
+  contents: write
+jobs:
+  build-verify-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Install image and workflow tools
+        run: python3 -m pip install --quiet Pillow PyYAML
+      - name: Apply corrected horizontal-logo integration update
+        run: |
+          python3 - <<'PY'
+          import yaml
+          import subprocess
+          from pathlib import Path
+          original = yaml.safe_load(Path('.github/workflows/publish-horizontal-logo-sizing-v04119.yml').read_text())
+          source = original['jobs']['build-verify-publish']['steps'][2]['run']
+          before = 'width:188px; max-width:45vw;\\n                  height:44px;'
+          after = 'width:188px; max-width:45vw;\\n        height:44px;'
+          assert source.count(before) == 1, 'Expected unique prior CSS matching expression'
+          corrected = source.replace(before, after)
+          subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', corrected], check=True)
+          PY
+      - name: Run the original validation suite against corrected changes
+        run: |
+          python3 - <<'PY'
+          import yaml
+          import subprocess
+          from pathlib import Path
+          original = yaml.safe_load(Path('.github/workflows/publish-horizontal-logo-sizing-v04119.yml').read_text())
+          validation = original['jobs']['build-verify-publish']['steps'][3]['run']
+          subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', validation], check=True)
+          PY
+      - name: Commit validated changes and publish HACS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/assets/streaming-browser-horizontal.png custom_components/streaming_browser/brand/logo.png custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.119: crop transparent horizontal logo and enlarge card headers and button'
+          git push origin HEAD:main
+          gh release view v0.4.119 >/dev/null 2>&1 || gh release create v0.4.119 --target "$(git rev-parse HEAD)" --title v0.4.119 --notes 'Crop the approved transparent horizontal Streaming Browser artwork to remove empty padding; increase logo size in the full V2 card header, popup header and horizontal popup button. Keep vertical and icon-only logos, editor, rooms, catalog and playback unchanged. Update through HACS, restart Home Assistant, and hard-refresh the dashboard.'
