@@ -1,0 +1,30 @@
+name: Publish Streaming Browser dropdown fix v0.4.139
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-editor-dropdown-fix-v04139.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate visual editor and version alignment
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          grep -q '"version": "0.4.139"' custom_components/streaming_browser/manifest.json
+          grep -q 'const STREAMING_BROWSER_VERSION = "0.4.139";' custom_components/streaming_browser/frontend/streaming-browser-card.js
+      - name: Remove one-time workflow and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/publish-editor-dropdown-fix-v04139.yml
+          git commit -m 'Finalize v0.4.139 visual editor stability release'
+          git push origin HEAD:main
+          gh release create v0.4.139 --target "$(git rev-parse HEAD)" --title v0.4.139 --notes 'Prevent Home Assistant state refreshes and configuration echoes from dismissing dropdown menus within the Streaming Browser V2 and popup visual editors. Normal popup closing behavior remains unchanged.'
