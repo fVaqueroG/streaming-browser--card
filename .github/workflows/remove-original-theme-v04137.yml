@@ -1,0 +1,132 @@
+name: Remove Original theme and publish Streaming Browser v0.4.137
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/remove-original-theme-v04137.yml'
+permissions:
+  contents: write
+concurrency:
+  group: streaming-browser-v04137-remove-original
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Remove Original theme from both menus and migrate legacy settings
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root = Path('custom_components/streaming_browser')
+          manifest = root / 'manifest.json'
+          data = json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version'] == '0.4.136', f"Version changed to {data['version']}; inspect before release"
+          card_path = root / 'frontend/streaming-browser-card-v2.js'
+          card = card_path.read_text(encoding='utf-8')
+          def card_once(old, new):
+              global card
+              assert card.count(old) == 1, f'Unexpected V2 source for {old[:100]!r}: {card.count(old)}'
+              card = card.replace(old, new, 1)
+          card_once('const STREAMING_BROWSER_VERSION = "0.4.133";', 'const STREAMING_BROWSER_VERSION = "0.4.137";')
+          card_once('                    { value: "original", label: "Original · Corporate" },\n', '')
+          # The visual editor must also display a valid choice for saved cards
+          # with appearance: original, or cards that have never set appearance.
+          anchor = '''      ...config,
+            };
+            const changed = JSON.stringify(previous) !== JSON.stringify(next);'''
+          # Actual source uses four-space indentation; match the unique editor block.
+          anchor = '''      ...config,
+            };
+            const changed = JSON.stringify(previous) !== JSON.stringify(next);'''
+          editor_start = card.index('class StreamingBrowserV2CardEditor extends HTMLElement')
+          editor = card[editor_start:]
+          old = '''      ...config,
+            };
+            const changed = JSON.stringify(previous) !== JSON.stringify(next);'''
+          # Match indentation-independent, but only inside this editor's setConfig.
+          assert editor.count('      ...config,\n    };\n    const changed = JSON.stringify(previous) !== JSON.stringify(next);') == 1
+          editor = editor.replace('      ...config,\n    };\n    const changed = JSON.stringify(previous) !== JSON.stringify(next);',
+             '      ...config,\n      appearance: ["light", "dark", "system"].includes(config?.appearance)\n        ? config.appearance : "system",\n    };\n    const changed = JSON.stringify(previous) !== JSON.stringify(next);', 1)
+          card = card[:editor_start] + editor
+          card_path.write_text(card, encoding='utf-8')
+
+          appearance_path = root / 'frontend/streaming-browser-appearance.js'
+          app = appearance_path.read_text(encoding='utf-8')
+          def app_once(old, new):
+              global app
+              assert app.count(old) == 1, f'Unexpected appearance source {old[:100]!r}: {app.count(old)}'
+              app = app.replace(old, new, 1)
+          app_once("const MODES = ['original', 'light', 'dark', 'system'];",
+                   "const MODES = ['light', 'dark', 'system'];")
+          app_once("const LABELS = {original:'Original', light:'Light', dark:'Dark', system:'System'};",
+                   "const LABELS = {light:'Light', dark:'Dark', system:'System'};")
+          app_once("const raw = element?._sbAppearancePreview ?? element?._config?.appearance ?? 'original';",
+                   "const raw = element?._sbAppearancePreview ?? element?._config?.appearance ?? 'system';")
+          app_once("return MODES.includes(raw) ? raw : 'original';",
+                   "return MODES.includes(raw) ? raw : 'system';")
+          start = app.index('    // Original always preserves the approved light corporate brand board,')
+          end = app.index('\n  }\n  function setPalette', start)
+          app = app[:start] + '''    // Legacy Original/unknown values follow Home Assistant instead of
+            // restoring the removed light corporate theme.
+            return {name: haIsDark(hass) ? 'dark' : 'light', values: null};''' + app[end:]
+          app_once("              {value:'original', label:'Original · Corporate'},\n", '')
+          appearance_path.write_text(app, encoding='utf-8')
+
+          data['version'] = '0.4.137'
+          manifest.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+          assert 'appearance: ["light", "dark", "system"].includes(config?.appearance)' in card
+          assert '{ value: "original", label:' not in card
+          assert "{value:'original', label:" not in app
+          assert "const MODES = ['light', 'dark', 'system'];" in app
+          assert 'streaming-browser-horizontal-v131.png' in card
+          assert (root/'frontend/streaming-browser-popup-card.js').is_file()
+          for kind in ('horizontal','vertical','icon'):
+              assert (root/'frontend/assets'/f'streaming-browser-{kind}-v131.png').is_file(), kind
+          print('PASS: only Light, Dark, System in both menus; legacy Original resolves to System; original logos and popup preserved')
+          PY
+      - name: Verify syntax, selection and backward compatibility
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-appearance.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json > /dev/null
+          python3 -m py_compile custom_components/streaming_browser/__init__.py
+          node <<'JS'
+          const fs = require('fs');
+          const vm = require('vm');
+          const card = fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card-v2.js','utf8');
+          const app = fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-appearance.js','utf8');
+          const form = card.slice(card.indexOf('static getConfigForm('),card.indexOf('static getConfigForm(')+12000);
+          if (form.includes('{ value: "original", label:')) throw Error('Original remains in visual editor');
+          for (const mode of ['light','dark','system']) if (!form.includes(`value: "${mode}"`)) throw Error('Missing '+mode);
+          if (app.includes("{value:'original', label:")) throw Error('Original remains in late editor');
+          const snippet = app.slice(app.indexOf('  const MODES ='),app.indexOf('  function setPalette('));
+          const evaluate = vm.runInNewContext(snippet+'\n({modeOf, palette})', {document:{documentElement:{classList:{contains:()=>false}},body:{classList:{contains:()=>false}}}});
+          for (const raw of [undefined,'original','unknown']) {
+            const element = {_config:{appearance:raw}};
+            if (evaluate.modeOf(element) !== 'system') throw Error('legacy appearance not mapped to System: '+raw);
+          }
+          for (const value of ['light','dark','system']) if (evaluate.modeOf({_config:{appearance:value}})!==value) throw Error('valid mode changed');
+          if (evaluate.palette('system',{themes:{darkMode:true}}).name!=='dark') throw Error('HA dark mode mismatch');
+          if (evaluate.palette('system',{themes:{darkMode:false}}).name!=='light') throw Error('HA light mode mismatch');
+          console.log('PASS: native form has exactly three choices; header excludes Original; legacy fallback and HA dark/light work');
+          JS
+          git diff --name-only | tee /tmp/theme-changes.txt
+          if grep -E 'frontend/assets/|streaming-browser-popup-card.js|streaming-browser-branding.js' /tmp/theme-changes.txt; then echo 'Protected assets/popup changed'; exit 1; fi
+      - name: Publish HACS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/frontend/streaming-browser-appearance.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.137: remove Original theme and use System for existing cards'
+          git push origin HEAD:main
+          gh release create v0.4.137 --target "$(git rev-parse HEAD)" --title v0.4.137 --notes 'Theme choices are now Light, Dark and System in the native visual editor and card header. Existing cards saved with Original, or without a theme, automatically use System (Home Assistant theme) without editing YAML. Popup card, transparent approved logos, other settings and playback unchanged. Update via HACS, restart Home Assistant, refresh dashboard.'
