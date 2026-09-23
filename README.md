@@ -221,3 +221,7 @@ Horizontal, vertical, and icon-only WebP logos are included with the HACS integr
 ### Integration icon (v0.4.116)
 
 The official icon-only catalog logo is included as transparent 256/512 px PNG icons in `custom_components/streaming_browser/brand/`; the horizontal branding is included as standard/HiDPI `logo.png` files. Home Assistant 2026.3+ uses these local brand assets on its integration pages. The HACS repository listing may still show a placeholder because some HACS versions do not display locally bundled Home Assistant brand assets. The Lovelace header and popup logo assets remain bundled WebP files.
+
+### Appearance (v0.4.132)
+
+Choose **Original**, **Light**, **Dark**, or **System** in the V2 card visual editor under General, or in the V2 card header. The popup button uses the same saved appearance setting through its nested V2 editor. Original is the approved light corporate brand; System follows Home Assistant `hass.themes.darkMode` and inherits its UI palette. A header change previews the appearance for the active dashboard session; to save a default for a card, use Edit card → General → Appearance. The three exact approved logo PNGs and playback routing are unchanged.

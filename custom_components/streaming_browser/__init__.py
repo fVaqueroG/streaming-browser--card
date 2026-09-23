@@ -37,6 +37,9 @@ _POPUP_RESOURCE_URL = f"{_POPUP_CARD_URL}?v={_VERSION}"
 _BRANDING_URL = "/streaming_browser/streaming-browser-branding.js"
 _BRANDING_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-branding.js"
 _BRANDING_RESOURCE_URL = f"{_BRANDING_URL}?v={_VERSION}"
+_APPEARANCE_URL = "/streaming_browser/streaming-browser-appearance.js"
+_APPEARANCE_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-appearance.js"
+_APPEARANCE_RESOURCE_URL = f"{_APPEARANCE_URL}?v={_VERSION}"
 _LOGO_FILES = {(name, version): _INTEGRATION_DIR / "frontend" / "assets" / f"streaming-browser-{name}-{version}.png"
                for version in ("v124", "v127", "v131") for name in ("horizontal", "vertical", "icon")}
 _LOGO_FILES[("horizontal", "v130")] = _INTEGRATION_DIR / "frontend" / "assets" / "streaming-browser-horizontal-v130.png"
@@ -135,6 +138,22 @@ async def _ensure_branding_resource(collection) -> None:
         await collection.async_delete_item(duplicate[CONF_ID])
 
 
+async def _ensure_appearance_resource(collection) -> None:
+    """Register the theme UI after the original corporate-brand module."""
+    matches = [item for item in collection.async_items() or []
+               if str(item.get(CONF_URL) or "").split("?", 1)[0] == _APPEARANCE_URL]
+    if not matches:
+        await collection.async_create_item(
+            {CONF_URL: _APPEARANCE_RESOURCE_URL, CONF_RESOURCE_TYPE_WS: "module"})
+        return
+    primary = matches[0]
+    if primary.get(CONF_URL) != _APPEARANCE_RESOURCE_URL or primary.get(CONF_TYPE) != "module":
+        await collection.async_update_item(
+            primary[CONF_ID], {CONF_URL: _APPEARANCE_RESOURCE_URL, CONF_RESOURCE_TYPE_WS: "module"})
+    for duplicate in matches[1:]:
+        await collection.async_delete_item(duplicate[CONF_ID])
+
+
 async def _register_card(hass: HomeAssistant) -> None:
     """Serve the exact JS bundled with this installed integration version."""
     if not _CARD_FILE.is_file():
@@ -146,6 +165,7 @@ async def _register_card(hass: HomeAssistant) -> None:
     v2_available = _V2_CARD_FILE.is_file()
     popup_available = v2_available and _POPUP_CARD_FILE.is_file()
     branding_available = popup_available and _BRANDING_FILE.is_file()
+    appearance_available = branding_available and _APPEARANCE_FILE.is_file()
     if not v2_available:
         _LOGGER.warning("Streaming Browser V2 bundle is not installed: %s; registering V1 independently", _V2_CARD_FILE)
     if v2_available and not popup_available:
@@ -160,6 +180,8 @@ async def _register_card(hass: HomeAssistant) -> None:
             paths.append(StaticPathConfig(_POPUP_CARD_URL, str(_POPUP_CARD_FILE), cache_headers=False))
         if branding_available:
             paths.append(StaticPathConfig(_BRANDING_URL, str(_BRANDING_FILE), cache_headers=False))
+        if appearance_available:
+            paths.append(StaticPathConfig(_APPEARANCE_URL, str(_APPEARANCE_FILE), cache_headers=False))
         # Served from this integration, not /local or an external image host.
         # Stable versioned URLs allow the browser to cache these tiny assets.
         for (name, version), file in _LOGO_FILES.items():
@@ -181,6 +203,8 @@ async def _register_card(hass: HomeAssistant) -> None:
             frontend.add_extra_js_url(hass, _POPUP_RESOURCE_URL)
         if branding_available:
             frontend.add_extra_js_url(hass, _BRANDING_RESOURCE_URL)
+        if appearance_available:
+            frontend.add_extra_js_url(hass, _APPEARANCE_RESOURCE_URL)
         hass.data[_FRONTEND_REGISTERED_KEY] = True
 
     lovelace = hass.data.get(LOVELACE_DATA)
@@ -228,6 +252,8 @@ async def _register_card(hass: HomeAssistant) -> None:
             await _ensure_popup_resource(collection)
         if branding_available:
             await _ensure_branding_resource(collection)
+        if appearance_available:
+            await _ensure_appearance_resource(collection)
         return
     primary = matches[0]
     if primary.get(CONF_URL) != _RESOURCE_URL or primary.get(CONF_TYPE) != "module":
@@ -243,6 +269,8 @@ async def _register_card(hass: HomeAssistant) -> None:
         await _ensure_popup_resource(collection)
     if branding_available:
         await _ensure_branding_resource(collection)
+    if appearance_available:
+        await _ensure_appearance_resource(collection)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:

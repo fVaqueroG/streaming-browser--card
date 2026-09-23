@@ -136,7 +136,7 @@
     .sb-popup-close:hover { background: var(--secondary-background-color); }
   `;
   function styleOnce(root, id, css) {
-    if (!root || root.getElementById(id)) return;
+    if (!root || root.querySelector('#' + id)) return;
     const style = document.createElement('style');
     style.id = id;
     style.textContent = css;
