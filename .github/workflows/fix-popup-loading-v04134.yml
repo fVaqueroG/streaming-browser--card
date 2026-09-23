@@ -1,0 +1,215 @@
+name: Fix Streaming Browser popup loading v0.4.134
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-popup-loading-v04134.yml'
+permissions:
+  contents: write
+concurrency:
+  group: streaming-browser-v04134-popup-fix
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Isolate popup mounting from theme errors; preserve originals and playback
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root = Path('custom_components/streaming_browser')
+          metadata = root / 'manifest.json'
+          data = json.loads(metadata.read_text(encoding='utf-8'))
+          assert data['version'] == '0.4.133', f"Newer version {data['version']} needs review before updating"
+          popup_path = root / 'frontend/streaming-browser-popup-card.js'
+          popup = popup_path.read_text(encoding='utf-8')
+          old = '''    if (v2Class) {
+                const card = document.createElement('streaming-browser-card-v2');
+                const cardConfig = { ...this._config, type: SB_V2_TYPE };
+                for (const key of SB_POPUP_KEYS) delete cardConfig[key];
+                card.setConfig(cardConfig);
+                card.hass = this._hass;
+                content.appendChild(card);
+                this._innerCard = card;
+              } else {
+                content.innerHTML = '<p class="sb-popup-error">Streaming Browser V2 is not loaded. Reload the Home Assistant dashboard.</p>';
+              }
+          '''
+          # Replace only this exact mount block; keep all player, remote and
+          # dashboard settings. A child render failure must not abort showModal.
+          old = old.replace('                ', '      ').replace('              ', '    ')
+          # Construct from the literal source indentation to avoid silent edits.
+          start = popup.index('    const v2Class = customElements.get(\'streaming-browser-card-v2\');')
+          end = popup.index("    dialog.querySelector('.sb-popup-close').addEventListener", start)
+          block = popup[start:end]
+          assert block.count('const card = document.createElement(\'streaming-browser-card-v2\');') == 1
+          assert block.count('card.setConfig(cardConfig);') == 1
+          assert block.count('content.appendChild(card);') == 1
+          new_block = '''    const v2Class = customElements.get('streaming-browser-card-v2');
+              if (v2Class) {
+                try {
+                  const card = document.createElement('streaming-browser-card-v2');
+                  const cardConfig = { ...this._config, type: SB_V2_TYPE };
+                  for (const key of SB_POPUP_KEYS) delete cardConfig[key];
+                  // The dialog is displayed even if the nested card or a
+                  // frontend extension fails while initializing.
+                  card.setConfig(cardConfig);
+                  card.hass = this._hass;
+                  content.appendChild(card);
+                  this._innerCard = card;
+                } catch (error) {
+                  this._innerCard = null;
+                  content.textContent = '';
+                  const message = document.createElement('p');
+                  message.className = 'sb-popup-error';
+                  message.setAttribute('role', 'alert');
+                  message.textContent = 'Streaming Browser could not load: ' + (error?.message || String(error));
+                  content.appendChild(message);
+                  console.error('Streaming Browser popup: nested card failed to initialize', error);
+                }
+              } else {
+                content.innerHTML = '<p class="sb-popup-error" role="alert">Streaming Browser V2 is not loaded. Reload the Home Assistant dashboard.</p>';
+              }
+          '''
+          popup = popup[:start] + new_block + popup[end:]
+          popup_path.write_text(popup, encoding='utf-8')
+
+          appearance_path = root / 'frontend/streaming-browser-appearance.js'
+          appearance = appearance_path.read_text(encoding='utf-8')
+          def once(old, new):
+              global appearance
+              assert appearance.count(old) == 1, (old[:100], appearance.count(old))
+              appearance = appearance.replace(old, new, 1)
+          once('''      const result = original.apply(this, args);
+                  apply(this);
+                  return result;''', '''      const result = original.apply(this, args);
+                  // Cosmetic styling must NEVER prevent rendering or opening.
+                  try { apply(this); } catch (error) {
+                    console.warn('Streaming Browser: optional appearance styling failed', error);
+                  }
+                  return result;''')
+          once('''        ...desc, set(value) { desc.set.call(this, value); applyCard(this); }''', '''        ...desc, set(value) {
+                  desc.set.call(this, value);
+                  try { applyCard(this); } catch (error) {
+                    console.warn('Streaming Browser: card appearance unavailable', error);
+                  }
+                }''')
+          once('''        ...desc, set(value) { desc.set.call(this, value); applyPopup(this); }''', '''        ...desc, set(value) {
+                  desc.set.call(this, value);
+                  try { applyPopup(this); } catch (error) {
+                    console.warn('Streaming Browser: popup appearance unavailable', error);
+                  }
+                }''')
+          once('''        const result = open.apply(this, args);
+                applyPopup(this);
+                if (this._dialog && !this._dialog.__sbThemeListener) {
+                  this._dialog.__sbThemeListener = true;
+                  this._dialog.addEventListener('sb-appearance-changed', event => {
+                    this._sbAppearancePreview = event.detail.appearance;
+                    applyPopup(this);
+                  });
+                }
+                return result;''', '''        const result = open.apply(this, args);
+                try {
+                  applyPopup(this);
+                  if (this._dialog && !this._dialog.__sbThemeListener) {
+                    this._dialog.__sbThemeListener = true;
+                    this._dialog.addEventListener('sb-appearance-changed', event => {
+                      this._sbAppearancePreview = event.detail.appearance;
+                      try { applyPopup(this); } catch (error) {
+                        console.warn('Streaming Browser: popup theme preview unavailable', error);
+                      }
+                    });
+                  }
+                } catch (error) {
+                  console.warn('Streaming Browser: popup theme styling unavailable', error);
+                }
+                return result;''')
+          appearance_path.write_text(appearance, encoding='utf-8')
+          data['version'] = '0.4.134'
+          metadata.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+          assert 'streaming-browser-horizontal-v131.png?v=0.4.131' in (root/'frontend/streaming-browser-card-v2.js').read_text(encoding='utf-8')
+          for kind in ('horizontal','vertical','icon'):
+            assert (root/'frontend/assets'/f'streaming-browser-{kind}-v131.png').is_file()
+          print('PASS: popup dialog can show initialization errors, cosmetic theme exceptions isolated; brand originals unchanged')
+          PY
+      - name: Browser DOM smoke test for normal and failed inner-card initialization
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-appearance.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-branding.js
+          python3 -m py_compile custom_components/streaming_browser/__init__.py
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          npm install --no-save --silent jsdom@26
+          node <<'JS'
+          const fs = require('fs');
+          const assert = require('assert/strict');
+          const {JSDOM} = require('jsdom');
+          const root='custom_components/streaming_browser/frontend/';
+          async function test(shouldFail) {
+            const dom=new JSDOM('<!doctype html><html><body></body></html>',
+              {url:'http://localhost/',runScripts:'outside-only'});
+            const w=dom.window;
+            Object.defineProperty(w.HTMLDialogElement.prototype,'showModal',{
+              configurable:true,value:function(){this.open=true;}});
+            Object.defineProperty(w.HTMLDialogElement.prototype,'close',{
+              configurable:true,value:function(){this.open=false;this.dispatchEvent(new w.Event('close'));}});
+            class Inner extends w.HTMLElement {
+              setConfig(config) {
+                if (shouldFail) throw new Error('Simulated child rendering error');
+                this.receivedConfig=config;
+              }
+              set hass(value) { this.receivedHass=value; }
+            }
+            w.customElements.define('streaming-browser-card-v2',Inner);
+            w.eval(fs.readFileSync(root+'streaming-browser-popup-card.js','utf8'));
+            w.eval(fs.readFileSync(root+'streaming-browser-appearance.js','utf8'));
+            await new Promise(resolve=>w.setTimeout(resolve,0));
+            const popup=w.document.createElement('streaming-browser-popup-card');
+            popup.setConfig({button_display:'icon_only',button_label:'Streaming',appearance:'dark',
+              tv_entity:'media_player.test',tmdb_api_key:'test',popup_auto_close_minutes:0});
+            popup.hass={themes:{darkMode:true},states:{}};
+            w.document.body.appendChild(popup);
+            const button=popup.shadowRoot.querySelector('button');
+            assert.ok(button,'launcher button renders');
+            button.click();
+            const dialog=w.document.querySelector('dialog.streaming-browser-popup-dialog');
+            assert.ok(dialog,'dialog is created');
+            assert.equal(dialog.open,true,'dialog opens');
+            if (shouldFail) {
+              assert.match(dialog.textContent,/Simulated child rendering error/);
+            } else {
+              const child=dialog.querySelector('streaming-browser-card-v2');
+              assert.ok(child,'full browser card mounts in dialog');
+              assert.equal(child.receivedConfig.tv_entity,'media_player.test');
+              assert.equal(child.receivedConfig.appearance,'dark');
+            }
+            dialog.close();
+            assert.equal(w.document.querySelector('dialog.streaming-browser-popup-dialog'),null,
+              'dialog is removed on close');
+            dom.window.close();
+          }
+          (async()=>{
+            await test(false);
+            await test(true);
+            console.log('PASS: popup launcher, dialog, theme wrapper, existing config, child render and error fallback');
+          })().catch(error=>{console.error(error);process.exitCode=1;});
+          JS
+      - name: Commit popup fix and publish v0.4.134
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/streaming-browser-appearance.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.134: prevent theme errors from blocking Streaming Browser popup'
+          git push origin HEAD:main
+          gh release create v0.4.134 --target "$(git rev-parse HEAD)" --title v0.4.134 --notes 'Popup reliability: isolate cosmetic appearance exceptions from popup opening and show an actionable error inside the dialog if the nested V2 card cannot initialize. Browser DOM smoke tests verify popup opening, selected theme, config forwarding and error fallback. Exact uploaded logos, visual-editor Theme selection, playback and routing unchanged. Restart Home Assistant and hard-refresh the dashboard after updating.'
