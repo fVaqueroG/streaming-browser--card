@@ -1,0 +1,53 @@
+name: Enlarge V2 header logo v0.4.129
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/enlarge-v2-header-logo-v04129.yml']
+permissions:
+  contents: write
+jobs:
+  enlarge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Correct the padded approved horizontal logo rendering
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('custom_components/streaming_browser')
+          path=root/'frontend/streaming-browser-card-v2.js'
+          js=path.read_text(encoding='utf-8')
+          old='style="display:block;max-width:100%;width:clamp(230px,32vw,400px);height:76px;object-fit:contain;object-position:left center;"'
+          new='style="display:block;max-width:100%;width:clamp(230px,32vw,400px);height:76px;object-fit:cover;object-position:center center;"'
+          assert js.count(old)==1, 'Expected the existing V2 logo style exactly once'
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.127";' in js
+          assert '/streaming_browser/assets/streaming-browser-horizontal-v127.png?v=0.4.127' in js
+          js=js.replace(old,new,1)
+          js=js.replace('const STREAMING_BROWSER_VERSION = "0.4.127";', 'const STREAMING_BROWSER_VERSION = "0.4.129";',1)
+          js=js.replace('streaming-browser-horizontal-v127.png?v=0.4.127','streaming-browser-horizontal-v127.png?v=0.4.129',1)
+          path.write_text(js,encoding='utf-8')
+          manifest=root/'manifest.json'
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.128', data['version']
+          data['version']='0.4.129'
+          manifest.write_text(json.dumps(data,indent=2)+'\n',encoding='utf-8')
+          assert (root/'frontend/assets/streaming-browser-horizontal-v127.png').is_file()
+          print('PASS V2 header uses image-cover crop for the transparent canvas; same approved logo, unchanged popup and playback')
+          PY
+      - name: Validate JavaScript and version
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+      - name: Commit and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.129: enlarge approved Streaming Browser logo in V2 header'
+          git push origin HEAD:main
+          gh release create v0.4.129 --target "$(git rev-parse HEAD)" --title 'v0.4.129' --notes 'Fix tiny Streaming Browser V2 header logo: render the original approved horizontal PNG at its intended visible size by cropping the large transparent canvas with object-fit:cover. Preserve image proportions, the three popup launcher layouts, and playback. Refresh HACS and the browser after updating.'
