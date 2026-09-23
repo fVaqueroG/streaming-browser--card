@@ -1,0 +1,123 @@
+name: Publish Streaming Browser appearance selection v0.4.132
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-appearance-v04132.yml']
+permissions:
+  contents: write
+concurrency:
+  group: streaming-browser-v04132-appearance
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Register appearance resource, preserve approved logos, bump version
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('custom_components/streaming_browser')
+          manifest=root/'manifest.json'
+          meta=json.loads(manifest.read_text(encoding='utf-8'))
+          assert meta['version']=='0.4.131', f"Unexpected integration version {meta['version']}; inspect concurrent changes"
+          jsfile=root/'frontend/streaming-browser-appearance.js'
+          js=jsfile.read_text(encoding='utf-8')
+          old='if (!root || root.getElementById(id)) return;'
+          assert js.count(old)==1, 'Appearance helper changed unexpectedly'
+          js=js.replace(old,"if (!root || root.querySelector('#' + id)) return;",1)
+          jsfile.write_text(js,encoding='utf-8')
+          initfile=root/'__init__.py'
+          text=initfile.read_text(encoding='utf-8')
+          def once(old,new):
+              global text
+              assert text.count(old)==1, f'Unexpected __init__.py marker: {old[:85]!r}'
+              text=text.replace(old,new,1)
+          marker='_BRANDING_RESOURCE_URL = f"{_BRANDING_URL}?v={_VERSION}"\n'
+          once(marker,marker+
+            '_APPEARANCE_URL = "/streaming_browser/streaming-browser-appearance.js"\n'
+            '_APPEARANCE_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-appearance.js"\n'
+            '_APPEARANCE_RESOURCE_URL = f"{_APPEARANCE_URL}?v={_VERSION}"\n')
+          anchor='async def _register_card(hass: HomeAssistant) -> None:\n'
+          assert text.count(anchor)==1
+          helper='''async def _ensure_appearance_resource(collection) -> None:
+              """Register the theme UI after the original corporate-brand module."""
+              matches = [item for item in collection.async_items() or []
+                         if str(item.get(CONF_URL) or "").split("?", 1)[0] == _APPEARANCE_URL]
+              if not matches:
+                  await collection.async_create_item(
+                      {CONF_URL: _APPEARANCE_RESOURCE_URL, CONF_RESOURCE_TYPE_WS: "module"})
+                  return
+              primary = matches[0]
+              if primary.get(CONF_URL) != _APPEARANCE_RESOURCE_URL or primary.get(CONF_TYPE) != "module":
+                  await collection.async_update_item(
+                      primary[CONF_ID], {CONF_URL: _APPEARANCE_RESOURCE_URL, CONF_RESOURCE_TYPE_WS: "module"})
+              for duplicate in matches[1:]:
+                  await collection.async_delete_item(duplicate[CONF_ID])
+
+
+          '''
+          # The multiline text above uses natural Python indentation (no dedent needed).
+          once(anchor,helper+anchor)
+          once('    branding_available = popup_available and _BRANDING_FILE.is_file()\n',
+               '    branding_available = popup_available and _BRANDING_FILE.is_file()\n'
+               '    appearance_available = branding_available and _APPEARANCE_FILE.is_file()\n')
+          once('        if branding_available:\n            paths.append(StaticPathConfig(_BRANDING_URL, str(_BRANDING_FILE), cache_headers=False))\n',
+               '        if branding_available:\n            paths.append(StaticPathConfig(_BRANDING_URL, str(_BRANDING_FILE), cache_headers=False))\n'
+               '        if appearance_available:\n            paths.append(StaticPathConfig(_APPEARANCE_URL, str(_APPEARANCE_FILE), cache_headers=False))\n')
+          once('        if branding_available:\n            frontend.add_extra_js_url(hass, _BRANDING_RESOURCE_URL)\n',
+               '        if branding_available:\n            frontend.add_extra_js_url(hass, _BRANDING_RESOURCE_URL)\n'
+               '        if appearance_available:\n            frontend.add_extra_js_url(hass, _APPEARANCE_RESOURCE_URL)\n')
+          marker='        if branding_available:\n            await _ensure_branding_resource(collection)\n        return\n'
+          once(marker,'        if branding_available:\n            await _ensure_branding_resource(collection)\n'
+               '        if appearance_available:\n            await _ensure_appearance_resource(collection)\n        return\n')
+          marker='    if branding_available:\n        await _ensure_branding_resource(collection)\n\n\nasync def async_setup'
+          once(marker,'    if branding_available:\n        await _ensure_branding_resource(collection)\n'
+               '    if appearance_available:\n        await _ensure_appearance_resource(collection)\n\n\nasync def async_setup')
+          initfile.write_text(text,encoding='utf-8')
+          meta['version']='0.4.132'
+          manifest.write_text(json.dumps(meta,indent=2)+'\n',encoding='utf-8')
+          readme=Path('README.md')
+          with readme.open('a',encoding='utf-8') as f:
+              f.write('\n### Appearance (v0.4.132)\n\n'
+                      'Choose **Original**, **Light**, **Dark**, or **System** in the V2 card visual editor under General, or in the V2 card header. '
+                      'The popup button uses the same saved appearance setting through its nested V2 editor. '
+                      'Original is the approved light corporate brand; System follows Home Assistant `hass.themes.darkMode` and inherits its UI palette. '
+                      'A header change previews the appearance for the active dashboard session; to save a default for a card, use Edit card → General → Appearance. '
+                      'The three exact approved logo PNGs and playback routing are unchanged.\n')
+          assert 'for version in ("v124", "v127", "v131")' in text
+          assert 'streaming-browser-horizontal-v131.png?v=0.4.131' in (root/'frontend/streaming-browser-card-v2.js').read_text(encoding='utf-8')
+          print('PASS: appearance module registered after branding; default/original and uploaded v131 logos preserved')
+          PY
+      - name: Validate JavaScript, Python, manifest and mode wiring
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-appearance.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-branding.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m py_compile custom_components/streaming_browser/__init__.py
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          python3 - <<'PY'
+          from pathlib import Path
+          js=Path('custom_components/streaming_browser/frontend/streaming-browser-appearance.js').read_text()
+          assert "const MODES = ['original', 'light', 'dark', 'system']" in js
+          for token in ['hass.themes.darkMode','getConfigForm','sb-appearance-control','sb-appearance-changed','applyPopup']:
+              assert token in js, token
+          print('PASS: all four modes, HA theme sync, popup theme and visual editor bindings present')
+          PY
+      - name: Commit and publish HACS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-appearance.js custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json README.md
+          git commit -m 'v0.4.132: card appearance selection and HA system-theme sync'
+          git push origin HEAD:main
+          gh release create v0.4.132 --target "$(git rev-parse HEAD)" --title v0.4.132 --notes 'Per-card visual editor and header theme selector: Original (approved corporate), Light, Dark, System (follows Home Assistant theme). Popup launcher and dialog inherit selected appearance. Original uploaded v1.0.0 logo assets and all playback settings are unchanged. Restart Home Assistant after updating to register appearance resource, then refresh the dashboard.'
