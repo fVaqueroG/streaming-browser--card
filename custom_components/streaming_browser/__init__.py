@@ -38,7 +38,7 @@ _BRANDING_URL = "/streaming_browser/streaming-browser-branding.js"
 _BRANDING_FILE = _INTEGRATION_DIR / "frontend" / "streaming-browser-branding.js"
 _BRANDING_RESOURCE_URL = f"{_BRANDING_URL}?v={_VERSION}"
 _LOGO_FILES = {(name, version): _INTEGRATION_DIR / "frontend" / "assets" / f"streaming-browser-{name}-{version}.png"
-               for version in ("v124", "v127") for name in ("horizontal", "vertical", "icon")}
+               for version in ("v124", "v127", "v131") for name in ("horizontal", "vertical", "icon")}
 _LOGO_FILES[("horizontal", "v130")] = _INTEGRATION_DIR / "frontend" / "assets" / "streaming-browser-horizontal-v130.png"
 _STATIC_REGISTERED_KEY = f"{DOMAIN}_card_static_registered"
 _FRONTEND_REGISTERED_KEY = f"{DOMAIN}_card_frontend_registered"
