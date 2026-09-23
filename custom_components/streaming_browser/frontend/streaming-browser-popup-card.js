@@ -146,20 +146,20 @@ class StreamingBrowserPopupCard extends HTMLElement {
         .streaming-browser-popup-dialog { box-sizing: border-box; padding: 0; border: 0;
           border-radius: var(--ha-card-border-radius, 16px); overflow: hidden;
           color: var(--primary-text-color); background: var(--card-background-color, #fff);
-          box-shadow: 0 16px 60px #0006; width: min(96vw, 1180px);
-          max-width: 96vw; height: min(92dvh, 1050px); max-height: 92dvh; }
-        .streaming-browser-popup-dialog[data-size="normal"] { width: min(96vw, 850px); }
+          box-shadow: 0 16px 60px #0006; width: min(1440px, calc(100vw - 24px));
+          max-width: calc(100vw - 24px); height: min(900px, calc(100dvh - 24px)); max-height: calc(100dvh - 24px); }
+        .streaming-browser-popup-dialog[data-size="normal"] { width: min(900px, calc(100vw - 24px)); height: min(700px, calc(100dvh - 24px)); }
         .streaming-browser-popup-dialog[data-size="fullscreen"] { width: 100vw;
           max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; }
         .streaming-browser-popup-dialog::backdrop { background: #0009; }
         .sb-popup-layout { display: flex; flex-direction: column; height: 100%; min-height: 0; }
         .sb-popup-header { display: flex; align-items: center; justify-content: space-between;
-          flex: 0 0 auto; padding: 8px 12px 8px 18px; min-height: 40px;
+          box-sizing: border-box; height: 48px; min-height: 48px; flex: 0 0 48px; padding: 0 12px 0 20px; gap: 12px;
           border-bottom: 1px solid var(--divider-color, #8884); }
         .sb-popup-heading { font: inherit; font-size: 16px; font-weight: 600; }
-        .sb-popup-close { width: 40px; height: 40px; display: grid; place-items: center;
+        .sb-popup-close { box-sizing: border-box; flex: 0 0 36px; width: 36px; height: 36px; padding: 0; display: grid; place-items: center;
           cursor: pointer; border: 0; border-radius: 50%; color: var(--primary-text-color);
-          background: transparent; }
+          background: var(--secondary-background-color); }
         .sb-popup-close:hover { background: var(--secondary-background-color); }
         .sb-popup-close:focus-visible { outline: 2px solid var(--primary-color); }
         .sb-popup-content { flex: 1 1 auto; min-height: 0; overflow: auto;
@@ -168,7 +168,8 @@ class StreamingBrowserPopupCard extends HTMLElement {
         .sb-popup-error { padding: 20px; }
         @media (max-width: 600px) {
           .streaming-browser-popup-dialog { width: 100vw !important; max-width: 100vw;
-            height: 100dvh; max-height: 100dvh; border-radius: 0; }
+            height: 100dvh; max-height: 100dvh; border-radius: 0; margin: 0; }
+          .sb-popup-header { height: 44px; min-height: 44px; flex-basis: 44px; padding: 0 8px 0 12px; }
         }
       </style>
       <div class="sb-popup-layout">
