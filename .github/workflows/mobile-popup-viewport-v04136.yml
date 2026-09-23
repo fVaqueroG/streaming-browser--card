@@ -1,0 +1,49 @@
+name: Mobile popup viewport v0.4.136
+'on':
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mobile-popup-viewport-v04136.yml
+permissions:
+  contents: write
+jobs:
+  mobile-popup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preserve matching full-screen viewport on small devices for every size
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root = Path('custom_components/streaming_browser')
+          popup_file = root / 'frontend/streaming-browser-popup-card.js'
+          manifest_file = root / 'manifest.json'
+          source = popup_file.read_text(encoding='utf-8')
+          old = '          .streaming-browser-popup-dialog { width: 100vw !important; max-width: 100vw;\n            height: 100dvh; max-height: 100dvh; border-radius: 0; margin: 0; }'
+          new = '          .streaming-browser-popup-dialog,\n          .streaming-browser-popup-dialog[data-size="normal"],\n          .streaming-browser-popup-dialog[data-size="wide"],\n          .streaming-browser-popup-dialog[data-size="fullscreen"] {\n            width: 100vw !important; max-width: 100vw !important;\n            height: 100dvh !important; max-height: 100dvh !important;\n            border-radius: 0 !important; margin: 0 !important; }'
+          assert source.count(old) == 1, 'Expected mobile CSS not found'
+          source = source.replace(old, new, 1)
+          popup_file.write_text(source, encoding='utf-8')
+          manifest = json.loads(manifest_file.read_text(encoding='utf-8'))
+          assert manifest['version'] == '0.4.135', manifest['version']
+          manifest['version'] = '0.4.136'
+          manifest_file.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+          assert 'height: 48px; min-height: 48px' in source
+          assert 'height: 44px; min-height: 44px' in source
+          print('PASS: Streaming Browser Normal, Wide and Full screen share a full mobile viewport and common header.')
+          PY
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+      - name: Publish v0.4.136
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.136: keep all Streaming Browser popup sizes edge-to-edge on mobile'
+          git push origin HEAD:main
+          gh release create v0.4.136 --target "$(git rev-parse HEAD)" --title 'v0.4.136' --notes 'Finish the cross-integration popup sizing: override Normal/Wide dimensions on mobile with full viewport width and height, retaining the 44px responsive header, 48px desktop header, Normal 900x700 and Wide 1440x900 desktop presets. Brand assets and card configuration unchanged.'
