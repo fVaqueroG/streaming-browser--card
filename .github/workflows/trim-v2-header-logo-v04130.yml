@@ -1,0 +1,85 @@
+name: Trim Streaming Browser V2 header logo v0.4.130
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/trim-v2-header-logo-v04130.yml']
+permissions:
+  contents: write
+jobs:
+  trim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install image validation dependency
+        run: python3 -m pip install --quiet Pillow
+      - name: Crop actual transparent canvas and update V2 header only
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import json
+          root=Path('custom_components/streaming_browser')
+          assets=root/'frontend/assets'
+          original=assets/'streaming-browser-horizontal-v127.png'
+          target=assets/'streaming-browser-horizontal-v130.png'
+          with Image.open(original) as png:
+              rgba=png.convert('RGBA')
+              # Ignore tiny nearly-transparent export artifacts outside the real artwork.
+              visible=rgba.getchannel('A').point(lambda a: 255 if a>=8 else 0).getbbox()
+              assert visible is not None, 'Horizontal logo artwork missing'
+              left,top,right,bottom=visible
+              pad=8
+              box=(max(0,left-pad),max(0,top-pad),min(rgba.width,right+pad),min(rgba.height,bottom+pad))
+              cropped=rgba.crop(box)
+              assert cropped.width>1000 and 5<cropped.width/cropped.height<9, (rgba.size,visible,cropped.size)
+              cropped.save(target,format='PNG',optimize=True)
+              print(f'Logo canvas {rgba.size} -> {cropped.size}; artwork bounds {visible}')
+          js_file=root/'frontend/streaming-browser-card-v2.js'
+          js=js_file.read_text(encoding='utf-8')
+          def once(old,new):
+              global js
+              assert js.count(old)==1, f'Unexpected V2 source {old[:100]!r}'
+              js=js.replace(old,new,1)
+          once('const STREAMING_BROWSER_VERSION = "0.4.129";', 'const STREAMING_BROWSER_VERSION = "0.4.130";')
+          once('/streaming_browser/assets/streaming-browser-horizontal-v127.png?v=0.4.129','/streaming_browser/assets/streaming-browser-horizontal-v130.png?v=0.4.130')
+          once('style="display:block;max-width:100%;width:clamp(230px,32vw,400px);height:76px;object-fit:cover;object-position:center center;"', 'style="display:block;max-width:100%;width:clamp(260px,40vw,460px);height:auto;max-height:76px;object-fit:contain;object-position:left center;"')
+          js_file.write_text(js,encoding='utf-8')
+          init=root/'__init__.py'
+          py=init.read_text(encoding='utf-8')
+          marker='               for version in ("v124", "v127") for name in ("horizontal", "vertical", "icon")}\n'
+          assert py.count(marker)==1, 'Unexpected static logo registry'
+          py=py.replace(marker,marker+'_LOGO_FILES[("horizontal", "v130")] = _INTEGRATION_DIR / "frontend" / "assets" / "streaming-browser-horizontal-v130.png"\n',1)
+          init.write_text(py,encoding='utf-8')
+          manifest=root/'manifest.json'
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.129',data['version']
+          data['version']='0.4.130'
+          manifest.write_text(json.dumps(data,indent=2)+'\n',encoding='utf-8')
+          assert target.is_file() and 'horizontal-v130.png?v=0.4.130' in js
+          print('PASS: cropped actual approved logo, V2 header updated, new static path registered; popup assets unchanged')
+          PY
+      - name: Validate JS, Python and cropped image
+        run: |
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m py_compile custom_components/streaming_browser/__init__.py
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          p=Path('custom_components/streaming_browser/frontend/assets/streaming-browser-horizontal-v130.png')
+          with Image.open(p) as im:
+              im.verify()
+          print('PASS: cropped PNG opens correctly and code syntax valid')
+          PY
+      - name: Commit and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+fVaqueroG@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/assets/streaming-browser-horizontal-v130.png custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.130: physically trim horizontal logo and enlarge V2 header'
+          git push origin HEAD:main
+          gh release create v0.4.130 --target "$(git rev-parse HEAD)" --title v0.4.130 --notes 'Physically trim near-transparent canvas from the approved horizontal Streaming Browser logo and display it up to 460px wide in the V2 header with contain scaling. Register a distinct versioned image path. Popup button logos and playback untouched. Restart Home Assistant after updating to register the new image endpoint.'
