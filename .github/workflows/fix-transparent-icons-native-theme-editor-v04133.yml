@@ -1,0 +1,144 @@
+name: Fix transparent icons and native visual-editor theme selector v0.4.133
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-transparent-icons-native-theme-editor-v04133.yml'
+permissions:
+  contents: write
+concurrency:
+  group: streaming-browser-v04133-visual-theme
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Update visual editor and remove all added logo or icon backgrounds
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, re
+          root = Path('custom_components/streaming_browser')
+          manifest = root / 'manifest.json'
+          data = json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version'] == '0.4.132', f"Unexpected version {data['version']}; review concurrent changes first"
+          card_path = root / 'frontend/streaming-browser-card-v2.js'
+          card = card_path.read_text(encoding='utf-8')
+          def card_once(old, new):
+              global card
+              assert card.count(old) == 1, f'Unexpected card source for {old[:100]!r}: {card.count(old)}'
+              card = card.replace(old, new, 1)
+          card_once('const STREAMING_BROWSER_VERSION = "0.4.131";',
+                    'const STREAMING_BROWSER_VERSION = "0.4.133";')
+          card_once('      title: "Card title",',
+                    '      title: "Card title",\n      appearance: "Theme",')
+          card_once('            {\n              name: "title",\n              selector: { text: {} },\n            },',
+                    '            {\n              name: "title",\n              selector: { text: {} },\n            },\n'
+                    '            {\n'
+                    '              name: "appearance",\n'
+                    '              selector: {\n'
+                    '                select: {\n'
+                    '                  mode: "dropdown",\n'
+                    '                  options: [\n'
+                    '                    { value: "original", label: "Original · Corporate" },\n'
+                    '                    { value: "light", label: "Light" },\n'
+                    '                    { value: "dark", label: "Dark" },\n'
+                    '                    { value: "system", label: "System · Home Assistant" },\n'
+                    '                  ],\n'
+                    '                },\n'
+                    '              },\n'
+                    '            },')
+          # Existing provider icon CSS was hard-coding white backgrounds even
+          # when the provider PNG and the user's brand PNGs are transparent.
+          for name in ('.provider-card img', '.provider-item img'):
+              pattern = r'(' + re.escape(name) + r'\s*\{[^}]*?)background:\s*white\s*;'
+              card, count = re.subn(pattern, r'\1background: transparent;', card, count=1, flags=re.S)
+              assert count == 1, f'Provider icon rule changed: {name}'
+          card_path.write_text(card, encoding='utf-8')
+
+          appearance_path = root / 'frontend/streaming-browser-appearance.js'
+          app = appearance_path.read_text(encoding='utf-8')
+          old = '''    :host([data-sb-resolved-appearance='dark']) .sb-v2-header-logo {
+              box-sizing: border-box; background: #FFFFFF; border-radius: 12px;
+              padding: 7px 10px; /* preserve the exact original artwork against dark UI */
+            }
+          '''
+          # Inspect robustly rather than relying on indentation in generated JS.
+          header_rule = re.compile(r"    :host\(\[data-sb-resolved-appearance='dark'\]\) \.sb-v2-header-logo \{[^}]*\}\n")
+          app, n = header_rule.subn('', app, count=1)
+          assert n == 1, 'Dark theme logo white-background rule changed'
+          popup_rule = re.compile(r"    :host\(\[data-sb-resolved-appearance='dark'\]\) \.sb-popup-button-logo \{[^}]*\}\n")
+          app, n = popup_rule.subn('', app, count=1)
+          assert n == 1, 'Dark popup logo white-background rule changed'
+          # Override older cosmetic rules without touching image assets,
+          # icon geometry, or the deliberately styled clickable buttons.
+          card_anchor = '    :host { --sb-accent: ${ACCENT}; color: var(--primary-text-color); }\n'
+          assert app.count(card_anchor) == 2, 'Expected one card and one popup style host'
+          app = app.replace(card_anchor,
+              card_anchor +
+              '    .sb-v2-header-logo, .provider-card img, .provider-item img,\n'
+              '    .provider-brand img, .chip img, img[src*="/streaming_browser/assets/streaming-browser-"] {\n'
+              '      background: transparent !important; background-color: transparent !important;\n'
+              '      box-shadow: none !important; padding: 0 !important;\n'
+              '    }\n', 1)
+          popup_start = app.index('  const POPUP_CSS = `')
+          app = app[:popup_start] + app[popup_start:].replace(card_anchor,
+              card_anchor +
+              '    .sb-popup-button-logo, img[src*="/streaming_browser/assets/streaming-browser-"] {\n'
+              '      background: transparent !important; background-color: transparent !important;\n'
+              '      box-shadow: none !important; padding: 0 !important;\n'
+              '    }\n', 1)
+          # v0.4.132 inserted this field by late monkey-patching getConfigForm;
+          # the actual V2 getConfigForm now includes it at initial form creation.
+          # Retain the guard in the legacy module for pre-existing browser tabs.
+          assert "general?.schema && !general.schema.some(x => x.name === 'appearance')" in app
+          assert 'background: #FFFFFF; border-radius: 12px;' not in app
+          appearance_path.write_text(app, encoding='utf-8')
+          data['version'] = '0.4.133'
+          manifest.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+          print('PASS: native General > Theme select; original PNGs untouched; no injected white logo panels')
+          PY
+      - name: Validate code, visual editor integration and brand image preservation
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-appearance.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-branding.js
+          python3 -m py_compile custom_components/streaming_browser/__init__.py
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('custom_components/streaming_browser/frontend')
+          card=(root/'streaming-browser-card-v2.js').read_text()
+          theme=(root/'streaming-browser-appearance.js').read_text()
+          popup=(root/'streaming-browser-popup-card.js').read_text()
+          assert card.count('name: "appearance",')==1, 'Native form field not unique'
+          assert 'appearance: "Theme"' in card
+          for option in ['original','light','dark','system']:
+              assert f'value: "{option}"' in card, option
+          assert 'background: white;' not in card[card.index('.provider-card img {'):card.index('.provider-card img {')+210]
+          assert 'background: white;' not in card[card.index('.provider-item img {'):card.index('.provider-item img {')+210]
+          assert 'background: #FFFFFF; border-radius: 12px;' not in theme
+          assert '.sb-popup-button-logo' in theme and 'background: transparent !important' in theme
+          assert 'streaming-browser-horizontal-v131.png?v=0.4.131' in card
+          assert 'streaming-browser-icon-v131.png?v=0.4.131' in popup
+          for kind in ('horizontal','vertical','icon'):
+              assert (root/'assets'/f'streaming-browser-{kind}-v131.png').is_file(), kind
+          print('PASS: native visual picker for both full and nested popup editor, icon transparency, original image paths, syntax')
+          PY
+      - name: Publish v0.4.133 HACS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/frontend/streaming-browser-appearance.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.133: remove white icon backgrounds and add native card theme editor option'
+          git push origin HEAD:main
+          gh release create v0.4.133 --target "$(git rev-parse HEAD)" --title v0.4.133 --notes 'Eliminate injected white panels and CSS white backgrounds on Streaming Browser logos and provider icons; keep all approved original PNG assets untouched. Add four Theme choices to the V2 card native General visual configuration form, inherited by the popup card nested V2 editor. Retain header theme preview and Home Assistant system theme synchronization. Restart Home Assistant after updating and refresh the dashboard.'
