@@ -67,6 +67,11 @@
 
   const CARD_CSS = `
     :host { --sb-accent: ${ACCENT}; color: var(--primary-text-color); }
+    .sb-v2-header-logo, .provider-card img, .provider-item img,
+    .provider-brand img, .chip img, img[src*="/streaming_browser/assets/streaming-browser-"] {
+      background: transparent !important; background-color: transparent !important;
+      box-shadow: none !important; padding: 0 !important;
+    }
     ha-card, .detail, .detail-sticky-header, .top, .provider-card,
     .episode-inline-actions, .episode-row-container, .episode-list,
     .sbr-remote, .remote-panel { color: var(--primary-text-color); }
@@ -91,10 +96,6 @@
     }
     .sb-appearance-select:focus-visible { outline: 2px solid var(--sb-accent); outline-offset: 2px; }
     .sb-appearance-select option { background: var(--card-background-color); color: var(--primary-text-color); }
-    :host([data-sb-resolved-appearance='dark']) .sb-v2-header-logo {
-      box-sizing: border-box; background: #FFFFFF; border-radius: 12px;
-      padding: 7px 10px; /* preserve the exact original artwork against dark UI */
-    }
     :host([data-sb-resolved-appearance='dark']) .hero {
       background-color: var(--secondary-background-color);
     }
@@ -113,12 +114,12 @@
   `;
   const POPUP_CSS = `
     :host { --sb-accent: ${ACCENT}; color: var(--primary-text-color); }
+    .sb-popup-button-logo, img[src*="/streaming_browser/assets/streaming-browser-"] {
+      background: transparent !important; background-color: transparent !important;
+      box-shadow: none !important; padding: 0 !important;
+    }
     ha-card { background: var(--card-background-color) !important; color: var(--primary-text-color); }
     button, select, input { color: var(--primary-text-color); }
-    :host([data-sb-resolved-appearance='dark']) .sb-popup-button-logo {
-      box-sizing: border-box; background: #FFFFFF; border-radius: 12px;
-      padding: 5px; /* never edit the approved image */
-    }
   `;
   const EDITOR_CSS = `
     :host { --sb-accent: ${ACCENT}; }

@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.131";
+const STREAMING_BROWSER_VERSION = "0.4.133";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -127,6 +127,7 @@ class StreamingBrowserV2Card extends HTMLElement {
 
     const labels = {
       title: "Card title",
+      appearance: "Theme",
       platform: "Platform",
       tv_entity: "Playback device (media player)",
       display_entity: "Display TV (optional HDMI host)",
@@ -203,6 +204,20 @@ class StreamingBrowserV2Card extends HTMLElement {
             {
               name: "title",
               selector: { text: {} },
+            },
+            {
+              name: "appearance",
+              selector: {
+                select: {
+                  mode: "dropdown",
+                  options: [
+                    { value: "original", label: "Original · Corporate" },
+                    { value: "light", label: "Light" },
+                    { value: "dark", label: "Dark" },
+                    { value: "system", label: "System · Home Assistant" },
+                  ],
+                },
+              },
             },
             {
               name: "platform",
@@ -4916,7 +4931,7 @@ class StreamingBrowserV2Card extends HTMLElement {
         height: 48px;
         border-radius: 9px;
         object-fit: contain;
-        background: white;
+        background: transparent;
       }
 
       /* Brand logo replaces the redundant visible service name. Preserve the
@@ -6832,7 +6847,7 @@ class StreamingBrowserV2CardEditor extends HTMLElement {
           height: 34px;
           border-radius: 7px;
           object-fit: contain;
-          background: white;
+          background: transparent;
           flex: 0 0 auto;
         }
 
