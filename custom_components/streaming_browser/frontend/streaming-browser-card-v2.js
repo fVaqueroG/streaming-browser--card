@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.127";
+const STREAMING_BROWSER_VERSION = "0.4.129";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -6072,9 +6072,9 @@ class StreamingBrowserV2Card extends HTMLElement {
           <div class="top">
             <div class="title">
               <img class="sb-v2-header-logo"
-                src="${this._esc(this._config.logo_horizontal_url || '/streaming_browser/assets/streaming-browser-horizontal-v127.png?v=0.4.127')}"
+                src="${this._esc(this._config.logo_horizontal_url || '/streaming_browser/assets/streaming-browser-horizontal-v127.png?v=0.4.129')}"
                 alt="Streaming Browser"
-                style="display:block;max-width:100%;width:clamp(230px,32vw,400px);height:76px;object-fit:contain;object-position:left center;">
+                style="display:block;max-width:100%;width:clamp(230px,32vw,400px);height:76px;object-fit:cover;object-position:center center;">
               <span class="card-version">v${STREAMING_BROWSER_VERSION}</span>
             </div>
 
