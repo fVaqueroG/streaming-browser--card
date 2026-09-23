@@ -1,0 +1,104 @@
+name: Publish approved Streaming Browser v1.0.0 identity (v0.4.131)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - branding/Streaming_Browser_v1.0.0_Transparent_Logos.zip
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: streaming-browser-v04131-brand
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Verify and install the three EXACT approved v1.0.0 transparent originals
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from hashlib import sha256
+          import json
+
+          archive = Path('branding/Streaming_Browser_v1.0.0_Transparent_Logos.zip')
+          assert archive.is_file(), 'Upload the supplied approved v1.0.0 ZIP to branding/ first'
+          expected = {
+              'horizontal': ('Streaming_Browser_v1.0.0_horizontal.png', 'ef4a57b685adbe9fe1cf8c8cc1c246365850f048df9dc47eede873efc88692f6'),
+              'vertical': ('Streaming_Browser_v1.0.0_vertical.png', 'f99b920bd64d17c807127de622fcc5f0cd8d01ce04ddc37418d860036c818270'),
+              'icon': ('Streaming_Browser_v1.0.0_icon_only.png', 'b704f2866173a102e337344d9c8c7a3508b0aaa5830194c08c2ccbb69661b397'),
+          }
+          root = Path('custom_components/streaming_browser')
+          assets = root / 'frontend' / 'assets'
+          manifest = root / 'manifest.json'
+          data = json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version'] == '0.4.130', f"Unexpected version {data['version']}; review concurrent changes before releasing"
+          with ZipFile(archive) as source:
+              assert set(source.namelist()) == {item[0] for item in expected.values()}, 'Unexpected ZIP contents'
+              for kind, (filename, digest) in expected.items():
+                  original = source.read(filename)
+                  assert original.startswith(b'\x89PNG\r\n\x1a\n'), f'Not a PNG: {filename}'
+                  assert sha256(original).hexdigest() == digest, f'Artwork differs from approved v1.0.0: {filename}'
+                  (assets / f'streaming-browser-{kind}-v131.png').write_bytes(original)
+          # Do not touch the old assets, V1 card, any configuration, or playback handlers.
+          v2file = root / 'frontend' / 'streaming-browser-card-v2.js'
+          v2 = v2file.read_text(encoding='utf-8')
+          version_marker = 'const STREAMING_BROWSER_VERSION = "0.4.130";'
+          assert v2.count(version_marker) == 1, 'V2 version marker changed'
+          v2 = v2.replace(version_marker, 'const STREAMING_BROWSER_VERSION = "0.4.131";', 1)
+          old_header = '/streaming_browser/assets/streaming-browser-horizontal-v130.png?v=0.4.130'
+          assert v2.count(old_header) == 1, 'V2 approved header path changed'
+          v2 = v2.replace(old_header, '/streaming_browser/assets/streaming-browser-horizontal-v131.png?v=0.4.131', 1)
+          v2file.write_text(v2, encoding='utf-8')
+
+          popupfile = root / 'frontend' / 'streaming-browser-popup-card.js'
+          popup = popupfile.read_text(encoding='utf-8')
+          for kind in expected:
+              old = f'/streaming_browser/assets/streaming-browser-{kind}-v127.png?v=0.4.127'
+              assert popup.count(old) == 1, f'Popup {kind} reference changed'
+              popup = popup.replace(old, f'/streaming_browser/assets/streaming-browser-{kind}-v131.png?v=0.4.131', 1)
+          popupfile.write_text(popup, encoding='utf-8')
+
+          initfile = root / '__init__.py'
+          init = initfile.read_text(encoding='utf-8')
+          old_registry = 'for version in ("v124", "v127") for name in ("horizontal", "vertical", "icon")'
+          assert init.count(old_registry) == 1, 'Static asset registry changed'
+          init = init.replace(old_registry, 'for version in ("v124", "v127", "v131") for name in ("horizontal", "vertical", "icon")', 1)
+          initfile.write_text(init, encoding='utf-8')
+
+          theme = (root / 'frontend' / 'streaming-browser-branding.js').read_text(encoding='utf-8')
+          assert 'Streaming Browser Brand v1.0.0' in theme and '#8B5CF6' in theme, 'Approved corporate theme is missing'
+          data['version'] = '0.4.131'
+          manifest.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+          print('PASS: all three originals verified byte-for-byte; V2, popup, static routes and manifest updated')
+          PY
+      - name: Check JS, Python, integration metadata and image headers
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-branding.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m py_compile custom_components/streaming_browser/__init__.py
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          test "$(find custom_components/streaming_browser/frontend/assets -name '*-v131.png' | wc -l)" -eq 3
+          echo 'PASS: branding files and updated integration syntax verified'
+      - name: Commit v0.4.131 and publish HACS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/__init__.py custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/assets/*-v131.png
+          git commit -m 'v0.4.131: integrate exact approved v1.0.0 logos and corporate UI'
+          git push origin HEAD:main
+          gh release create v0.4.131 --target "$(git rev-parse HEAD)" --title v0.4.131 --notes 'Exact approved Streaming Browser v1.0.0 transparent horizontal, vertical and icon-only artwork with coordinated purple (#8B5CF6), neutral gray (#4B5563), borders and controls across V2, popup and editors. Playback, room settings and saved configurations are unchanged. Restart Home Assistant after updating to register new v131 static logo routes.'
