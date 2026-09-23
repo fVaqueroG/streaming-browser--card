@@ -1,0 +1,113 @@
+name: Streaming Browser v0.4.138 integration icon and editor-only themes
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/integration-icon-editor-only-theme-v04138.yml'
+permissions:
+  contents: write
+concurrency:
+  group: streaming-browser-v04138-icon-editor-theme
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Use approved icon-only asset and remove all in-card theme controls
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, struct
+          root = Path('custom_components/streaming_browser')
+          manifest = root / 'manifest.json'
+          data = json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version'] == '0.4.137', 'Integration version changed; inspect before applying this patch'
+          src = root / 'frontend/assets/streaming-browser-icon-v131.png'
+          icon = root / 'brand/icon.png'
+          assert src.is_file() and icon.is_file()
+          original = src.read_bytes()
+          assert original[:8] == b'\x89PNG\r\n\x1a\n'
+          width, height, bit_depth, color_type = struct.unpack('>IIBB', original[16:26])
+          assert width > 0 and height > 0 and color_type in (4, 6), 'Expected approved transparent PNG'
+          assert width == height, f'Integration icon must be square; got {width}x{height}'
+          icon.write_bytes(original)
+          appearance_file = root / 'frontend/streaming-browser-appearance.js'
+          script = appearance_file.read_text(encoding='utf-8')
+          # Only remove the injected dashboard/popup theme widget. Keep
+          # palette resolution and the native visual editor entirely intact.
+          start = script.index("    const top = card.shadowRoot?.querySelector('.top');")
+          end = script.index('  }\n  function applyPopup(popup) {', start)
+          removed = script[start:end]
+          for marker in ('sb-appearance-control', 'sb-appearance-select', 'top.insertBefore', 'sb-appearance-changed'):
+              assert marker in removed, f'Unexpected injected theme widget markup: {marker}'
+          script = script[:start] + script[end:]
+          start = script.index('    .sb-appearance-control {')
+          end = script.index("    :host([data-sb-resolved-appearance='dark']) .hero {", start)
+          script = script[:start] + script[end:]
+          mobile = '''    @media (max-width: 600px) {
+              .sb-appearance-control { padding: 3px 5px; }
+              .sb-appearance-control ha-icon { --mdc-icon-size: 16px; }
+              .sb-appearance-select { min-width: 68px; max-width: 87px; }
+            }
+          '''
+          assert script.count(mobile) == 1, 'Unexpected mobile theme-selector CSS'
+          script = script.replace(mobile, '', 1)
+          assert 'sb-appearance-control' not in script
+          assert 'sb-appearance-select' not in script
+          assert 'top.insertBefore' not in script
+          # Theme changes now come only through the HA visual editor. The
+          # standalone popup still invokes applyPopup on opening.
+          assert "patchRender('streaming-browser-popup-card', applyPopup)" in script
+          assert "const result = open.apply(this, args);" in script
+          assert "const MODES = ['light', 'dark', 'system']" in script
+          appearance_file.write_text(script, encoding='utf-8')
+          data['version'] = '0.4.138'
+          manifest.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+          print(f'PASS: original {width}x{height} approved icon-only PNG copied byte-for-byte to local HA integration brand/icon.png')
+          print('PASS: in-card theme dropdown and associated styles removed; visual-editor palette handling kept')
+          PY
+      - name: Validate popup, theme editor and unchanged approved art
+        run: |
+          set -euo pipefail
+          node --check custom_components/streaming_browser/frontend/streaming-browser-appearance.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m py_compile custom_components/streaming_browser/__init__.py
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('custom_components/streaming_browser')
+          a = (root/'frontend/streaming-browser-appearance.js').read_text(encoding='utf-8')
+          card = (root/'frontend/streaming-browser-card-v2.js').read_text(encoding='utf-8')
+          popup = (root/'frontend/streaming-browser-popup-card.js').read_text(encoding='utf-8')
+          assert (root/'brand/icon.png').read_bytes() == (root/'frontend/assets/streaming-browser-icon-v131.png').read_bytes()
+          assert card.count('name: "appearance",') == 1
+          for mode in ('light','dark','system'):
+              assert f'value: "{mode}"' in card, mode
+          assert 'value: "original"' not in card
+          assert "function applyCard(card)" in a and 'styleOnce(card.shadowRoot' in a
+          assert 'sb-appearance-control' not in a and 'sb-appearance-select' not in a
+          assert "patchRender('streaming-browser-popup-card', applyPopup)" in a
+          assert "customElements.define('streaming-browser-popup-card', StreamingBrowserPopupCard)" in popup
+          assert 'dialog.showModal()' in popup
+          assert 'Streaming Browser V2 settings' in popup
+          for kind in ('horizontal','vertical','icon'):
+              assert (root/'frontend/assets'/f'streaming-browser-{kind}-v131.png').is_file()
+          print('PASS: JavaScript and Python syntax, exact integration icon, editor-only Light/Dark/System, popup registration, original assets')
+          PY
+          git diff --exit-code -- custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/assets custom_components/streaming_browser/brand/logo.png
+      - name: Commit and publish v0.4.138
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/brand/icon.png custom_components/streaming_browser/frontend/streaming-browser-appearance.js custom_components/streaming_browser/manifest.json
+          git commit -m 'v0.4.138: use approved icon-only integration logo and keep themes editor-only'
+          git push origin HEAD:main
+          gh release create v0.4.138 --target "$(git rev-parse HEAD)" --title v0.4.138 --notes 'Use the exact approved transparent icon-only v1.0.0 PNG as Home Assistant local integration brand/icon.png. Remove the runtime theme dropdown from both standalone V2 and popup content. Light, Dark and System remain available in the native visual configurator only. Existing popup loading, transparent brand artwork, saved settings and playback unchanged. Update in HACS, restart Home Assistant and hard refresh.'
