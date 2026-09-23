@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.133";
+const STREAMING_BROWSER_VERSION = "0.4.137";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -211,7 +211,6 @@ class StreamingBrowserV2Card extends HTMLElement {
                 select: {
                   mode: "dropdown",
                   options: [
-                    { value: "original", label: "Original · Corporate" },
                     { value: "light", label: "Light" },
                     { value: "dark", label: "Dark" },
                     { value: "system", label: "System · Home Assistant" },
@@ -6411,6 +6410,8 @@ class StreamingBrowserV2CardEditor extends HTMLElement {
         ...STREAMING_BROWSER_BACKEND.defaultProviderIds,
       ],
       ...config,
+      appearance: ["light", "dark", "system"].includes(config?.appearance)
+        ? config.appearance : "system",
     };
     const changed = JSON.stringify(previous) !== JSON.stringify(next);
     this._config = next;

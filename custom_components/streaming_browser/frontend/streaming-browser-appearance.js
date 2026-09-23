@@ -7,17 +7,17 @@
   if (window.__streamingBrowserAppearanceV04132) return;
   window.__streamingBrowserAppearanceV04132 = true;
 
-  const MODES = ['original', 'light', 'dark', 'system'];
+  const MODES = ['light', 'dark', 'system'];
   const ACCENT = '#8B5CF6';
-  const LABELS = {original:'Original', light:'Light', dark:'Dark', system:'System'};
+  const LABELS = {light:'Light', dark:'Dark', system:'System'};
   const PROPERTIES = [
     '--card-background-color', '--ha-card-background', '--secondary-background-color',
     '--primary-background-color', '--primary-text-color', '--secondary-text-color',
     '--divider-color', '--text-primary-color', '--mdc-theme-surface'
   ];
   function modeOf(element) {
-    const raw = element?._sbAppearancePreview ?? element?._config?.appearance ?? 'original';
-    return MODES.includes(raw) ? raw : 'original';
+    const raw = element?._sbAppearancePreview ?? element?._config?.appearance ?? 'system';
+    return MODES.includes(raw) ? raw : 'system';
   }
   function haIsDark(hass) {
     if (typeof hass?.themes?.darkMode === 'boolean') return hass.themes.darkMode;
@@ -42,15 +42,9 @@
       '--divider-color':'#D8DDE8', '--text-primary-color':'#FFFFFF',
       '--mdc-theme-surface':'#FFFFFF'
     }};
-    // Original always preserves the approved light corporate brand board,
-    // even if Home Assistant itself is in dark mode.
-    return {name:'original', values: {
-      '--card-background-color':'#FFFFFF', '--ha-card-background':'#FFFFFF',
-      '--primary-background-color':'#FFFFFF', '--secondary-background-color':'#F7F5FF',
-      '--primary-text-color':'#4B5563', '--secondary-text-color':'#6B7280',
-      '--divider-color':'#E5E7EB', '--text-primary-color':'#FFFFFF',
-      '--mdc-theme-surface':'#FFFFFF'
-    }};
+    // Legacy Original/unknown values follow Home Assistant instead of
+  // restoring the removed light corporate theme.
+  return {name: haIsDark(hass) ? 'dark' : 'light', values: null};
   }
   function setPalette(target, selected, hass) {
     if (!target) return;
@@ -224,7 +218,6 @@
           general.schema.splice(1, 0, {
             name: 'appearance',
             selector: {select: {mode: 'dropdown', options: [
-              {value:'original', label:'Original · Corporate'},
               {value:'light', label:'Light'},
               {value:'dark', label:'Dark'},
               {value:'system', label:'System · Follow Home Assistant'}
