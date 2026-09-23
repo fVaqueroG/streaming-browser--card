@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.137";
+const STREAMING_BROWSER_VERSION = "0.4.139";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -6440,7 +6440,8 @@ class StreamingBrowserV2CardEditor extends HTMLElement {
   _syncEditorForm(updateData = false) {
     const form = this.shadowRoot?.querySelector("#base ha-form");
     if (!form || !this._config) return;
-    form.hass = this._hass;
+    // ha-form receives hass when first created in _render(). Reassigning it
+    // on every HA state update can rebuild and close an open select menu.
     if (updateData) form.data = this._config;
     const formConfig = StreamingBrowserV2Card.getConfigForm(this._hass, this._config);
     const hdmiSection = formConfig.schema.find((item) => item.title === "HDMI / remote");
@@ -6449,9 +6450,10 @@ class StreamingBrowserV2CardEditor extends HTMLElement {
       this._config.display_entity || "",
       hdmiSelector?.selector?.select?.options || [],
     ]);
-    if (key !== this._hdmiSchemaKey) {
+    if (key !== this._hdmiSchemaKey &&
+        (updateData || !this.matches(':focus-within'))) {
       this._hdmiSchemaKey = key;
-      // Update only when the display TV or its source_list actually changes.
+      // Keep the dropdown currently being used mounted during HA state updates.
       // The form element is never replaced, so other expanded sections stay open.
       form.schema = formConfig.schema;
     }

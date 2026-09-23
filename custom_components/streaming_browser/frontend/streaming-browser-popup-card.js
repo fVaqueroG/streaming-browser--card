@@ -247,7 +247,14 @@ class StreamingBrowserPopupCardEditor extends HTMLElement {
     this._hass = null;
     this._v2Editor = null;
   }
-  setConfig(config) { this._config = { ...config }; this._render(); }
+  setConfig(config) {
+    const next={...config};
+    const changed=JSON.stringify(next)!==JSON.stringify(this._config);
+    this._config=next;
+    // Ignore unchanged HA config echoes and preserve any active popup or
+    // embedded V2 dropdown instead of replacing the editor subtree.
+    if(!this._v2Editor||(changed&&!this.matches(':focus-within')))this._render();
+  }
   set hass(value) { this._hass = value; if (this._v2Editor) this._v2Editor.hass = value; }
   _changed(patch) {
     this._config = { ...this._config, ...patch, type: SB_POPUP_TYPE };
