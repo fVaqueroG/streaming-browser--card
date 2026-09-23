@@ -191,7 +191,9 @@
       const original = K.prototype._render;
       if (typeof original === 'function') K.prototype._render = function(...args) {
         const result = original.apply(this, args);
-        apply(this);
+        try { apply(this); } catch (error) {
+          console.warn('Streaming Browser: optional theme rendering failed', error);
+        }
         return result;
       };
       // Home Assistant may already have created the card before this resource loaded.
@@ -237,7 +239,12 @@
     if (desc?.set && !K.prototype.__sbAppearanceHassPatched) {
       K.prototype.__sbAppearanceHassPatched = true;
       Object.defineProperty(K.prototype, 'hass', {
-        ...desc, set(value) { desc.set.call(this, value); applyCard(this); }
+        ...desc, set(value) {
+        desc.set.call(this, value);
+        try { applyCard(this); } catch (error) {
+          console.warn('Streaming Browser: optional card theme failed', error);
+        }
+      }
       });
     }
   });
@@ -247,24 +254,35 @@
     if (desc?.set && !K.prototype.__sbAppearanceHassPatched) {
       K.prototype.__sbAppearanceHassPatched = true;
       Object.defineProperty(K.prototype, 'hass', {
-        ...desc, set(value) { desc.set.call(this, value); applyPopup(this); }
+        ...desc, set(value) {
+        desc.set.call(this, value);
+        try { applyPopup(this); } catch (error) {
+          console.warn('Streaming Browser: optional popup theme failed', error);
+        }
+      }
       });
     }
     const open = K.prototype._open;
     if (typeof open === 'function' && !K.prototype.__sbAppearanceOpenPatched) {
       K.prototype.__sbAppearanceOpenPatched = true;
       K.prototype._open = function(...args) {
-        const result = open.apply(this, args);
+      const result = open.apply(this, args);
+      try {
         applyPopup(this);
         if (this._dialog && !this._dialog.__sbThemeListener) {
           this._dialog.__sbThemeListener = true;
           this._dialog.addEventListener('sb-appearance-changed', event => {
             this._sbAppearancePreview = event.detail.appearance;
-            applyPopup(this);
+            try { applyPopup(this); } catch (error) {
+              console.warn('Streaming Browser: popup theme preview failed', error);
+            }
           });
         }
-        return result;
-      };
+      } catch (error) {
+        console.warn('Streaming Browser: optional popup theme failed', error);
+      }
+      return result;
+    };
     }
   });
 })();

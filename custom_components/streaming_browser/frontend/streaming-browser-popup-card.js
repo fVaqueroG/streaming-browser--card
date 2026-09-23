@@ -183,15 +183,26 @@ class StreamingBrowserPopupCard extends HTMLElement {
   const content = dialog.querySelector('.sb-popup-content');
     const v2Class = customElements.get('streaming-browser-card-v2');
     if (v2Class) {
-      const card = document.createElement('streaming-browser-card-v2');
-      const cardConfig = { ...this._config, type: SB_V2_TYPE };
-      for (const key of SB_POPUP_KEYS) delete cardConfig[key];
-      card.setConfig(cardConfig);
-      card.hass = this._hass;
-      content.appendChild(card);
-      this._innerCard = card;
+      try {
+        const card = document.createElement('streaming-browser-card-v2');
+        const cardConfig = { ...this._config, type: SB_V2_TYPE };
+        for (const key of SB_POPUP_KEYS) delete cardConfig[key];
+        card.setConfig(cardConfig);
+        card.hass = this._hass;
+        content.appendChild(card);
+        this._innerCard = card;
+      } catch (error) {
+        this._innerCard = null;
+        content.textContent = '';
+        const message = document.createElement('p');
+        message.className = 'sb-popup-error';
+        message.setAttribute('role', 'alert');
+        message.textContent = 'Streaming Browser could not load: ' + (error?.message || String(error));
+        content.appendChild(message);
+        console.error('Streaming Browser popup: child card initialization failed', error);
+      }
     } else {
-      content.innerHTML = '<p class="sb-popup-error">Streaming Browser V2 is not loaded. Reload the Home Assistant dashboard.</p>';
+      content.innerHTML = '<p class="sb-popup-error" role="alert">Streaming Browser V2 is not loaded. Reload the Home Assistant dashboard.</p>';
     }
     dialog.querySelector('.sb-popup-close').addEventListener('click', () => dialog.close());
     dialog.addEventListener('click', (event) => {
