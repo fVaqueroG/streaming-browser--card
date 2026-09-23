@@ -75,21 +75,6 @@
     .mini-btn, .provider-card, .episode-row, .row-nav {
       color: var(--primary-text-color);
     }
-    .sb-appearance-control {
-      box-sizing: border-box; display: inline-flex; align-items: center;
-      gap: 6px; flex: 0 0 auto; min-width: 0;
-      padding: 5px 8px; border: 1px solid var(--sb-line, var(--divider-color));
-      border-radius: 12px; background: var(--secondary-background-color);
-      color: var(--primary-text-color); font-size: 12px;
-    }
-    .sb-appearance-control ha-icon { --mdc-icon-size: 18px; color: var(--sb-accent); }
-    .sb-appearance-select {
-      width: auto; max-width: 106px; min-width: 75px; min-height: 30px;
-      border: 0; border-radius: 8px; background: var(--secondary-background-color);
-      color: var(--primary-text-color); font: inherit; cursor: pointer;
-    }
-    .sb-appearance-select:focus-visible { outline: 2px solid var(--sb-accent); outline-offset: 2px; }
-    .sb-appearance-select option { background: var(--card-background-color); color: var(--primary-text-color); }
     :host([data-sb-resolved-appearance='dark']) .hero {
       background-color: var(--secondary-background-color);
     }
@@ -99,11 +84,6 @@
     :host([data-sb-resolved-appearance='dark']) .mini-btn.play,
     :host([data-sb-resolved-appearance='dark']) .action:not(.secondary) {
       color: #FFFFFF !important;
-    }
-    @media (max-width: 600px) {
-      .sb-appearance-control { padding: 3px 5px; }
-      .sb-appearance-control ha-icon { --mdc-icon-size: 16px; }
-      .sb-appearance-select { min-width: 68px; max-width: 87px; }
     }
   `;
   const POPUP_CSS = `
@@ -140,28 +120,6 @@
   function applyCard(card) {
     setPalette(card, modeOf(card), card._hass);
     styleOnce(card.shadowRoot, 'sb-appearance-v04132', CARD_CSS);
-    const top = card.shadowRoot?.querySelector('.top');
-    if (!top) return;
-    let control = top.querySelector('.sb-appearance-control');
-    if (!control) {
-      control = document.createElement('label');
-      control.className = 'sb-appearance-control';
-      control.title = 'Appearance (save the default in Edit card)';
-      control.innerHTML = '<ha-icon icon="mdi:theme-light-dark" aria-hidden="true"></ha-icon>' +
-        '<select class="sb-appearance-select" aria-label="Streaming Browser appearance">' +
-        MODES.map(m => `<option value="${m}">${LABELS[m]}</option>`).join('') +
-        '</select>';
-      top.insertBefore(control, top.querySelector('.search'));
-      control.querySelector('select').addEventListener('change', (event) => {
-        card._sbAppearancePreview = event.target.value;
-        applyCard(card);
-        card.dispatchEvent(new CustomEvent('sb-appearance-changed', {
-          bubbles: true, composed: true, detail: {appearance: modeOf(card)}
-        }));
-      });
-    }
-    const select = control.querySelector('select');
-    if (select && select.value !== modeOf(card)) select.value = modeOf(card);
   }
   function applyPopup(popup) {
     setPalette(popup, modeOf(popup), popup._hass);
