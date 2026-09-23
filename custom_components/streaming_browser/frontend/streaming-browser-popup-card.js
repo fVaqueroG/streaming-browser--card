@@ -167,8 +167,13 @@ class StreamingBrowserPopupCard extends HTMLElement {
         .sb-popup-content > streaming-browser-card-v2 { display: block; min-height: 100%; }
         .sb-popup-error { padding: 20px; }
         @media (max-width: 600px) {
-          .streaming-browser-popup-dialog { width: 100vw !important; max-width: 100vw;
-            height: 100dvh; max-height: 100dvh; border-radius: 0; margin: 0; }
+          .streaming-browser-popup-dialog,
+          .streaming-browser-popup-dialog[data-size="normal"],
+          .streaming-browser-popup-dialog[data-size="wide"],
+          .streaming-browser-popup-dialog[data-size="fullscreen"] {
+            width: 100vw !important; max-width: 100vw !important;
+            height: 100dvh !important; max-height: 100dvh !important;
+            border-radius: 0 !important; margin: 0 !important; }
           .sb-popup-header { height: 44px; min-height: 44px; flex-basis: 44px; padding: 0 8px 0 12px; }
         }
       </style>
