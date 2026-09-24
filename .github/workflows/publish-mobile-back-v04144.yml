@@ -1,0 +1,50 @@
+name: Publish Streaming Browser mobile Back v0.4.144
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-mobile-back-v04144.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply mobile Back navigation
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          base=Path('custom_components/streaming_browser/frontend')
+          popup=base/'streaming-browser-popup-card.js'
+          patch=(base/'mobile-back-v04144.patch.js').read_text(encoding='utf-8')
+          original=popup.read_text(encoding='utf-8')
+          assert 'Streaming Browser v0.4.144: scoped Android Back navigation' not in original
+          popup.write_text(original+'\n'+patch,encoding='utf-8')
+          full=base/'streaming-browser-card-v2.js'
+          source=full.read_text(encoding='utf-8')
+          assert source.count('const STREAMING_BROWSER_VERSION = "0.4.143";')==1
+          full.write_text(source.replace('const STREAMING_BROWSER_VERSION = "0.4.143";', 'const STREAMING_BROWSER_VERSION = "0.4.144";',1),encoding='utf-8')
+          manifest=Path('custom_components/streaming_browser/manifest.json')
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.143'
+          data['version']='0.4.144'
+          manifest.write_text(json.dumps(data,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+          node --check custom_components/streaming_browser/frontend/mobile-back-v04144.patch.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          echo 'PASS: Streaming Browser mobile Back source and syntax checks'
+      - name: Commit and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'feat: mobile Back navigation in Streaming Browser popups and cards (v0.4.144)'
+          git push origin HEAD:main
+          gh release create v0.4.144 --target "$(git rev-parse HEAD)" --title v0.4.144 --notes 'Android Back handles remote, details and expanded catalog before closing the popup. Scopes history guards to active cards and retains normal Home Assistant navigation at root.'
