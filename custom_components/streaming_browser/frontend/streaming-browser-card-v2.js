@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.140";
+const STREAMING_BROWSER_VERSION = "0.4.141";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -5492,6 +5492,7 @@ class StreamingBrowserV2Card extends HTMLElement {
 
     const tv = this._tvState();
     const detailScrollTop = this.shadowRoot.querySelector(".detail")?.scrollTop ?? null;
+    const catalogScrollTop = this.shadowRoot.querySelector(".catalog")?.scrollTop ?? null;
 
     const posterWidth = Math.max(
       100,
@@ -5688,7 +5689,28 @@ class StreamingBrowserV2Card extends HTMLElement {
           position: relative;
           min-height: 260px;
         }
-        .catalog, .catalog-section, .catalog-row {
+        /* Keep the catalog in its own viewport, like the Totalplay guide. */
+    .catalog {
+      max-height: min(62dvh, 680px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior-y: contain;
+      scrollbar-gutter: stable;
+      padding-right: 4px;
+    }
+    .sb-catalog-scroll-toolbar { display: flex; justify-content: flex-end; margin: 0 0 8px; }
+    .sb-catalog-to-start {
+      border: 1px solid var(--divider-color);
+      border-radius: 18px;
+      background: var(--secondary-background-color);
+      color: var(--primary-text-color);
+      padding: 7px 12px;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .sb-catalog-to-start:focus-visible { outline: 2px solid var(--primary-color); }
+    .catalog, .catalog-section, .catalog-row {
           width: 100%;
           min-width: 0;
           max-width: 100%;
@@ -6173,10 +6195,18 @@ class StreamingBrowserV2Card extends HTMLElement {
               : ""
           }
 
-          ${
-            this._loading
-              ? `
-                <div class="loading">
+          ${!this._loading && this._sections.length ? `
+      <div class="sb-catalog-scroll-toolbar">
+        <button class="sb-catalog-to-start" type="button"
+          title="Back to beginning" aria-label="Back to beginning">
+          ${this._locale().startsWith("es") ? "↑ Inicio" : "↑ Beginning"}
+        </button>
+      </div>` : ""}
+
+${
+  this._loading
+    ? `
+      <div class="loading">
                   ${this._t("loading_catalog")}
                 </div>
               `
@@ -6214,6 +6244,13 @@ class StreamingBrowserV2Card extends HTMLElement {
       }
     `);
 
+    if (catalogScrollTop !== null) {
+      const catalogPane = this.shadowRoot.querySelector(".catalog");
+      if (catalogPane) catalogPane.scrollTop = catalogScrollTop;
+    }
+    this.shadowRoot.querySelector(".sb-catalog-to-start")?.addEventListener("click", () => {
+      this.shadowRoot.querySelector(".catalog")?.scrollTo({ top: 0, behavior: "smooth" });
+    });
     if (detailScrollTop !== null) {
       const detailPane = this.shadowRoot.querySelector(".detail");
       if (detailPane) detailPane.scrollTop = detailScrollTop;
