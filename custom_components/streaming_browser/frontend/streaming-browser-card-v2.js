@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.141";
+const STREAMING_BROWSER_VERSION = "0.4.142";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -10492,5 +10492,133 @@ console.info(
     // Moving, rather than cloning, preserves the existing click handler and
     // incremental rendering behavior. The normal See all stays below posters.
     if (bar.firstElementChild !== button) bar.replaceChildren(button);
+  };
+})();
+
+
+/* Streaming Browser v0.4.142: context-sensitive Beginning controls. */
+(() => {
+  const Card = StreamingBrowserV2Card;
+  const oldPositionBack = Card.prototype._v2PositionBackToCarousel;
+  const oldSyncCatalog = Card.prototype._v2SyncCatalog;
+  const oldRender = Card.prototype._render;
+  const startLabel = card => card._locale?.().startsWith('es') ? 'Inicio' : 'Beginning';
+  const createButton = (card, className, glyph) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.hidden = true;
+    button.textContent = glyph + ' ' + startLabel(card);
+    button.title = card._locale?.().startsWith('es') ? 'Volver al inicio' : 'Back to beginning';
+    button.setAttribute('aria-label', button.title);
+    return button;
+  };
+  Card.prototype._v2UpdateBeginningVisibility = function() {
+    const root = this.shadowRoot;
+    const active = [...(root?.querySelectorAll('.v2-body .catalog-section') || [])]
+      .find(section => !section.hidden && section.style.display !== 'none' &&
+        section.querySelector('.catalog-row[data-section]')?.dataset.section === this._v2CategoryKey);
+    const carouselButton = active?.querySelector('.v2-carousel-beginning');
+    const row = active?.querySelector('.catalog-row[data-section]');
+    if (carouselButton) carouselButton.hidden = !(row && row.scrollLeft > 4);
+    const expandedButton = root?.querySelector('.v2-back-to-carousel-bar .v2-expanded-beginning');
+    if (expandedButton) {
+      const body = root.querySelector('.v2-body');
+      const catalog = active?.closest('.catalog') || root.querySelector('.v2-body .catalog');
+      expandedButton.hidden = !((body?.scrollTop || 0) > 4 || (catalog?.scrollTop || 0) > 4);
+    }
+  };
+  Card.prototype._v2SyncBeginningControls = function() {
+    const root = this.shadowRoot;
+    const body = root?.querySelector('.v2-body');
+    if (!body) return;
+    if (!root.querySelector('#v2-contextual-beginning-styles')) {
+      const style = document.createElement('style');
+      style.id = 'v2-contextual-beginning-styles';
+      style.textContent = `
+        .v2-body .sb-catalog-scroll-toolbar { display:none!important; }
+        .v2-carousel-frame { display:flex; width:100%; min-width:0; gap:8px; align-items:center; }
+        .v2-carousel-frame > .catalog-row { flex:1 1 auto; width:auto!important; min-width:0; max-width:100%; }
+        .v2-carousel-beginning, .v2-expanded-beginning {
+          flex:0 0 auto; border:1px solid var(--divider-color); border-radius:12px;
+          background:var(--secondary-background-color); color:var(--primary-text-color);
+          padding:8px 10px; font:inherit; font-size:12px; cursor:pointer;
+        }
+        .v2-expanded-beginning { margin-left:8px; }
+        .v2-carousel-beginning[hidden], .v2-expanded-beginning[hidden] { display:none!important; }
+        .v2-carousel-beginning:focus-visible, .v2-expanded-beginning:focus-visible { outline:2px solid var(--primary-color); }
+        @media(max-width:600px){.v2-carousel-frame{gap:5px}.v2-carousel-beginning{padding:7px 6px;font-size:11px}}
+      `;
+      root.append(style);
+    }
+    const expanded = this._v2ShowAll === true && String(this._query || '').trim().length < 2;
+    body.querySelectorAll('.catalog-section').forEach(section => {
+      const row = section.querySelector('.catalog-row[data-section]');
+      if (!row) return;
+      const frame = section.querySelector('.v2-carousel-frame');
+      const selected = !section.hidden && section.style.display !== 'none' &&
+        row.dataset.section === this._v2CategoryKey;
+      if (expanded || !selected) {
+        if (frame && frame.contains(row)) {
+          frame.parentNode.insertBefore(row, frame);
+          frame.remove();
+        }
+        return;
+      }
+      let holder = frame;
+      if (!holder) {
+        holder = document.createElement('div');
+        holder.className = 'v2-carousel-frame';
+        row.parentNode.insertBefore(holder, row);
+        holder.append(row);
+      }
+      let button = holder.querySelector('.v2-carousel-beginning');
+      if (!button) {
+        button = createButton(this, 'v2-carousel-beginning', '⇤');
+        button.addEventListener('click', () => row.scrollTo({left:0,behavior:'smooth'}));
+        holder.insertBefore(button, row);
+      }
+      if (!row._v2BeginningBound) {
+        row._v2BeginningBound = true;
+        row.addEventListener('scroll', () => this._v2UpdateBeginningVisibility(), {passive:true});
+      }
+    });
+    const bar = root.querySelector('.v2-back-to-carousel-bar');
+    if (bar && expanded) {
+      let button = bar.querySelector('.v2-expanded-beginning');
+      if (!button) {
+        button = createButton(this,'v2-expanded-beginning','↑');
+        button.addEventListener('click', () => {
+          const active = [...body.querySelectorAll('.catalog-section')].find(section =>
+            !section.hidden && section.style.display !== 'none');
+          const catalog = active?.closest('.catalog') || body.querySelector('.catalog');
+          body.scrollTo({top:0,behavior:'smooth'});
+          catalog?.scrollTo({top:0,behavior:'smooth'});
+        });
+        bar.append(button);
+      }
+      for (const pane of [body, body.querySelector('.catalog')].filter(Boolean)) {
+        if (!pane._v2BeginningBound) {
+          pane._v2BeginningBound = true;
+          pane.addEventListener('scroll', () => this._v2UpdateBeginningVisibility(), {passive:true});
+        }
+      }
+    }
+    this._v2UpdateBeginningVisibility();
+  };
+  Card.prototype._v2PositionBackToCarousel = function(...args) {
+    const result = oldPositionBack?.apply(this,args);
+    this._v2SyncBeginningControls();
+    return result;
+  };
+  Card.prototype._v2SyncCatalog = function(...args) {
+    const result = oldSyncCatalog.apply(this,args);
+    this._v2SyncBeginningControls();
+    return result;
+  };
+  Card.prototype._render = function(...args) {
+    const result = oldRender.apply(this,args);
+    this._v2SyncBeginningControls();
+    return result;
   };
 })();
