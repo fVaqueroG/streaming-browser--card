@@ -417,87 +417,62 @@ StreamingBrowserPopupCard.prototype._close=function(...args) {
   return sbPopupCloseForeground.apply(this,args);
 };
 
-/* Streaming Browser v0.4.145: one active Back owner, safe popup history cleanup. */
+/* Streaming Browser v0.4.146: native Back and popup teardown without synthetic navigation. */
 (() => {
   const Full = customElements.get('streaming-browser-card-v2');
   const Popup = customElements.get('streaming-browser-popup-card');
   if (!Full || !Popup) throw new Error('Streaming Browser Back: cards unavailable');
   const mobile = () => navigator.maxTouchPoints > 0 || matchMedia('(pointer:coarse)').matches;
-  const manager = window.__fvHaCardBackManagerV2 ||= (() => {
+  const manager = window.__fvHaCardBackManagerV3 ||= (() => {
     const owners = [];
-    let token = null, url = null, armed = false, unwinding = false;
-    let handling = false, requested = false, lastHandled = 0;
-    const current = () => armed && history.state?.__fvCardBackV2 === token;
-    const disarm = () => {
-      if (owners.length || unwinding) return;
-      armed = false; requested = false;
-      window.removeEventListener('popstate', onPop, true);
-    };
-    const arm = () => {
-      if (!owners.length || armed || unwinding) return;
-      url = location.href;
-      token = 'fv-back-' + Math.random().toString(36).slice(2);
-      try {
-        history.pushState({ ...(history.state || {}), __fvCardBackV2: token }, '', url);
-        armed = true; requested = false;
-      } catch (error) { console.warn('Card Back: history protection unavailable', error); }
-    };
-    const unwind = () => {
-      if (owners.length || unwinding) return;
-      if (!current()) { disarm(); return; }
-      unwinding = true;
-      requested = false;
-      try { history.back(); } catch (error) { unwinding = false; disarm(); }
-    };
+    const key = '__fvCardBackV3';
+    const token = 'fv-' + Math.random().toString(36).slice(2);
+    let page = '', lastPress = 0;
+    const stamped = () => history.state?.[key] === token;
+    const push = () => history.pushState({ ...(history.state || {}), [key]: token }, '', page);
+    // Android can dispatch dialog cancellation instead of browser navigation.
+    // Never issue history.back() from cancel or teardown: one press must not
+    // become a second, app-exiting navigation.
     function onPop(event) {
-      if (unwinding) {
-        if (location.href === url) event.stopImmediatePropagation();
-        unwinding = false; armed = false; requested = false;
-        if (owners.length) arm(); else disarm();
-        return;
-      }
-      if (!armed || !owners.length) return;
-      if (location.href !== url) { // A genuine Home Assistant route change, not a card Back action.
-        owners.length = 0; armed = false; requested = false; disarm(); return;
-      }
+      if (!owners.length || location.href !== page) return;
       event.stopImmediatePropagation();
-      requested = false; lastHandled = Date.now();
-      // The browser may have popped into an older guard after an HA history update.
-      armed = history.state?.__fvCardBackV2 === token;
-      const owner = owners[owners.length - 1];
-      handling = true;
-      try { owner.back(); } finally { handling = false; }
-      if (owners.length) { if (!armed) arm(); }
-      else if (armed) unwind(); else disarm();
+      // Restore the spare same-page entry BEFORE a synchronous re-render can
+      // remove the last owner (details, Catalog and remote loading included).
+      try { if (stamped()) push(); else { push(); push(); } }
+      catch (error) { console.warn('Card Back: could not restore history guard', error); }
+      const now = Date.now();
+      if (now - lastPress < 180) return;
+      lastPress = now;
+      owners[owners.length - 1]?.back();
     }
     return {
       add(owner) {
         if (!mobile() || owners.includes(owner)) return;
-        if (!owners.length && !unwinding) window.addEventListener('popstate', onPop, true);
-        owners.push(owner); arm();
+        if (!owners.length) {
+          page = location.href;
+          window.addEventListener('popstate', onPop, true);
+          try { if (stamped()) push(); else { push(); push(); } }
+          catch (error) { console.warn('Card Back: history guard unavailable', error); }
+        }
+        owners.push(owner);
       },
       remove(owner) {
         const index = owners.indexOf(owner);
         if (index < 0) return;
         owners.splice(index, 1);
-        if (!owners.length && !handling) unwind();
+        // Do not navigate Home Assistant just to remove our history guard.
+        if (!owners.length) window.removeEventListener('popstate', onPop, true);
       },
       request(owner) {
-        if (!owners.length || owners[owners.length - 1] !== owner) return false;
-        if (requested || Date.now() - lastHandled < 300) return true;
-        if (current()) {
-          requested = true;
-          try { history.back(); } catch (error) { requested = false; owner.back(); }
-        } else {
-          lastHandled = Date.now();
-          owner.back();
-          if (owners.length && !armed) arm();
-        }
+        if (owners[owners.length - 1] !== owner) return false;
+        const now = Date.now();
+        if (now - lastPress < 180) return true;
+        lastPress = now;
+        owner.back(); // Native dialog cancellation is already a Back event.
         return true;
-      },
+      }
     };
   })();
-
   const nested = card => !!card && (!!card._remoteExpanded || !!card._details || !!card._v2ShowAll);
   function step(card) {
     if (!card) return false;
