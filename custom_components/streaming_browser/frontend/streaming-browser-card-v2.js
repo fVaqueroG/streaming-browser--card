@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.142";
+const STREAMING_BROWSER_VERSION = "0.4.143";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -10537,17 +10537,23 @@ console.info(
       style.id = 'v2-contextual-beginning-styles';
       style.textContent = `
         .v2-body .sb-catalog-scroll-toolbar { display:none!important; }
-        .v2-carousel-frame { display:flex; width:100%; min-width:0; gap:8px; align-items:center; }
+        .v2-carousel-frame { display:flex; width:100%; min-width:0; gap:8px; align-items:stretch; }
         .v2-carousel-frame > .catalog-row { flex:1 1 auto; width:auto!important; min-width:0; max-width:100%; }
         .v2-carousel-beginning, .v2-expanded-beginning {
           flex:0 0 auto; border:1px solid var(--divider-color); border-radius:12px;
           background:var(--secondary-background-color); color:var(--primary-text-color);
           padding:8px 10px; font:inherit; font-size:12px; cursor:pointer;
         }
+        .v2-carousel-beginning {
+          align-self:stretch; display:flex; align-items:center; justify-content:center;
+          width:44px; min-width:44px; min-height:100%; height:auto;
+          padding:0; border-radius:12px;
+        }
+        .v2-carousel-beginning ha-icon { --mdc-icon-size:28px; width:28px; height:28px; }
         .v2-expanded-beginning { margin-left:8px; }
         .v2-carousel-beginning[hidden], .v2-expanded-beginning[hidden] { display:none!important; }
         .v2-carousel-beginning:focus-visible, .v2-expanded-beginning:focus-visible { outline:2px solid var(--primary-color); }
-        @media(max-width:600px){.v2-carousel-frame{gap:5px}.v2-carousel-beginning{padding:7px 6px;font-size:11px}}
+        @media(max-width:600px){.v2-carousel-frame{gap:5px}.v2-carousel-beginning{width:38px;min-width:38px;padding:0}}
       `;
       root.append(style);
     }
@@ -10574,7 +10580,8 @@ console.info(
       }
       let button = holder.querySelector('.v2-carousel-beginning');
       if (!button) {
-        button = createButton(this, 'v2-carousel-beginning', '⇤');
+        button = createButton(this, 'v2-carousel-beginning', '');
+        button.innerHTML = '<ha-icon icon="mdi:chevron-left" aria-hidden="true"></ha-icon>';
         button.addEventListener('click', () => row.scrollTo({left:0,behavior:'smooth'}));
         holder.insertBefore(button, row);
       }
