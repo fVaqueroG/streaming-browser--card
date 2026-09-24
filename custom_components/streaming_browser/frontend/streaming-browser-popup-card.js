@@ -417,98 +417,145 @@ StreamingBrowserPopupCard.prototype._close=function(...args) {
   return sbPopupCloseForeground.apply(this,args);
 };
 
-/* Streaming Browser v0.4.144: scoped Android Back navigation. */
+/* Streaming Browser v0.4.145: one active Back owner, safe popup history cleanup. */
 (() => {
   const Full = customElements.get('streaming-browser-card-v2');
   const Popup = customElements.get('streaming-browser-popup-card');
-  if (!Full || !Popup) throw new Error('Streaming Browser mobile Back: cards unavailable');
-  const mobile = () => navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches;
-  const stack = () => (window.__fvHaCardBackStack ||= []);
+  if (!Full || !Popup) throw new Error('Streaming Browser Back: cards unavailable');
+  const mobile = () => navigator.maxTouchPoints > 0 || matchMedia('(pointer:coarse)').matches;
+  const manager = window.__fvHaCardBackManagerV2 ||= (() => {
+    const owners = [];
+    let token = null, url = null, armed = false, unwinding = false;
+    let handling = false, requested = false, lastHandled = 0;
+    const current = () => armed && history.state?.__fvCardBackV2 === token;
+    const disarm = () => {
+      if (owners.length || unwinding) return;
+      armed = false; requested = false;
+      window.removeEventListener('popstate', onPop, true);
+    };
+    const arm = () => {
+      if (!owners.length || armed || unwinding) return;
+      url = location.href;
+      token = 'fv-back-' + Math.random().toString(36).slice(2);
+      try {
+        history.pushState({ ...(history.state || {}), __fvCardBackV2: token }, '', url);
+        armed = true; requested = false;
+      } catch (error) { console.warn('Card Back: history protection unavailable', error); }
+    };
+    const unwind = () => {
+      if (owners.length || unwinding) return;
+      if (!current()) { disarm(); return; }
+      unwinding = true;
+      requested = false;
+      try { history.back(); } catch (error) { unwinding = false; disarm(); }
+    };
+    function onPop(event) {
+      if (unwinding) {
+        if (location.href === url) event.stopImmediatePropagation();
+        unwinding = false; armed = false; requested = false;
+        if (owners.length) arm(); else disarm();
+        return;
+      }
+      if (!armed || !owners.length) return;
+      if (location.href !== url) { // A genuine Home Assistant route change, not a card Back action.
+        owners.length = 0; armed = false; requested = false; disarm(); return;
+      }
+      event.stopImmediatePropagation();
+      requested = false; lastHandled = Date.now();
+      // The browser may have popped into an older guard after an HA history update.
+      armed = history.state?.__fvCardBackV2 === token;
+      const owner = owners[owners.length - 1];
+      handling = true;
+      try { owner.back(); } finally { handling = false; }
+      if (owners.length) { if (!armed) arm(); }
+      else if (armed) unwind(); else disarm();
+    }
+    return {
+      add(owner) {
+        if (!mobile() || owners.includes(owner)) return;
+        if (!owners.length && !unwinding) window.addEventListener('popstate', onPop, true);
+        owners.push(owner); arm();
+      },
+      remove(owner) {
+        const index = owners.indexOf(owner);
+        if (index < 0) return;
+        owners.splice(index, 1);
+        if (!owners.length && !handling) unwind();
+      },
+      request(owner) {
+        if (!owners.length || owners[owners.length - 1] !== owner) return false;
+        if (requested || Date.now() - lastHandled < 300) return true;
+        if (current()) {
+          requested = true;
+          try { history.back(); } catch (error) { requested = false; owner.back(); }
+        } else {
+          lastHandled = Date.now();
+          owner.back();
+          if (owners.length && !armed) arm();
+        }
+        return true;
+      },
+    };
+  })();
+
   const nested = card => !!card && (!!card._remoteExpanded || !!card._details || !!card._v2ShowAll);
   function step(card) {
     if (!card) return false;
     if (card._remoteExpanded) {
       card._toggleNuvioRemote?.();
-      if (card._remoteExpanded) { card._remoteExpanded = false; card._remotePortal?.remove(); card._remotePortal = null; }
+      if (card._remoteExpanded) {
+        card._remoteExpanded = false;
+        card._remotePortal?.remove();
+        card._remotePortal = null;
+      }
       return true;
     }
     if (card._details) { card._details = null; card._render(); return true; }
     if (card._v2ShowAll) { card._v2ShowAll = false; card._v2ResetScroll = true; card._render(); return true; }
     return false;
   }
-  function bridge(isOpen, onBack) {
-    const id = 'streaming-' + Math.random().toString(36).slice(2);
-    let active = false, armed = false, url = '';
-    const isTop = () => stack()[stack().length - 1] === api;
-    const arm = () => {
-      if (!active || armed || !isOpen()) return;
-      try { history.pushState({ ...(history.state || {}), __fvHaCardBackId:id }, '', location.href); armed = true; }
-      catch (error) { console.warn('Streaming Browser mobile Back history unavailable', error); }
-    };
-    const pop = event => {
-      if (!active || !armed || !isTop() || !isOpen()) return;
-      if (history.state?.__fvHaCardBackId === id) return;
-      armed = false;
-      if (location.href !== url) { api.stop(false); return; }
-      event.stopImmediatePropagation();
-      onBack();
-      if (isOpen()) arm(); else api.stop(false);
-    };
-    const api = {
-      start() {
-        if (active || !mobile() || !isOpen()) return;
-        active = true; url = location.href;
-        stack().push(api);
-        window.addEventListener('popstate', pop, true);
-        arm();
-      },
-      stop(rewind = true) {
-        if (!active) return;
-        active = false;
-        window.removeEventListener('popstate', pop, true);
-        const owners = stack(), index = owners.indexOf(api);
-        if (index >= 0) owners.splice(index,1);
-        if (rewind && armed && history.state?.__fvHaCardBackId === id) { armed=false; history.back(); }
-        armed = false;
-      }
-    };
-    return api;
-  }
   const priorOpen = Popup.prototype._open;
-  Popup.prototype._open = function(...args) {
-    const result = priorOpen.apply(this,args);
+  Popup.prototype._open = function (...args) {
+    const result = priorOpen.apply(this, args);
     const dialog = this._dialog;
-    if (!dialog || dialog._sbMobileBackBound) return result;
-    dialog._sbMobileBackBound = true;
-    const back = () => { if (!step(this._innerCard)) dialog.close(); };
-    dialog.addEventListener('cancel', event => { event.preventDefault(); back(); });
-    this._sbMobileBackBridge = bridge(() => this._dialog === dialog && dialog.open, back);
-    this._sbMobileBackBridge.start();
+    if (!dialog || this._fvBackOwner) return result;
+    const owner = { back: () => {
+      if (step(this._innerCard)) return;
+      manager.remove(owner);
+      if (this._fvBackOwner === owner) this._fvBackOwner = null;
+      if (dialog.open) dialog.close();
+    } };
+    this._fvBackOwner = owner;
+    // Native dialog cancellation and Android history navigation must share one action.
+    dialog.addEventListener('cancel', event => {
+      event.preventDefault();
+      if (!manager.request(owner)) owner.back();
+    });
     dialog.addEventListener('close', () => {
-      this._sbMobileBackBridge?.stop();
-      this._sbMobileBackBridge = null;
-    }, {once:true});
+      manager.remove(owner);
+      if (this._fvBackOwner === owner) this._fvBackOwner = null;
+    }, { once:true });
+    manager.add(owner);
     return result;
   };
   const priorClose = Popup.prototype._close;
-  Popup.prototype._close = function(...args) {
-    this._sbMobileBackBridge?.stop(); this._sbMobileBackBridge=null;
-    return priorClose.apply(this,args);
+  Popup.prototype._close = function (...args) {
+    if (this._fvBackOwner) { manager.remove(this._fvBackOwner); this._fvBackOwner = null; }
+    return priorClose.apply(this, args);
   };
   const priorRender = Full.prototype._render;
-  Full.prototype._render = function(...args) {
-    const result = priorRender.apply(this,args);
-    if (mobile() && this.isConnected && !this.closest('.sb-popup-content')) {
-      if (nested(this)) {
-        if (!this._sbMobileBackBridge) this._sbMobileBackBridge = bridge(() => this.isConnected && nested(this), () => step(this));
-        this._sbMobileBackBridge.start();
-      } else { this._sbMobileBackBridge?.stop(); this._sbMobileBackBridge=null; }
-    }
+  Full.prototype._render = function (...args) {
+    const result = priorRender.apply(this, args);
+    if (!mobile() || !this.isConnected || this.closest('.sb-popup-content')) return result;
+    if (nested(this)) {
+      if (!this._fvBackOwner) this._fvBackOwner = { back: () => step(this) };
+      manager.add(this._fvBackOwner);
+    } else if (this._fvBackOwner) { manager.remove(this._fvBackOwner); this._fvBackOwner = null; }
     return result;
   };
   const priorDisconnected = Full.prototype.disconnectedCallback;
-  Full.prototype.disconnectedCallback = function(...args) {
-    this._sbMobileBackBridge?.stop(); this._sbMobileBackBridge=null;
-    return priorDisconnected?.apply(this,args);
+  Full.prototype.disconnectedCallback = function (...args) {
+    if (this._fvBackOwner) { manager.remove(this._fvBackOwner); this._fvBackOwner = null; }
+    return priorDisconnected?.apply(this, args);
   };
 })();
