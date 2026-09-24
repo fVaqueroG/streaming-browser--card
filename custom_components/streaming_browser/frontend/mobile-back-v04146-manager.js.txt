@@ -1,0 +1,50 @@
+  const manager = window.__fvHaCardBackManagerV3 ||= (() => {
+    const owners = [];
+    const key = '__fvCardBackV3';
+    const token = 'fv-' + Math.random().toString(36).slice(2);
+    let page = '', lastPress = 0;
+    const stamped = () => history.state?.[key] === token;
+    const push = () => history.pushState({ ...(history.state || {}), [key]: token }, '', page);
+    // Android can dispatch dialog cancellation instead of browser navigation.
+    // Never issue history.back() from cancel or teardown: one press must not
+    // become a second, app-exiting navigation.
+    function onPop(event) {
+      if (!owners.length || location.href !== page) return;
+      event.stopImmediatePropagation();
+      // Restore the spare same-page entry BEFORE a synchronous re-render can
+      // remove the last owner (details, Catalog and remote loading included).
+      try { if (stamped()) push(); else { push(); push(); } }
+      catch (error) { console.warn('Card Back: could not restore history guard', error); }
+      const now = Date.now();
+      if (now - lastPress < 180) return;
+      lastPress = now;
+      owners[owners.length - 1]?.back();
+    }
+    return {
+      add(owner) {
+        if (!mobile() || owners.includes(owner)) return;
+        if (!owners.length) {
+          page = location.href;
+          window.addEventListener('popstate', onPop, true);
+          try { if (stamped()) push(); else { push(); push(); } }
+          catch (error) { console.warn('Card Back: history guard unavailable', error); }
+        }
+        owners.push(owner);
+      },
+      remove(owner) {
+        const index = owners.indexOf(owner);
+        if (index < 0) return;
+        owners.splice(index, 1);
+        // Do not navigate Home Assistant just to remove our history guard.
+        if (!owners.length) window.removeEventListener('popstate', onPop, true);
+      },
+      request(owner) {
+        if (owners[owners.length - 1] !== owner) return false;
+        const now = Date.now();
+        if (now - lastPress < 180) return true;
+        lastPress = now;
+        owner.back(); // Native dialog cancellation is already a Back event.
+        return true;
+      }
+    };
+  })();
