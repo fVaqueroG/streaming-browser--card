@@ -70,7 +70,7 @@ jobs:
           assert(text.includes('section.items.length || section.page < section.totalPages ? [section] : []'),'Search may continue even when an early TMDB page lacks posters');
           assert(text.includes('.filter((section) => section.items.length || section.page < section.totalPages)'),'Short initial discovery remains pageable');
           const patch=fs.readFileSync('custom_components/streaming_browser/frontend/catalog-results-v04147.patch.js','utf8');
-          assert(patch.includes('data.sb147More') && patch.includes("addEventListener('scroll'"),'Explicit Load more button and search scroll pagination exist');
+          assert(patch.includes('button.dataset.sb147More') && patch.includes("addEventListener('scroll'"),'Explicit Load more button and search scroll pagination exist');
           const proto={_render(){}};
           const Card=function(){}; Card.prototype=proto;
           const context={customElements:{get(){return Card;}},document:{createElement(){throw Error('Unexpected UI element creation in short-grid test');}},queueMicrotask,console};
