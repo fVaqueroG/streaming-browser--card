@@ -1,0 +1,89 @@
+name: Publish Streaming Browser reliable Back v0.4.146
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/fix-native-back-v04146.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replace accidental extra mobile navigation
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('custom_components/streaming_browser/frontend')
+          popup=root/'streaming-browser-popup-card.js'
+          text=popup.read_text(encoding='utf-8')
+          marker='  const manager = window.__fvHaCardBackManagerV2 ||='
+          assert text.count(marker)==1, 'Old manager missing or duplicated'
+          start=text.index(marker)
+          end=text.index('  const nested = card =>',start)
+          fixed=(root/'mobile-back-v04146-manager.js.txt').read_text(encoding='utf-8')
+          assert 'history.back(' not in fixed.replace('// Never issue history.back() from cancel or teardown: one press must not','')
+          text=text[:start]+fixed+text[end:]
+          text=text.replace('/* Streaming Browser v0.4.145: one active Back owner, safe popup history cleanup. */','/* Streaming Browser v0.4.146: native Back and popup teardown without synthetic navigation. */',1)
+          popup.write_text(text,encoding='utf-8')
+          card=root/'streaming-browser-card-v2.js'
+          source=card.read_text(encoding='utf-8')
+          assert source.count('const STREAMING_BROWSER_VERSION = "0.4.145";')==1
+          card.write_text(source.replace('const STREAMING_BROWSER_VERSION = "0.4.145";','const STREAMING_BROWSER_VERSION = "0.4.146";',1),encoding='utf-8')
+          manifest=Path('custom_components/streaming_browser/manifest.json')
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.145'
+          data['version']='0.4.146'
+          manifest.write_text(json.dumps(data,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+      - name: Test history and nested Back navigation
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+          const code=fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-popup-card.js','utf8');
+          const start=code.indexOf('  const manager = window.__fvHaCardBackManagerV3 ||=');
+          const end=code.indexOf('  const nested = card =>',start);
+          assert(start>0&&end>start,'Shared native Back handler exists');
+          const managerSource=code.slice(start,end);
+          assert(!/\bhistory\.back\s*\(/.test(managerSource.replace(/\/\/[^\n]*/g,'')),'No synthetic Back while dismissing');
+          let now=1000,index=0,backCalls=0,steps=0;
+          const entries=[{state:{ha:1},url:'https://ha.local/home'}],listeners={};
+          const window={addEventListener(n,fn){listeners[n]=fn;},removeEventListener(n,fn){if(listeners[n]===fn)delete listeners[n];}};
+          const history={get state(){return entries[index].state;},pushState(state,_,url){entries.splice(index+1);entries.push({state,url});index++;},back(){backCalls++;index--;listeners.popstate?.({stopImmediatePropagation(){}});}};
+          const context={window,history,location:{href:'https://ha.local/home'},Date:{now:()=>now},Math,console};
+          const manager=vm.runInNewContext('(()=>{const mobile=()=>true;'+managerSource+'return manager;})()',context);
+          const owner={back(){steps++;}};
+          manager.add(owner);assert.equal(entries.length,3,'Two spare history states when popup opens');
+          history.back();assert.equal(steps,1,'Android history Back must remain within card');
+          assert.equal(entries.length,3,'Guard restored before rerender');
+          now+=200;manager.request(owner);assert.equal(steps,2,'Native dialog cancellation handled directly');
+          assert.equal(backCalls,1,'Native cancel must not make a second history Back');
+          manager.remove(owner);assert.equal(backCalls,1,'Popup cleanup must not navigate away');
+          assert(!listeners.popstate,'Handler detached after close');
+          const stepSource=code.slice(code.indexOf('  function step(card) {',end),code.indexOf('  const priorOpen = Popup.prototype._open;',end));
+          assert(stepSource.includes('card._v2ShowAll'));
+          const step=vm.runInNewContext('(()=>{'+stepSource+'return step;})()');
+          let remoteClosed=0,rendered=0;
+          const card={_remoteExpanded:true,_toggleNuvioRemote(){remoteClosed++;this._remoteExpanded=false;},_details:{id:1},_v2ShowAll:true,_render(){rendered++;}};
+          assert.equal(step(card),true);assert.equal(remoteClosed,1,'Remote first');
+          assert.equal(step(card),true);assert.equal(card._details,null,'Details second');
+          assert.equal(step(card),true);assert.equal(card._v2ShowAll,false,'Expanded catalog third');
+          assert.equal(rendered,2);
+          console.log('PASS: history Back, native cancellation, popup teardown, remote, title, expanded catalog');
+          JS
+      - name: Commit and publish verified patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'fix: avoid extra Android Back when closing Streaming Browser (v0.4.146)'
+          git push origin HEAD:main
+          gh release create v0.4.146 --target "$(git rev-parse HEAD)" --title v0.4.146 --notes 'Remove synthetic browser Back on dialog cancellation and teardown; keep a spare same-page navigation guard through remote, title and expanded catalog transitions. Includes automated navigation regression tests; Android device behavior still requires verification.'
