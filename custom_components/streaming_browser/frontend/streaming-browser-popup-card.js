@@ -334,3 +334,85 @@ const sbPopupPicker = {
 const sbPopupExisting = window.customCards.find((entry) => entry?.type === sbPopupPicker.type);
 if (sbPopupExisting) Object.assign(sbPopupExisting, sbPopupPicker);
 else window.customCards.push(sbPopupPicker);
+
+
+/* Popup remote foreground bridge v1 */
+function sbRemoteForeground(popup) {
+  let portal=null, attributes=null, top=null, stopped=false;
+  const card=()=>popup._innerCard;
+  const find=()=>card()?._remotePortal || null;
+  function dismiss() {
+    const dialog=top; top=null;
+    if (!dialog) return;
+    if (portal?.parentNode===dialog && portal.isConnected) document.body.appendChild(portal);
+    if (dialog.open) dialog.close();
+    dialog.remove();
+  }
+  function sync() {
+    if (stopped) return;
+    const found=find();
+    if (found!==portal) {
+      attributes?.disconnect();
+      dismiss();
+      portal=found;
+      if (portal) {
+        attributes=new MutationObserver(sync);
+        attributes.observe(portal,{attributes:true,attributeFilter:['hidden','style','class','aria-hidden']});
+      }
+    }
+    if (!portal?.isConnected || portal.hidden || portal.getAttribute('aria-hidden')==='true' || getComputedStyle(portal).display==='none') {
+      dismiss(); return;
+    }
+    if (top) return;
+    const dialog=document.createElement('dialog');
+    top=dialog;
+    dialog.className='sb-remote-front-dialog';
+    dialog.style.cssText='position:fixed;inset:0;margin:0;padding:0;border:0;width:100vw;height:100dvh;max-width:100vw;max-height:100dvh;overflow:visible;background:transparent;color:inherit;';
+    const style=document.createElement('style');
+    style.textContent='.sb-remote-front-dialog::backdrop{background:transparent!important;backdrop-filter:none!important}';
+    dialog.appendChild(style);
+    dialog.addEventListener('cancel',event=>{
+      event.preventDefault();
+      const close=portal?.shadowRoot?.querySelector('.remote-close,.tp-remote-close,[aria-label="Close remote"],[aria-label="Close"]');
+      if(close)close.click();
+      else if(card()?._toggleRemote)card()._toggleRemote(false);
+      else portal.hidden=true;
+      queueMicrotask(sync);
+    });
+    const children=new MutationObserver(()=>queueMicrotask(sync));
+    children.observe(dialog,{childList:true});
+    dialog.addEventListener('close',()=>children.disconnect(),{once:true});
+    document.body.appendChild(dialog);
+    dialog.appendChild(portal);
+    try { dialog.showModal(); }
+    catch(error) { dismiss(); console.error('Streaming Browser remote foreground:',error); }
+  }
+  const body=new MutationObserver(sync);
+  body.observe(document.body,{childList:true});
+  const onClick=()=>queueMicrotask(sync);
+  document.addEventListener('click',onClick,true);
+  const onClose=()=>cleanup();
+  popup._dialog?.addEventListener('close',onClose,{once:true});
+  function cleanup() {
+    if(stopped)return;
+    stopped=true;
+    attributes?.disconnect(); body.disconnect();
+    document.removeEventListener('click',onClick,true);
+    popup._dialog?.removeEventListener('close',onClose);
+    dismiss();
+  }
+  sync();
+  return cleanup;
+}
+const sbPopupOpenForeground=StreamingBrowserPopupCard.prototype._open;
+StreamingBrowserPopupCard.prototype._open=function(...args) {
+  const result=sbPopupOpenForeground.apply(this,args);
+  if(this._dialog?.open && !this._remoteForegroundCleanup)
+    this._remoteForegroundCleanup=sbRemoteForeground(this);
+  return result;
+};
+const sbPopupCloseForeground=StreamingBrowserPopupCard.prototype._close;
+StreamingBrowserPopupCard.prototype._close=function(...args) {
+  this._remoteForegroundCleanup?.();this._remoteForegroundCleanup=null;
+  return sbPopupCloseForeground.apply(this,args);
+};
