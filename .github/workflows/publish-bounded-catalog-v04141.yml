@@ -1,0 +1,42 @@
+name: Publish Streaming Browser bounded catalog v0.4.141
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-bounded-catalog-v04141.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Apply the verified catalog patch
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow=Path('.github/workflows/bounded-catalog-scroll-v04141.yml').read_text(encoding='utf-8')
+          delimiter="          python3 - <<'PY'\n"
+          start=workflow.index(delimiter)+len(delimiter)
+          end=workflow.index('\n          PY\n',start)
+          source='\n'.join(line[10:] if line.startswith('          ') else line for line in workflow[start:end].splitlines())
+          exec(compile(source,'bounded-catalog-v04141.patch','exec'),{'__name__':'__main__'})
+          PY
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          echo 'PASS: Streaming Browser catalog update and JavaScript syntax'
+      - name: Commit and publish HACS release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/bounded-catalog-scroll-v04141.yml
+          git add custom_components/streaming_browser/manifest.json custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          git commit -m 'feat: bounded Streaming Browser catalog and back to beginning (v0.4.141)'
+          git push origin HEAD:main
+          gh release create v0.4.141 --target "$(git rev-parse HEAD)" --title v0.4.141 --notes 'Bound the catalog vertical scrollbar inside the card, retain the search and filters, preserve scroll position on re-render and add a return-to-beginning button.'
