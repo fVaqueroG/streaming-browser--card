@@ -1,0 +1,61 @@
+name: Publish Streaming Browser reliable mobile Back v0.4.145
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-mobile-back-v04145.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install coordinated history guard and check JavaScript
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,urllib.request
+          base=Path('custom_components/streaming_browser/frontend')
+          popup=base/'streaming-browser-popup-card.js'
+          old=popup.read_text(encoding='utf-8')
+          marker='/* Streaming Browser v0.4.144: scoped Android Back navigation. */'
+          assert old.count(marker)==1, 'Previous mobile Back implementation missing'
+          original=old.split(marker,1)[0].rstrip()
+          patch=(base/'mobile-back-v04145.patch.js').read_text(encoding='utf-8')
+          assert patch.count('  /* SHARED_BACK_MANAGER */')==1
+          # Pin the already-released shared implementation; the deployed card contains its own copy.
+          url='https://raw.githubusercontent.com/fVaqueroG/home-assistant-nuvio/b7b0a5c4085b207196c72eb3d42da3af0bb44ce9/custom_components/nuvio/frontend/mobile-back-v0495.patch.js'
+          with urllib.request.urlopen(url,timeout=20) as response: shared_source=response.read().decode('utf-8')
+          start=shared_source.index('  const manager = window.__fvHaCardBackManagerV2')
+          end=shared_source.index('  const nested = card =>',start)
+          shared=shared_source[start:end]
+          assert 'function onPop(event)' in shared and 'if (unwinding)' in shared
+          patch=patch.replace('  /* SHARED_BACK_MANAGER */',shared,1)
+          popup.write_text(original+'\n\n'+patch,encoding='utf-8')
+          full=base/'streaming-browser-card-v2.js'
+          code=full.read_text(encoding='utf-8')
+          assert code.count('const STREAMING_BROWSER_VERSION = "0.4.144";')==1
+          full.write_text(code.replace('const STREAMING_BROWSER_VERSION = "0.4.144";','const STREAMING_BROWSER_VERSION = "0.4.145";',1),encoding='utf-8')
+          manifest=Path('custom_components/streaming_browser/manifest.json')
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.144'
+          data['version']='0.4.145'
+          manifest.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          assert '/* SHARED_BACK_MANAGER */' not in popup.read_text()
+          PY
+          node --check custom_components/streaming_browser/frontend/streaming-browser-popup-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+          echo 'PASS: Streaming Browser coordinated Back guard syntax and version'
+      - name: Commit and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-popup-card.js custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'fix: coordinate Android Back across nested Streaming Browser views (v0.4.145)'
+          git push origin HEAD:main
+          gh release create v0.4.145 --target "$(git rev-parse HEAD)" --title v0.4.145 --notes 'Fix mobile Back while loading, switching views or dismissing popup and foreground remote. Preserve one active browser-history guard through teardown.'
