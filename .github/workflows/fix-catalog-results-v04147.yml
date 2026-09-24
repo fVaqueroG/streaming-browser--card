@@ -1,0 +1,110 @@
+name: Publish Streaming Browser catalog results v0.4.147
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/fix-catalog-results-v04147.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Correct selected-provider discovery and short-page pagination
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('custom_components/streaming_browser/frontend')
+          path=root/'streaming-browser-card-v2.js'
+          source=path.read_text(encoding='utf-8')
+          changes=[
+              ('    const providers =\n      this._matchedProviders[mode] || [];',
+               '    // Catalog availability uses all selected regional TMDB providers,\n    // not only those recognized as launchable TV apps.\n    const providers = (this._providers[mode] || [])\n      .filter((item) => this._isSelectedTmdbProvider(item));'),
+              ('with_watch_monetization_types:\n        "flatrate",',
+               'with_watch_monetization_types:\n        this._config.include_rent_buy ? "flatrate|free|ads|rent|buy" : "flatrate|free|ads",'),
+              ('.filter((section) => section.items.length);',
+               '.filter((section) => section.items.length || section.page < section.totalPages);'),
+              ('this._sections = section.items.length ? [section] : [];',
+               'this._sections = section.items.length || section.page < section.totalPages ? [section] : [];'),
+              ('const STREAMING_BROWSER_VERSION = "0.4.146";',
+               'const STREAMING_BROWSER_VERSION = "0.4.147";'),
+          ]
+          for old,new in changes:
+              assert source.count(old)==1, f'Expected exactly one occurrence of {old!r}: found {source.count(old)}'
+              source=source.replace(old,new,1)
+          patch=(root/'catalog-results-v04147.patch.js').read_text(encoding='utf-8')
+          assert 'Streaming Browser v0.4.147: keep catalog pagination' not in source
+          path.write_text(source.rstrip()+'\n\n'+patch,encoding='utf-8')
+          manifest=Path('custom_components/streaming_browser/manifest.json')
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.146', data['version']
+          data['version']='0.4.147'
+          manifest.write_text(json.dumps(data,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+          node --check custom_components/streaming_browser/frontend/catalog-results-v04147.patch.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+      - name: Test selected providers, monetization, search pagination and automatic fill
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+          const text=fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card-v2.js','utf8');
+          const start=text.indexOf('  _catalogDefinitions() {');
+          const end=text.indexOf('  _sectionItems(',start);
+          assert(start>0 && end>start,'TMDB catalog query implementation exists');
+          const definition=vm.runInNewContext('({'+text.slice(start,end)+'})._catalogDefinitions',{Date,Set,String});
+          const card={_mode:'movie',_provider:'all',_config:{region:'MX',include_rent_buy:false},
+            _providers:{movie:[{provider_id:8},{provider_id:337},{provider_id:999}]},
+            _matchedProviders:{movie:[{provider_id:8}]},
+            _genreByMode:{movie:'all'},_ensureSelectedProvider(){},
+            _isSelectedTmdbProvider(p){return [8,337].includes(p.provider_id);}};
+          const defs=definition.call(card);
+          assert.equal(defs[0].params.with_watch_providers,'8|337','Unmatched but selected provider must still contribute titles');
+          assert.equal(defs[0].params.with_watch_monetization_types,'flatrate|free|ads','Include free and ads without rental/purchase');
+          card._config.include_rent_buy=true;
+          assert.equal(definition.call(card)[0].params.with_watch_monetization_types,'flatrate|free|ads|rent|buy');
+          card._provider='337';
+          assert.equal(definition.call(card)[0].params.with_watch_providers,'337','Individual provider selection remains exact');
+          assert(text.includes('section.items.length || section.page < section.totalPages ? [section] : []'),'Search may continue even when an early TMDB page lacks posters');
+          assert(text.includes('.filter((section) => section.items.length || section.page < section.totalPages)'),'Short initial discovery remains pageable');
+          const patch=fs.readFileSync('custom_components/streaming_browser/frontend/catalog-results-v04147.patch.js','utf8');
+          assert(patch.includes('data.sb147More') && patch.includes("addEventListener('scroll'"),'Explicit Load more button and search scroll pagination exist');
+          const proto={_render(){}};
+          const Card=function(){}; Card.prototype=proto;
+          const context={customElements:{get(){return Card;}},document:{createElement(){throw Error('Unexpected UI element creation in short-grid test');}},queueMicrotask,console};
+          vm.runInNewContext(patch,context);
+          const events={}; let pages=1;
+          const body={clientHeight:600,scrollHeight:200,querySelectorAll(){return [];},
+            addEventListener(type,fn){events[type]=fn;}};
+          const instance=Object.create(Card.prototype);
+          instance.isConnected=true;instance._details=null;instance._query='';instance._v2ShowAll=true;
+          instance._v2CategoryKey='provider-popular';instance._browseRequest=5;
+          instance._sectionLoadLocks=new Set();
+          instance._sections=[{key:'provider-popular',page:1,totalPages:3,items:[{id:1}],loadingMore:false}];
+          instance.shadowRoot={querySelector(sel){return sel==='.v2-body'?body:null;}};
+          instance._loadMoreSection=async function(key){
+            assert.equal(key,'provider-popular'); pages++;
+            this._sections[0].page++;this._sections[0].items.push({id:pages});
+            this._render();
+          };
+          instance._render();
+          (async()=>{
+            for(let i=0;i<8;i++)await Promise.resolve();
+            assert.equal(pages,3,'See all fills a short initial catalog without requiring a scroll');
+            assert(events.scroll,'Scrollable body has a pagination event handler');
+            console.log('PASS: full selected-provider scope, free/ads availability, individual filters, search pagination, and short-grid autofill');
+          })().catch(error=>{console.error(error);process.exitCode=1;});
+          JS
+      - name: Commit and publish catalog fix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'fix: widen selected-provider catalog and unblock pagination (v0.4.147)'
+          git push origin HEAD:main
+          gh release create v0.4.147 --target "$(git rev-parse HEAD)" --title v0.4.147 --notes 'Catalog All sources now uses all user-selected TMDB providers in the configured region, not just TV app matches; includes free and ad-supported titles while keeping rent/buy opt-in. See all and search expose Load more, search scroll paging, and short-grid autofill. Adds regression tests; observed results still depend on TMDB availability and configured filters.'
