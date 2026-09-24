@@ -1,0 +1,96 @@
+name: Publish Streaming Browser automatic catalog pagination v0.4.148
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-auto-catalog-v04148.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replace manual See all pagination with automatic nested-scroll paging
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('custom_components/streaming_browser/frontend')
+          path=root/'streaming-browser-card-v2.js'
+          source=path.read_text(encoding='utf-8')
+          marker='/* Streaming Browser v0.4.147: keep catalog pagination reachable on short rows and grids. */'
+          assert source.count(marker)==1, 'Expected exactly one v0.4.147 pagination patch'
+          source=source[:source.index(marker)].rstrip()+'\n\n'
+          patch=(root/'catalog-auto-pagination-v04148.patch.js').read_text(encoding='utf-8')
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.147";' in source
+          source=source.replace('const STREAMING_BROWSER_VERSION = "0.4.147";',
+                                'const STREAMING_BROWSER_VERSION = "0.4.148";',1)
+          path.write_text(source+patch,encoding='utf-8')
+          manifest=Path('custom_components/streaming_browser/manifest.json')
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.147',data['version']
+          data['version']='0.4.148'
+          manifest.write_text(json.dumps(data,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+          node --check custom_components/streaming_browser/frontend/catalog-auto-pagination-v04148.patch.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json > /dev/null
+      - name: Test real nested catalog scroll, short grid, search, and pages beyond five
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+          const patch=fs.readFileSync('custom_components/streaming_browser/frontend/catalog-auto-pagination-v04148.patch.js','utf8');
+          assert(!patch.includes('section.page >= 5'),'No arbitrary page-5 cutoff');
+          assert(patch.includes("[body, catalog]"),'Both scrolling containers receive listeners');
+          const Card=function(){};Card.prototype._render=function(){};
+          vm.runInNewContext(patch,{customElements:{get:()=>Card},queueMicrotask,console,Promise,Math,Number,String});
+          const flush=async()=>{for(let i=0;i<28;i++) await new Promise(resolve=>setImmediate(resolve));};
+          function scenario({search=false,short=false,page=1,total=3}) {
+            const events={};
+            const catalog={clientHeight:400,scrollHeight:short?150:1100,scrollTop:0,
+              addEventListener(type,fn){events['catalog:'+type]=fn;}};
+            const body={clientHeight:600,scrollHeight:short?250:950,scrollTop:0,
+              querySelector(sel){return sel==='.catalog'?catalog:null;},
+              querySelectorAll(){return [];},
+              addEventListener(type,fn){events['body:'+type]=fn;}};
+            const card=Object.create(Card.prototype);
+            card.isConnected=true;card._loading=false;card._details=null;card._browseRequest=2;
+            card._query=search?'test':'';card._v2ShowAll=!search;
+            card._v2CategoryKey='provider-popular';card._sectionLoadLocks=new Set();
+            const section={key:search?'search':'provider-popular',page,totalPages:total,loadingMore:false};
+            card._sections=[section];card.shadowRoot={querySelector(sel){return sel==='.v2-body'?body:null;}};
+            const requested=[];
+            card._loadMoreSection=async function(key){requested.push(key);section.page++;this._render();};
+            card._render();
+            return {card,catalog,body,events,section,requested};
+          }
+          (async()=>{
+            const nested=scenario({page:5,total:7});
+            await flush();assert.equal(nested.section.page,5,'Not at bottom yet');
+            assert(nested.events['catalog:scroll'],'Actual nested catalog scroll is observed');
+            nested.catalog.scrollTop=700;nested.events['catalog:scroll']();
+            await flush();assert.equal(nested.section.page,7,'Nested scroll loads past page five through last page');
+            assert.equal(nested.requested.length,2);
+            const short=scenario({short:true,page:1,total:3});
+            await flush();assert.equal(short.section.page,3,'Short grid automatically fills without scrolling or clicking');
+            const search=scenario({short:true,search:true,page:1,total:3});
+            await flush();assert.equal(search.section.page,3,'Search also loads subsequent pages automatically');
+            const absent=scenario({page:1,total:3});
+            absent.card._v2ShowAll=false;absent.catalog.scrollTop=700;
+            absent.events['catalog:scroll']();await flush();
+            assert.equal(absent.section.page,1,'Carousel does not trigger expanded-grid auto-loading');
+            console.log('PASS: nested scroll, short grid, automatic search, no fifth-page limit, carousel isolation');
+          })().catch(error=>{console.error(error);process.exitCode=1;});
+          JS
+      - name: Publish tested automatic pagination
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'fix: automatically load expanded catalog and search pages (v0.4.148)'
+          git push origin HEAD:main
+          gh release create v0.4.148 --target "$(git rev-parse HEAD)" --title v0.4.148 --notes 'Automatically load additional See all and search results using the nested catalog scroll position; automatically fill a short page without scrolling. Remove manual Load more button and arbitrary page-five cutoff. Includes simulated scrolling regression tests; Android behavior remains to be verified.'
