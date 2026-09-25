@@ -174,6 +174,12 @@
     const K=customElements.get('streaming-browser-card-v2');
     if (K.__sbAccentPresetFormV04153) return;
     K.__sbAccentPresetFormV04153=true;
+    const getStub=K.getStubConfig;
+    if (typeof getStub==='function') K.getStubConfig=function(...args) {
+      return {...getStub.apply(this,args),
+        accent_preset:'soft_iris',
+        accent_color:[139,92,246]};
+    };
     const getForm=K.getConfigForm;
     K.getConfigForm=function(...args) {
       const form=getForm.apply(this,args);
