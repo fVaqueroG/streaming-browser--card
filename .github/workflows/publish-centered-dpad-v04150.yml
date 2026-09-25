@@ -1,0 +1,81 @@
+name: Publish Streaming Browser centered D-pad v0.4.150
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-centered-dpad-v04150.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Center directional controls in the outer D-pad ring
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          card=Path('custom_components/streaming_browser/frontend/streaming-browser-card-v2.js')
+          source=card.read_text(encoding='utf-8')
+          old='''          .sbr-pad .sbr-dir {position:absolute;display:grid;place-items:center;
+            width:34%;height:34%;min-height:0;border:0;border-radius:50%;background:transparent;padding:0}
+          .sbr-pad .sbr-dir ha-icon {--mdc-icon-size:45px}
+          .sbr-pad .sbr-up {top:0;left:33%}
+          .sbr-pad .sbr-down {bottom:0;left:33%}
+          .sbr-pad .sbr-left {top:33%;left:0}
+          .sbr-pad .sbr-right {top:33%;right:0}'''
+          new='''          .sbr-pad .sbr-dir {position:absolute;display:grid;place-items:center;
+            width:34%;height:34%;min-height:0;border:0;border-radius:50%;background:transparent;padding:0}
+          .sbr-pad .sbr-dir ha-icon {--mdc-icon-size:45px;display:grid;place-items:center;margin:0;line-height:1}
+          /* Put each icon center on the radial midpoint of the outer ring.
+             The center disk begins at 28%, so the ring midpoint is 14%/86%. */
+          .sbr-pad .sbr-up {left:50%;top:14%;transform:translate(-50%,-50%)}
+          .sbr-pad .sbr-down {left:50%;top:86%;transform:translate(-50%,-50%)}
+          .sbr-pad .sbr-left {left:14%;top:50%;transform:translate(-50%,-50%)}
+          .sbr-pad .sbr-right {left:86%;top:50%;right:auto;transform:translate(-50%,-50%)}'''
+          assert source.count(old)==1, f'Expected one D-pad CSS block, found {source.count(old)}'
+          source=source.replace(old,new,1)
+          assert source.count('const STREAMING_BROWSER_VERSION = "0.4.149";')==1
+          source=source.replace('const STREAMING_BROWSER_VERSION = "0.4.149";',
+                                'const STREAMING_BROWSER_VERSION = "0.4.150";',1)
+          card.write_text(source,encoding='utf-8')
+          manifest=Path('custom_components/streaming_browser/manifest.json')
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.149',data['version']
+          data['version']='0.4.150'
+          manifest.write_text(json.dumps(data,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+      - name: Test D-pad geometry and unchanged center control
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),assert=require('node:assert/strict');
+          const s=fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-card-v2.js','utf8');
+          for (const rule of [
+            '.sbr-pad .sbr-up {left:50%;top:14%;transform:translate(-50%,-50%)}',
+            '.sbr-pad .sbr-down {left:50%;top:86%;transform:translate(-50%,-50%)}',
+            '.sbr-pad .sbr-left {left:14%;top:50%;transform:translate(-50%,-50%)}',
+            '.sbr-pad .sbr-right {left:86%;top:50%;right:auto;transform:translate(-50%,-50%)}',
+          ]) assert(s.includes(rule), 'Missing centered axis rule: '+rule);
+          assert(s.includes('.sbr-pad .sbr-ok {position:absolute;top:28%;left:28%;width:44%;height:44%'),
+            'Center OK geometry remains unchanged');
+          const coords={up:[50,14],down:[50,86],left:[14,50],right:[86,50]};
+          const center=[50,50];
+          const distances=Object.values(coords).map(([x,y])=>Math.hypot(x-center[0],y-center[1]));
+          assert(distances.every(d=>Math.abs(d-36)<1e-9),'All arrows share identical radius from center');
+          assert.equal((14+86)/2,50,'Opposing controls are symmetric around center');
+          console.log('PASS: all four D-pad arrows are axis-centered at the same ring radius');
+          JS
+      - name: Publish centered D-pad
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'style: center remote D-pad arrows in outer ring (v0.4.150)'
+          git push origin HEAD:main
+          gh release create v0.4.150 --target "$(git rev-parse HEAD)" --title v0.4.150 --notes 'Center all four TV remote D-pad arrows on the same radial midpoint of the outer ring while leaving the OK button, remote dimensions, and control layout unchanged. Includes geometry regression checks.'
