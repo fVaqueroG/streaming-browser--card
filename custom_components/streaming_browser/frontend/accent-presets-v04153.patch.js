@@ -76,10 +76,10 @@
       pressed:`color-mix(in srgb, ${accent} 80%, ${CORE.darkMode})`,
     };
   }
-  function applyAccent(element) {
+  function applyAccent(element, config = element?._config) {
     if (!element?.style) return;
-    const preset=inferPreset(element._config);
-    const accent=selectedAccent({...element._config,accent_preset:preset});
+    const preset=inferPreset(config);
+    const accent=selectedAccent({...config,accent_preset:preset});
     const companions=companionColors(accent,preset);
     element.dataset.sbAccentPreset=preset;
     element.style.setProperty('--sb-accent',accent);
@@ -143,14 +143,8 @@
   function apply(element) {
     applyAccent(element);
     styleOnce(element?.shadowRoot);
-    if (element?._dialog) applyAccent({...element._dialog,_config:element._config});
-    if (element?._innerCard) {
-      // Popup and embedded card share the same saved appearance configuration.
-      element._innerCard._config={...element._innerCard._config,
-        accent_preset:element._config?.accent_preset,
-        accent_color:element._config?.accent_color};
-      apply(element._innerCard);
-    }
+    if (element?._dialog) applyAccent(element._dialog, element._config);
+    if (element?._innerCard) apply(element._innerCard);
   }
 
   for (const name of [
