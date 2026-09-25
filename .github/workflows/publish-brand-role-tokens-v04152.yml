@@ -1,0 +1,92 @@
+name: Publish Streaming Browser brand role tokens v0.4.152
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-brand-role-tokens-v04152.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply finalized palette role tokens
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('custom_components/streaming_browser')
+          appearance=root/'frontend'/'streaming-browser-appearance.js'
+          source=appearance.read_text(encoding='utf-8')
+          patch=(root/'frontend'/'brand-role-tokens-v04152.patch.js').read_text(encoding='utf-8')
+          marker='/* Streaming Browser v0.4.152: formal Brand v1.0 palette role tokens. */'
+          assert marker not in source
+          appearance.write_text(source.rstrip()+'\n\n'+patch,encoding='utf-8')
+
+          card=root/'frontend'/'streaming-browser-card-v2.js'
+          card_source=card.read_text(encoding='utf-8')
+          assert card_source.count('const STREAMING_BROWSER_VERSION = "0.4.151";')==1
+          card_source=card_source.replace(
+            'const STREAMING_BROWSER_VERSION = "0.4.151";',
+            'const STREAMING_BROWSER_VERSION = "0.4.152";',1)
+          card.write_text(card_source,encoding='utf-8')
+
+          manifest=root/'manifest.json'
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.151',data['version']
+          data['version']='0.4.152'
+          manifest.write_text(json.dumps(data,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+          node --check custom_components/streaming_browser/frontend/brand-role-tokens-v04152.patch.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-appearance.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+      - name: Test finalized palette roles and accent compatibility
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),assert=require('node:assert/strict');
+          const patch=fs.readFileSync(
+            'custom_components/streaming_browser/frontend/brand-role-tokens-v04152.patch.js','utf8');
+          const expected={
+            primaryAccent:'#8B5CF6',
+            secondaryAccent:'#6F7DE8',
+            softAccent:'#C7B8F8',
+            deepBrand:'#182230',
+            neutral:'#4B5563',
+            lightNeutral:'#E5E7EB',
+            background:'#F8F9FC',
+            darkMode:'#101218',
+            hoverFocus:'#9D78F8',
+            pressedActive:'#7144DF',
+          };
+          for (const [role,value] of Object.entries(expected)) {
+            assert(patch.includes(role), 'Missing formal role '+role);
+            assert(patch.includes(value), 'Missing role value '+value);
+          }
+          for (const cssVar of [
+            '--sb-primary-accent','--sb-secondary-accent','--sb-soft-accent',
+            '--sb-deep-brand','--sb-neutral','--sb-light-neutral',
+            '--sb-background','--sb-dark-mode','--sb-hover-focus','--sb-pressed-active'
+          ]) assert(patch.includes(cssVar),'Missing CSS role token '+cssVar);
+          assert(patch.includes("'--sb-periwinkle', 'var(--sb-secondary-accent)'"),
+            'Legacy secondary alias preserved');
+          assert(patch.includes("'--sb-accent-hover', 'var(--sb-hover-focus)'"),
+            'Existing hover alias preserved');
+          const appearance=fs.readFileSync(
+            'custom_components/streaming_browser/frontend/streaming-browser-appearance.js','utf8');
+          assert(appearance.includes("name:'accent_color'"),
+            'Accent picker remains available after palette role migration');
+          console.log('PASS: finalized brand role tokens and accent picker compatibility');
+          JS
+      - name: Publish role-token alignment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-appearance.js                   custom_components/streaming_browser/frontend/streaming-browser-card-v2.js                   custom_components/streaming_browser/manifest.json
+          git commit -m 'refactor: align palette with finalized brand roles (v0.4.152)'
+          git push origin HEAD:main
+          gh release create v0.4.152 --target "$(git rev-parse HEAD)" --title v0.4.152 --notes 'Align Streaming Browser with the newest finalized color-palette guide by formalizing the role tokens: Primary Accent, Secondary Accent, Soft Accent, Deep Brand, Neutral, Light Neutral, Background and Dark Mode, plus explicit Hover/Focus and Pressed/Active states. Hex values remain the finalized Brand v1.0 values already introduced in v0.4.151. The accent picker remains per-card and backward-compatible CSS aliases are preserved.'
