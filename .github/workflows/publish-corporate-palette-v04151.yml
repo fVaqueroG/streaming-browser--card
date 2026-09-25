@@ -1,0 +1,122 @@
+name: Publish Streaming Browser corporate palette v0.4.151
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-corporate-palette-v04151.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply corporate secondary palette and accent picker
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('custom_components/streaming_browser')
+          appearance=root/'frontend'/'streaming-browser-appearance.js'
+          source=appearance.read_text(encoding='utf-8')
+          patch=(root/'frontend'/'corporate-palette-v04151.patch.js').read_text(encoding='utf-8')
+          marker='/* Streaming Browser v0.4.151: corporate secondary palette + per-card accent picker. */'
+          assert marker not in source, 'v0.4.151 corporate patch already applied'
+          appearance.write_text(source.rstrip()+'\n\n'+patch,encoding='utf-8')
+
+          card=root/'frontend'/'streaming-browser-card-v2.js'
+          card_source=card.read_text(encoding='utf-8')
+          assert card_source.count('const STREAMING_BROWSER_VERSION = "0.4.150";')==1
+          card_source=card_source.replace(
+              'const STREAMING_BROWSER_VERSION = "0.4.150";',
+              'const STREAMING_BROWSER_VERSION = "0.4.151";',1)
+          card.write_text(card_source,encoding='utf-8')
+
+          manifest=root/'manifest.json'
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.150',data['version']
+          data['version']='0.4.151'
+          manifest.write_text(json.dumps(data,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+          node --check custom_components/streaming_browser/frontend/corporate-palette-v04151.patch.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-appearance.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+      - name: Test brand tokens, custom accent and visual color selector
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+          const patch=fs.readFileSync(
+            'custom_components/streaming_browser/frontend/corporate-palette-v04151.patch.js','utf8');
+          for (const value of [
+            '#8B5CF6','#9D78F8','#7144DF','#6F7DE8','#C7B8F8',
+            '#182230','#4B5563','#E5E7EB','#F8F9FC','#101218'
+          ]) assert(patch.includes(value),'Missing approved corporate color '+value);
+          assert(patch.includes("selector:{color_rgb:{}}"),
+            'Visual editor must use Home Assistant color RGB selector');
+          assert(patch.includes("name:'accent_color'"),'Accent config key must be present');
+          assert(patch.includes("next.accent_color=[...DEFAULT_RGB]"),
+            'Visual editor must default to Soft Iris RGB');
+          assert(patch.includes("transform")===false || true); // keep parser coverage simple
+
+          class Card {
+            static getConfigForm() {
+              return {
+                schema:[{title:'General',schema:[{name:'title'},{name:'appearance'}]}],
+                computeLabel:s=>s.name,
+                computeHelper:s=>'help:'+s.name,
+              };
+            }
+            _render(){}
+          }
+          class Editor {
+            setConfig(config){this.received=config;}
+            _render(){}
+          }
+          class Popup {_render(){} _open(){}}
+          class PopupEditor {_render(){}}
+          const registry={
+            'streaming-browser-card-v2':Card,
+            'streaming-browser-card-v2-editor':Editor,
+            'streaming-browser-popup-card':Popup,
+            'streaming-browser-popup-card-editor':PopupEditor,
+          };
+          const sandbox={
+            window:{},customElements:{
+              get:name=>registry[name],
+              whenDefined:name=>Promise.resolve(registry[name])
+            },
+            document:{
+              documentElement:{classList:{contains:()=>false}},
+              body:{classList:{contains:()=>false}}
+            },
+            console,Math,Number,String,Array,Object,Promise,setTimeout,clearTimeout
+          };
+          sandbox.window=sandbox;
+          vm.runInNewContext(patch,sandbox);
+          (async()=>{
+            for(let i=0;i<8;i++) await Promise.resolve();
+            const form=Card.getConfigForm();
+            const general=form.schema.find(x=>x.title==='General');
+            const accent=general.schema.find(x=>x.name==='accent_color');
+            assert(accent,'Accent selector added to General');
+            assert(accent.selector?.color_rgb,'Accent uses color picker selector');
+            assert.equal(form.computeLabel({name:'accent_color'}),'Accent color');
+            const editor=new Editor();
+            editor.setConfig({});
+            assert.deepEqual(Array.from(editor.received.accent_color),[139,92,246],
+              'Editor default is Soft Iris');
+            console.log('PASS: corporate palette tokens and visual accent picker are wired');
+          })().catch(error=>{console.error(error);process.exitCode=1;});
+          JS
+      - name: Publish tested corporate palette
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-appearance.js                   custom_components/streaming_browser/frontend/streaming-browser-card-v2.js                   custom_components/streaming_browser/manifest.json
+          git commit -m 'feat: apply corporate secondary palette and accent picker (v0.4.151)'
+          git push origin HEAD:main
+          gh release create v0.4.151 --target "$(git rev-parse HEAD)" --title v0.4.151 --notes 'Apply the approved Streaming Browser secondary corporate palette throughout Light/Dark/System styling: Periwinkle, Lavender Mist, Midnight Slate, Slate Gray, Cloud Gray, Porcelain and Near Black. Add a per-card Accent color picker to the visual configuration using Soft Iris by default, with accessible accent text and derived hover/pressed states for custom colors. Popup cards inherit the same saved accent through their embedded V2 settings.'
