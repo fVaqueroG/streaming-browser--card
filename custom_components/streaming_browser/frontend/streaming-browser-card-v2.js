@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.149";
+const STREAMING_BROWSER_VERSION = "0.4.150";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -927,11 +927,11 @@ class StreamingBrowserV2Card extends HTMLElement {
             border-radius:50%;background:#35353b;box-shadow:inset 0 0 0 2px #ffffff0b}
           .sbr-pad .sbr-dir {position:absolute;display:grid;place-items:center;
             width:34%;height:34%;min-height:0;border:0;border-radius:50%;background:transparent;padding:0}
-          .sbr-pad .sbr-dir ha-icon {--mdc-icon-size:45px}
-          .sbr-pad .sbr-up {top:0;left:33%}
-          .sbr-pad .sbr-down {bottom:0;left:33%}
-          .sbr-pad .sbr-left {top:33%;left:0}
-          .sbr-pad .sbr-right {top:33%;right:0}
+          .sbr-pad .sbr-dir ha-icon {--mdc-icon-size:45px;display:grid;place-items:center;margin:0;line-height:1}
+          .sbr-pad .sbr-up {left:50%;top:14%;transform:translate(-50%,-50%)}
+          .sbr-pad .sbr-down {left:50%;top:86%;transform:translate(-50%,-50%)}
+          .sbr-pad .sbr-left {left:14%;top:50%;transform:translate(-50%,-50%)}
+          .sbr-pad .sbr-right {left:86%;top:50%;right:auto;transform:translate(-50%,-50%)}
           .sbr-pad .sbr-ok {position:absolute;top:28%;left:28%;width:44%;height:44%;min-height:0;
             display:grid;place-items:center;border:0;border-radius:50%;background:#2c2c30;
             font-size:23px;font-weight:750;box-shadow:0 0 0 10px #2b2b3055}
