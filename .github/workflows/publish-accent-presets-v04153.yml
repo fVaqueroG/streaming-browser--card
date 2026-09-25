@@ -64,11 +64,12 @@ jobs:
           for (const neutral of ['#4B5563','#E5E7EB','#182230','#F8F9FC','#101218'])
             assert(patch.includes(neutral),'Missing core neutral '+neutral);
           assert(patch.includes("name:'accent_preset'"),'Accent preset field missing');
-          assert(patch.includes("name:'accent_color'"),'Custom color picker compatibility missing');
-          assert(patch.includes("selector:{color_rgb:{}}") ||
-                 fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-appearance.js','utf8')
-                   .includes("selector:{color_rgb:{}}"),
-                 'Visual custom color picker must remain');
+          const appearance=fs.readFileSync(
+            'custom_components/streaming_browser/frontend/streaming-browser-appearance.js','utf8');
+          assert(appearance.includes("name:'accent_color'"),
+            'Custom color picker compatibility missing');
+          assert(appearance.includes("selector:{color_rgb:{}}"),
+            'Visual custom color picker must remain');
 
           class Style {
             constructor(){this.map=new Map();}
