@@ -18,6 +18,7 @@ jobs:
         shell: bash
         run: |
           node --check custom_components/streaming_browser/frontend/streaming-browser-card.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
           python3 -m compileall -q custom_components/streaming_browser
           python3 - <<'PY'
           import json,re
@@ -26,9 +27,16 @@ jobs:
           meta=json.loads((base/'manifest.json').read_text())
           assert meta['domain']=='streaming_browser' and meta['config_flow']
           source=(base/'frontend/streaming-browser-card.js').read_text()
+          v2=(base/'frontend/streaming-browser-card-v2.js').read_text()
           found=re.search(r'const STREAMING_BROWSER_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)";',source)
-          assert found, 'Bundled card version label missing'
-          assert found.group(1)==meta['version'], 'Bump BOTH manifest.version and bundled JS version before release'
+          found_v2=re.search(r'const STREAMING_BROWSER_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)";',v2)
+          assert found and found_v2, 'Bundled card version label missing'
+          assert found.group(1)==meta['version'], 'Bump manifest.version and bundled V1 JS version before release'
+          assert found_v2.group(1)==meta['version'], 'Bump manifest.version and bundled V2 JS version before release'
+          assert '_captureCatalogReturnPosition()' in v2
+          assert 'this._captureCatalogReturnPosition();' in v2
+          assert 'this._restoreCatalogReturnPosition();' in v2
+          assert 'this._closeDetails()' in v2
           assert (base/'config_flow.py').exists() and (base/'justwatch.py').exists()
           with open('/tmp/streaming-browser-version','w') as file:
               file.write(meta['version'])

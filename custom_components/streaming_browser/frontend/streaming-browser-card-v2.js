@@ -60,7 +60,7 @@ const STREAMING_BROWSER_BACKEND = Object.freeze({
   },
 });
 
-const STREAMING_BROWSER_VERSION = "0.4.153";
+const STREAMING_BROWSER_VERSION = "0.4.154";
 
 class StreamingBrowserV2Card extends HTMLElement {
   constructor() {
@@ -1890,10 +1890,65 @@ class StreamingBrowserV2Card extends HTMLElement {
       : "";
   }
 
+  _captureCatalogReturnPosition() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    const body = root.querySelector(".v2-body");
+    const catalog = body?.querySelector(".catalog") || root.querySelector(".catalog");
+    const rows = {};
+    root.querySelectorAll(".catalog-row[data-section]").forEach((row) => {
+      const key = String(row.dataset.section || "");
+      if (!key) return;
+      const left = Number(row.scrollLeft || 0);
+      rows[key] = left;
+      this._rowScrollPositions?.set(key, left);
+    });
+    this._detailReturnPosition = {
+      bodyTop: Number(body?.scrollTop || 0),
+      catalogTop: Number(catalog?.scrollTop || 0),
+      rows,
+      categoryKey: this._v2CategoryKey,
+      showAll: this._v2ShowAll === true,
+    };
+  }
+
+  _restoreCatalogReturnPosition() {
+    const saved = this._detailReturnPosition;
+    this._detailReturnPosition = null;
+    if (!saved) return;
+    const apply = () => {
+      const root = this.shadowRoot;
+      if (!root) return;
+      const body = root.querySelector(".v2-body");
+      const catalog = body?.querySelector(".catalog") || root.querySelector(".catalog");
+      if (body) body.scrollTop = saved.bodyTop;
+      if (catalog) catalog.scrollTop = saved.catalogTop;
+      root.querySelectorAll(".catalog-row[data-section]").forEach((row) => {
+        const key = String(row.dataset.section || "");
+        const left = Number(saved.rows?.[key]);
+        if (!Number.isFinite(left)) return;
+        row.scrollLeft = left;
+        this._rowScrollPositions?.set(key, left);
+      });
+      this._v2UpdateBeginningVisibility?.();
+    };
+    apply();
+    queueMicrotask(apply);
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(apply);
+  }
+
+  _closeDetails() {
+    if (!this._details) return;
+    this._details = null;
+    this._render();
+    this._restoreCatalogReturnPosition();
+  }
+
   async _openDetails(sectionKey, index) {
     const section = this._sections.find((entry) => entry.key === sectionKey);
     const item = section?.items?.[index];
     if (!item) return;
+    this._captureCatalogReturnPosition();
     const type = this._mediaType(item);
     const detail = {
       loading: true,
@@ -6396,20 +6451,14 @@ ${
     root
       .querySelectorAll("[data-close]")
       .forEach((element) =>
-        element.addEventListener("click", () => {
-          this._details = null;
-          this._render();
-        })
+        element.addEventListener("click", () => this._closeDetails())
       );
 
     const overlay = root.querySelector("[data-overlay]");
 
     if (overlay) {
       overlay.addEventListener("click", (event) => {
-        if (event.target === overlay) {
-          this._details = null;
-          this._render();
-        }
+        if (event.target === overlay) this._closeDetails();
       });
     }
 
