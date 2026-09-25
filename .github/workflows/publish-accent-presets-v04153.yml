@@ -1,0 +1,169 @@
+name: Publish Streaming Browser accent presets v0.4.153
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-accent-presets-v04153.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply approved alternative accent palette
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('custom_components/streaming_browser')
+          appearance=root/'frontend'/'streaming-browser-appearance.js'
+          source=appearance.read_text(encoding='utf-8')
+          patch=(root/'frontend'/'accent-presets-v04153.patch.js').read_text(encoding='utf-8')
+          marker='/* Streaming Browser v0.4.153: alternative accent palette presets. */'
+          assert marker not in source
+          appearance.write_text(source.rstrip()+'\n\n'+patch,encoding='utf-8')
+
+          card=root/'frontend'/'streaming-browser-card-v2.js'
+          card_source=card.read_text(encoding='utf-8')
+          assert card_source.count('const STREAMING_BROWSER_VERSION = "0.4.152";')==1
+          card_source=card_source.replace(
+            'const STREAMING_BROWSER_VERSION = "0.4.152";',
+            'const STREAMING_BROWSER_VERSION = "0.4.153";',1)
+          card.write_text(card_source,encoding='utf-8')
+
+          manifest=root/'manifest.json'
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.152',data['version']
+          data['version']='0.4.153'
+          manifest.write_text(json.dumps(data,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+          node --check custom_components/streaming_browser/frontend/accent-presets-v04153.patch.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-appearance.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+      - name: Test all approved accent presets and visual editor
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+          const patch=fs.readFileSync(
+            'custom_components/streaming_browser/frontend/accent-presets-v04153.patch.js','utf8');
+          const expected={
+            soft_iris:'#8B5CF6',
+            ocean_blue:'#3B82F6',
+            teal_aqua:'#14B8A6',
+            emerald:'#10B981',
+            coral:'#F97366',
+            amber:'#F59E0B',
+            rose:'#EC4899',
+          };
+          for (const [name,hex] of Object.entries(expected)) {
+            assert(patch.includes(name),'Missing accent preset '+name);
+            assert(patch.includes(hex),'Missing accent value '+hex);
+          }
+          for (const neutral of ['#4B5563','#E5E7EB','#182230','#F8F9FC','#101218'])
+            assert(patch.includes(neutral),'Missing core neutral '+neutral);
+          assert(patch.includes("name:'accent_preset'"),'Accent preset field missing');
+          assert(patch.includes("name:'accent_color'"),'Custom color picker compatibility missing');
+          assert(patch.includes("selector:{color_rgb:{}}") ||
+                 fs.readFileSync('custom_components/streaming_browser/frontend/streaming-browser-appearance.js','utf8')
+                   .includes("selector:{color_rgb:{}}"),
+                 'Visual custom color picker must remain');
+
+          class Style {
+            constructor(){this.map=new Map();}
+            setProperty(k,v){this.map.set(k,String(v));}
+            getPropertyValue(k){return this.map.get(k)||'';}
+          }
+          class Root {
+            constructor(){this.ids=new Set();}
+            querySelector(selector){return selector.startsWith('#')&&this.ids.has(selector.slice(1))?{}:null;}
+            appendChild(node){if(node.id)this.ids.add(node.id);}
+          }
+          class Card {
+            constructor(){this.style=new Style();this.shadowRoot=new Root();this.dataset={};this._config={};}
+            _render(){}
+            static getConfigForm(){return {
+              schema:[{title:'General',schema:[
+                {name:'title'},{name:'appearance'},{name:'accent_color',selector:{color_rgb:{}}}
+              ]}],
+              computeLabel:s=>s.name,computeHelper:s=>'help:'+s.name,
+            };}
+            static getStubConfig(){return {};}
+          }
+          class Editor {
+            constructor(){this.style=new Style();this.shadowRoot=new Root();this.dataset={};this._config={};}
+            _render(){}
+            setConfig(config){this._config=config;}
+          }
+          class Popup extends Card {_open(){}}
+          class PopupEditor extends Editor {}
+          const registry={
+            'streaming-browser-card-v2':Card,
+            'streaming-browser-card-v2-editor':Editor,
+            'streaming-browser-popup-card':Popup,
+            'streaming-browser-popup-card-editor':PopupEditor,
+          };
+          const sandbox={
+            window:{},customElements:{
+              get:name=>registry[name],
+              whenDefined:name=>Promise.resolve(registry[name])
+            },
+            document:{
+              createElement:tag=>({tagName:tag,id:'',textContent:''}),
+              documentElement:{classList:{contains:()=>false}},
+              body:{classList:{contains:()=>false}}
+            },
+            console,Math,Number,String,Array,Object,Promise
+          };
+          sandbox.window=sandbox;
+          vm.runInNewContext(patch,sandbox);
+          (async()=>{
+            for(let i=0;i<10;i++) await Promise.resolve();
+
+            const form=Card.getConfigForm();
+            const general=form.schema.find(x=>x.title==='General');
+            const preset=general.schema.find(x=>x.name==='accent_preset');
+            assert(preset,'Accent preset selector added');
+            const options=preset.selector.select.options;
+            assert.equal(options.length,8,'Seven approved presets plus Custom');
+            for(const [key,hex] of Object.entries(expected))
+              assert(options.some(o=>o.value===key && o.label.includes(hex)),
+                'Preset option exposes '+key+' '+hex);
+
+            const stub=Card.getStubConfig();
+            assert.equal(stub.accent_preset,'soft_iris');
+            assert.deepEqual(Array.from(stub.accent_color),[139,92,246]);
+
+            const ocean=new Card();
+            ocean._config={accent_preset:'ocean_blue',accent_color:[139,92,246]};
+            ocean._render();
+            assert.equal(ocean.style.getPropertyValue('--sb-accent'),'#3B82F6');
+            assert.equal(ocean.style.getPropertyValue('--sb-primary-accent'),'#3B82F6');
+            assert.equal(ocean.style.getPropertyValue('--sb-accent-ink'),'#101218',
+              'Ocean Blue uses accessible dark brand ink');
+
+            const custom=new Card();
+            custom._config={accent_preset:'custom',accent_color:[12,34,56]};
+            custom._render();
+            assert.equal(custom.style.getPropertyValue('--sb-accent'),'#0C2238',
+              'Custom picker remains authoritative in Custom mode');
+
+            const editor=new Editor();
+            editor.setConfig({accent_color:[236,72,153]});
+            assert.equal(editor._config.accent_preset,'rose',
+              'Existing saved accent colors infer the matching named preset');
+            console.log('PASS: seven approved accents, custom picker, migration and contrast handling');
+          })().catch(error=>{console.error(error);process.exitCode=1;});
+          JS
+      - name: Publish tested accent palette
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-appearance.js                   custom_components/streaming_browser/frontend/streaming-browser-card-v2.js                   custom_components/streaming_browser/manifest.json
+          git commit -m 'feat: add approved accent palette presets (v0.4.153)'
+          git push origin HEAD:main
+          gh release create v0.4.153 --target "$(git rev-parse HEAD)" --title v0.4.153 --notes 'Add the latest approved Streaming Browser alternative accent palette to the visual configurator: Soft Iris, Ocean Blue, Teal Aqua, Emerald, Coral, Amber and Rose, plus Custom. Keep the approved core neutrals unchanged. Existing saved custom colors continue to work; exact preset matches are migrated to their named preset. Non-purple presets derive coordinated soft/hover/pressed states and automatically choose readable brand-neutral text.'
