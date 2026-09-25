@@ -1,0 +1,81 @@
+name: Publish Streaming Browser carousel position v0.4.149
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-carousel-position-v04149.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preserve carousel offset through load-more renders
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('custom_components/streaming_browser/frontend')
+          card=root/'streaming-browser-card-v2.js'
+          source=card.read_text(encoding='utf-8')
+          patch=(root/'carousel-position-v04149.patch.js').read_text(encoding='utf-8')
+          assert '/* Streaming Browser v0.4.149: preserve horizontal carousel position' not in source
+          assert 'const STREAMING_BROWSER_VERSION = "0.4.148";' in source
+          source=source.replace('const STREAMING_BROWSER_VERSION = "0.4.148";',
+                                'const STREAMING_BROWSER_VERSION = "0.4.149";',1)
+          card.write_text(source.rstrip()+'\n\n'+patch,encoding='utf-8')
+          manifest=Path('custom_components/streaming_browser/manifest.json')
+          data=json.loads(manifest.read_text(encoding='utf-8'))
+          assert data['version']=='0.4.148',data['version']
+          data['version']='0.4.149'
+          manifest.write_text(json.dumps(data,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+          node --check custom_components/streaming_browser/frontend/carousel-position-v04149.patch.js
+          node --check custom_components/streaming_browser/frontend/streaming-browser-card-v2.js
+          python3 -m json.tool custom_components/streaming_browser/manifest.json >/dev/null
+      - name: Test carousel offset survives row replacement
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+          const patch=fs.readFileSync('custom_components/streaming_browser/frontend/carousel-position-v04149.patch.js','utf8');
+          const Card=function(){};
+          let currentRow={scrollLeft:842};
+          Card.prototype._loadMoreSection=async function(key) {
+            assert.equal(key,'provider-popular');
+            currentRow={scrollLeft:0};
+          };
+          const context={
+            customElements:{get:()=>Card},
+            CSS:{escape:value=>String(value)},
+            globalThis:null,
+            console,Number,String,Math
+          };
+          context.globalThis=context;
+          vm.runInNewContext(patch,context);
+          const card=Object.create(Card.prototype);
+          card._v2ShowAll=false; card._query='';
+          card._rowScrollPositions=new Map();
+          card.shadowRoot={querySelector(){return currentRow;}};
+          (async()=>{
+            await card._loadMoreSection('provider-popular');
+            assert.equal(currentRow.scrollLeft,842,'Replacement carousel keeps exact horizontal position');
+            assert.equal(card._rowScrollPositions.get('provider-popular'),842,'Position map keeps exact offset');
+            currentRow={scrollLeft:777};
+            card._v2ShowAll=true;
+            await card._loadMoreSection('provider-popular');
+            assert.equal(currentRow.scrollLeft,0,'Expanded See all is not forced to a carousel offset');
+            console.log('PASS: carousel pagination preserves horizontal position without affecting See all');
+          })().catch(error=>{console.error(error);process.exitCode=1;});
+          JS
+      - name: Publish tested carousel position fix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/streaming_browser/frontend/streaming-browser-card-v2.js custom_components/streaming_browser/manifest.json
+          git commit -m 'fix: keep carousel position while appending titles (v0.4.149)'
+          git push origin HEAD:main
+          gh release create v0.4.149 --target "$(git rev-parse HEAD)" --title v0.4.149 --notes 'Preserve the exact horizontal carousel scroll offset across load-more renders so additional TMDB pages append to the right without snapping the carousel back to the beginning. See all/search pagination behavior is unchanged. Includes a row-replacement regression test.'
